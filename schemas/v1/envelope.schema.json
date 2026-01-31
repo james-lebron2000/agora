@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agora.community/schemas/v1/envelope.schema.json",
+  "title": "Agora Envelope v1",
+  "type": "object",
+  "required": ["protocol", "id", "timestamp", "sender", "type", "payload"],
+  "properties": {
+    "protocol": {"type": "string", "const": "agora/1.0"},
+    "id": {"type": "string"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "sender": {
+      "type": "object",
+      "required": ["id", "signature"],
+      "properties": {
+        "id": {"type": "string", "description": "DID or public-key identifier"},
+        "signature": {"type": "string", "description": "Signature over the canonicalized envelope"}
+      }
+    },
+    "type": {"type": "string", "enum": ["HELLO", "WELCOME", "STATUS", "REQUEST", "OFFER", "DEBATE", "RESULT", "ERROR"]},
+    "payload": {"type": "object"}
+  },
+  "additionalProperties": true
+}
