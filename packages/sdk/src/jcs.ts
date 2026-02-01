@@ -1,13 +1,16 @@
+import canonicalizeImpl from "canonicalize";
+
 export type JcsCanonicalizer = (value: unknown) => string;
 
 /**
- * Placeholder for JCS (RFC 8785) canonicalization.
+ * RFC 8785 JSON Canonicalization Scheme (JCS) implementation.
  *
- * Expected library: https://www.npmjs.com/package/canonicalize
- * Usage: import canonicalize from "canonicalize";
+ * Uses the `canonicalize` npm package for deterministic JSON serialization.
  */
-export const canonicalize: JcsCanonicalizer = () => {
-  throw new Error(
-    "JCS canonicalization not implemented. Install and inject a RFC8785 canonicalizer (e.g. 'canonicalize' npm package)."
-  );
+export const canonicalize: JcsCanonicalizer = (value) => {
+  const result = canonicalizeImpl(value);
+  if (typeof result !== "string") {
+    throw new Error("JCS canonicalization failed: non-serializable value.");
+  }
+  return result;
 };
