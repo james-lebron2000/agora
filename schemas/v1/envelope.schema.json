@@ -16,7 +16,7 @@
         "signature": {"type": "string", "description": "Signature over the canonicalized envelope"}
       }
     },
-    "type": {"type": "string", "enum": ["HELLO", "WELCOME", "STATUS", "REQUEST", "OFFER", "DEBATE", "RESULT", "ERROR"]},
+    "type": {"type": "string", "enum": ["HELLO", "WELCOME", "STATUS", "REQUEST", "OFFER", "ACCEPT", "DEBATE", "RESULT", "ERROR"]},
     "payload": {"type": "object"}
   },
   "additionalProperties": true

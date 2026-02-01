@@ -1,0 +1,21 @@
+{
+  "protocol": "agora/1.0",
+  "id": "11111111-1111-1111-1111-111111111111",
+  "timestamp": "2024-01-01T00:00:00Z",
+  "type": "REQUEST",
+  "sender": {
+    "id": "OVeM9zlu6wERflzLzbu2HUMG0so9MVWrct1SUOTyW9Y",
+    "signature": "jkGO8vJUoXiBmJyCt66-YXwFHLxJVraS9BFzoc6EMvVS6QiMIo88-99oKdbowynbqg7OmfkuZ0IEMb0Bn25nBw"
+  },
+  "payload": {
+    "resource": "agora:search:v1",
+    "params": {
+      "q": "weather tokyo",
+      "max_results": 3
+    },
+    "budget": {
+      "max": 5
+    },
+    "timeout": 10000
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@agora/sdk",
+  "version": "0.0.0",
+  "description": "Minimal TypeScript reference SDK skeleton for Agora envelopes",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "typescript": "^5.5.4",
+    "vitest": "^1.6.0"
+  }
+}

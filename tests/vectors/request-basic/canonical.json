@@ -1,0 +1,1 @@
+{"id":"11111111-1111-1111-1111-111111111111","payload":{"budget":{"max":5},"params":{"max_results":3,"q":"weather tokyo"},"resource":"agora:search:v1","timeout":10000},"protocol":"agora/1.0","sender":{"id":"OVeM9zlu6wERflzLzbu2HUMG0so9MVWrct1SUOTyW9Y","signature":""},"timestamp":"2024-01-01T00:00:00Z","type":"REQUEST"}
