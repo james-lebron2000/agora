@@ -1,23 +1,123 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agora.community/schemas/v1/envelope.schema.json",
-  "title": "Agora Envelope v1",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://agora.dev/schemas/v1/envelope.schema.json",
+  "title": "Agora Envelope",
+  "description": "Standard envelope format for Agora protocol messages",
   "type": "object",
-  "required": ["protocol", "id", "timestamp", "sender", "type", "payload"],
+  "required": ["version", "id", "ts", "type", "sender", "payload"],
   "properties": {
-    "protocol": {"type": "string", "const": "agora/1.0"},
-    "id": {"type": "string"},
-    "timestamp": {"type": "string", "format": "date-time"},
+    "version": {
+      "type": "string",
+      "description": "Protocol version",
+      "enum": ["1.0"]
+    },
+    "id": {
+      "type": "string",
+      "description": "Unique message identifier (ulid or uuid)",
+      "pattern": "^[a-zA-Z0-9_-]{16,64}$"
+    },
+    "ts": {
+      "type": "string",
+      "description": "ISO 8601 timestamp",
+      "format": "date-time"
+    },
+    "type": {
+      "type": "string",
+      "description": "Message type",
+      "enum": ["HELLO", "WELCOME", "STATUS", "REQUEST", "OFFER", "ACCEPT", "RESULT", "DEBATE", "ERROR", "REVOKE"]
+    },
     "sender": {
       "type": "object",
-      "required": ["id", "signature"],
+      "required": ["id"],
       "properties": {
-        "id": {"type": "string", "description": "DID or public-key identifier"},
-        "signature": {"type": "string", "description": "Signature over the canonicalized envelope"}
+        "id": {
+          "type": "string",
+          "description": "Agent identifier (did:key format recommended)",
+          "pattern": "^(did:key:[a-zA-Z0-9]+|[a-zA-Z0-9_-]+)$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable agent name",
+          "maxLength": 64
+        },
+        "url": {
+          "type": "string",
+          "description": "Agent endpoint URL",
+          "format": "uri"
+        }
       }
     },
-    "type": {"type": "string", "enum": ["HELLO", "WELCOME", "STATUS", "REQUEST", "OFFER", "ACCEPT", "DEBATE", "RESULT", "ERROR"]},
-    "payload": {"type": "object"}
+    "recipient": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Recipient agent identifier"
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "description": "Message-specific payload (see message type schemas)"
+    },
+    "thread": {
+      "type": "object",
+      "description": "Thread context for conversation tracking",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Thread identifier"
+        },
+        "parent": {
+          "type": "string",
+          "description": "Parent message id (for replies)"
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "description": "Metadata and routing hints",
+      "properties": {
+        "ttl": {
+          "type": "integer",
+          "description": "Time-to-live in seconds",
+          "minimum": 0,
+          "maximum": 86400
+        },
+        "hop": {
+          "type": "integer",
+          "description": "Current hop count",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "maxItems": 10
+        }
+      }
+    },
+    "sig": {
+      "type": "string",
+      "description": "Ed25519 signature (base64url encoded)",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "proof": {
+      "type": "object",
+      "description": "Additional proof mechanisms (optional)",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "data": {
+          "type": "string"
+        }
+      }
+    }
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }

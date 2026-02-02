@@ -1,0 +1,157 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://agora.dev/schemas/v1/message-types.schema.json",
+  "title": "Agora Message Types",
+  "description": "Payload schemas for each message type",
+  "definitions": {
+    "REQUEST": {
+      "type": "object",
+      "required": ["request_id", "intent"],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "description": "Unique request identifier"
+        },
+        "intent": {
+          "type": "string",
+          "description": "Intent being requested"
+        },
+        "title": {
+          "type": "string",
+          "description": "Human-readable request title"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed request description"
+        },
+        "params": {
+          "type": "object",
+          "description": "Request parameters (intent-specific)"
+        },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "max_cost_usd": {
+              "type": "number",
+              "description": "Maximum budget in USD"
+            },
+            "max_latency_ms": {
+              "type": "integer",
+              "description": "Maximum latency in milliseconds"
+            },
+            "deadline": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Hard deadline"
+            }
+          }
+        }
+      }
+    },
+    "OFFER": {
+      "type": "object",
+      "required": ["request_id"],
+      "properties": {
+        "request_id": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "string",
+          "description": "Human-readable plan description"
+        },
+        "price": {
+          "type": "object",
+          "properties": {
+            "amount": { "type": "number" },
+            "currency": { "type": "string", "pattern": "^[A-Z]{3}$" }
+          }
+        },
+        "eta_seconds": {
+          "type": "integer",
+          "description": "Estimated time to completion"
+        },
+        "valid_until": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ACCEPT": {
+      "type": "object",
+      "required": ["request_id"],
+      "properties": {
+        "request_id": {
+          "type": "string"
+        },
+        "accepted_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "terms": {
+          "type": "object",
+          "description": "Final agreed terms"
+        }
+      }
+    },
+    "RESULT": {
+      "type": "object",
+      "required": ["request_id", "status"],
+      "properties": {
+        "request_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["success", "partial", "failed", "cancelled"]
+        },
+        "output": {
+          "type": "object",
+          "description": "Result data (intent-specific)"
+        },
+        "artifacts": {
+          "type": "array",
+          "description": "Attached files/URLs",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "name": { "type": "string" }
+            }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "properties": {
+            "latency_ms": { "type": "integer" },
+            "cost_actual": { "type": "number" }
+          }
+        }
+      }
+    },
+    "ERROR": {
+      "type": "object",
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "INVALID_REQUEST",
+            "INTENT_NOT_SUPPORTED",
+            "INSUFFICIENT_BUDGET",
+            "TIMEOUT",
+            "UNAVAILABLE",
+            "FORBIDDEN",
+            "INTERNAL_ERROR"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+[
+  {
+    "description": "Valid REQUEST message",
+    "envelope": {
+      "version": "1.0",
+      "id": "msg_01jqk7z8x8r9q3z5v2w4y6u8",
+      "ts": "2026-02-02T15:30:00.000Z",
+      "type": "REQUEST",
+      "sender": {
+        "id": "did:key:z6MkhaXg",
+        "name": "TestAgent"
+      },
+      "payload": {
+        "request_id": "req_01jqk7z9",
+        "intent": "translation.en_zh",
+        "title": "Translate greeting",
+        "params": {
+          "text": "Hello world"
+        },
+        "constraints": {
+          "max_cost_usd": 0.01
+        }
+      },
+      "thread": {
+        "id": "thread_01jqk7za"
+      },
+      "meta": {
+        "ttl": 300
+      }
+    },
+    "canonical": "{\"id\":\"msg_01jqk7z8x8r9q3z5v2w4y6u8\",\"meta\":{\"ttl\":300},\"payload\":{\"constraints\":{\"max_cost_usd\":0.01},\"intent\":\"translation.en_zh\",\"params\":{\"text\":\"Hello world\"},\"request_id\":\"req_01jqk7z9\",\"title\":\"Translate greeting\"},\"sender\":{\"id\":\"did:key:z6MkhaXg\",\"name\":\"TestAgent\"},\"thread\":{\"id\":\"thread_01jqk7za\"},\"ts\":\"2026-02-02T15:30:00.000Z\",\"type\":\"REQUEST\",\"version\":\"1.0\"}",
+    "privateKey": "dGVzdF9wcml2YXRlX2tleV8zMl9ieXRlc19sb25nX2FhYWFhYWFhYWFhYWFhYQ",
+    "expectedSig": "base64url_signature_placeholder"
+  },
+  {
+    "description": "Valid OFFER message",
+    "envelope": {
+      "version": "1.0",
+      "id": "msg_01jqk7zb",
+      "ts": "2026-02-02T15:31:00.000Z",
+      "type": "OFFER",
+      "sender": {
+        "id": "did:key:z6Mkt8Yg"
+      },
+      "recipient": {
+        "id": "did:key:z6MkhaXg"
+      },
+      "payload": {
+        "request_id": "req_01jqk7z9",
+        "plan": "Translate using GPT-4",
+        "price": {
+          "amount": 0.005,
+          "currency": "USD"
+        },
+        "eta_seconds": 2
+      },
+      "thread": {
+        "id": "thread_01jqk7za"
+      }
+    },
+    "canonical": "{\"id\":\"msg_01jqk7zb\",\"payload\":{\"eta_seconds\":2,\"plan\":\"Translate using GPT-4\",\"price\":{\"amount\":0.005,\"currency\":\"USD\"},\"request_id\":\"req_01jqk7z9\"},\"recipient\":{\"id\":\"did:key:z6MkhaXg\"},\"sender\":{\"id\":\"did:key:z6Mkt8Yg\"},\"thread\":{\"id\":\"thread_01jqk7za\"},\"ts\":\"2026-02-02T15:31:00.000Z\",\"type\":\"OFFER\",\"version\":\"1.0\"}"
+  }
+]

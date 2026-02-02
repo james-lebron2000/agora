@@ -1,0 +1,174 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://agora.dev/schemas/v1/capability.schema.json",
+  "title": "Agora Capability Manifest",
+  "description": "Agent capability declaration for service discovery",
+  "type": "object",
+  "required": ["id", "intents", "pricing"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Capability manifest identifier"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable name",
+      "maxLength": 128
+    },
+    "description": {
+      "type": "string",
+      "description": "Service description",
+      "maxLength": 512
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version",
+      "pattern": "^\\d+\\.\\d+\\.\\d+"
+    },
+    "intents": {
+      "type": "array",
+      "description": "Supported intents/services",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Intent identifier (reverse DNS style)",
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable intent name"
+          },
+          "description": {
+            "type": "string",
+            "description": "What this intent does"
+          },
+          "input_schema": {
+            "type": "object",
+            "description": "JSON Schema for input validation"
+          },
+          "output_schema": {
+            "type": "object",
+            "description": "JSON Schema for output validation"
+          },
+          "examples": {
+            "type": "array",
+            "description": "Example inputs/outputs",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "pricing": {
+      "type": "object",
+      "description": "Pricing model",
+      "properties": {
+        "model": {
+          "type": "string",
+          "enum": ["free", "fixed", "metered", "subscription"]
+        },
+        "currency": {
+          "type": "string",
+          "description": "ISO 4217 currency code",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "fixed_price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "metered_unit": {
+          "type": "string",
+          "description": "Unit for metered pricing (e.g., 'token', 'request', 'minute')"
+        },
+        "metered_rate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "subscription_tiers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "price": { "type": "number" },
+              "quota": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "privacy_policy": {
+      "type": "string",
+      "description": "URL to privacy policy",
+      "format": "uri"
+    },
+    "supported_languages": {
+      "type": "array",
+      "description": "Supported language codes",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z]{2}(-[A-Z]{2})?$"
+      }
+    },
+    "availability": {
+      "type": "object",
+      "properties": {
+        "timezone": {
+          "type": "string",
+          "description": "Agent's primary timezone"
+        },
+        "uptime_sla": {
+          "type": "number",
+          "description": " uptime SLA percentage",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+    "endpoints": {
+      "type": "object",
+      "properties": {
+        "relay": {
+          "type": "string",
+          "format": "uri",
+          "description": "Relay endpoint URL"
+        },
+        "direct": {
+          "type": "string",
+          "format": "uri",
+          "description": "Direct HTTP/WebSocket endpoint"
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "properties": {
+        "methods": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["ed25519", "api_key", "oauth2"]
+          }
+        },
+        "public_key": {
+          "type": "string",
+          "description": "Ed25519 public key (base64url)"
+        }
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}
