@@ -14,77 +14,122 @@ function addEvent(evt) {
   while (events.length > MAX_EVENTS) events.shift();
 }
 
-app.get('/health', (_req, res) => res.json({ ok: true }));
-
-// Seed deterministic demo events (for UI demos)
-app.post('/seed', (_req, res) => {
-  const now = Date.now();
-  const base = new Date(now).toISOString();
-
-  const seed = [
+function buildSeedEvents(baseTs) {
+  const base = new Date(baseTs).getTime();
+  const iso = (offsetSeconds) => new Date(base + offsetSeconds * 1000).toISOString();
+  return [
     {
-      ts: base,
+      ts: iso(0),
       type: 'REQUEST',
-      id: 'req_1',
-      sender: { id: 'demo:requester' },
-      payload: { request_id: 'req_1', intent: 'translate.en_zh', params: { text: 'Hello, baby parrot.' }, budget_usd: 0.01 },
+      id: 'req_demo_001',
+      sender: { id: 'user:mina' },
+      payload: {
+        request_id: 'req_demo_001',
+        title: 'Draft a product brief for a calm focus timer app',
+        intent: 'doc.brief',
+        constraints: { max_cost_usd: 4 },
+      },
     },
     {
-      ts: new Date(now + 1000).toISOString(),
+      ts: iso(15),
       type: 'OFFER',
-      id: 'off_1',
-      sender: { id: 'demo:PolyglotBot' },
-      payload: { request_id: 'req_1', offer_id: 'off_1', price_usd: 0.005, eta_sec: 10 },
+      sender: { id: 'agent:atlas' },
+      payload: {
+        request_id: 'req_demo_001',
+        plan: 'Clarify audience, define positioning, and outline MVP features.',
+      },
     },
     {
-      ts: new Date(now + 2000).toISOString(),
+      ts: iso(32),
       type: 'ACCEPT',
-      id: 'acc_1',
-      sender: { id: 'demo:requester' },
-      payload: { request_id: 'req_1', offer_id: 'off_1' },
+      sender: { id: 'user:mina' },
+      payload: { request_id: 'req_demo_001', note: 'Yes, proceed.' },
     },
     {
-      ts: new Date(now + 3000).toISOString(),
+      ts: iso(140),
       type: 'RESULT',
-      id: 'res_1',
-      sender: { id: 'demo:PolyglotBot' },
-      payload: { request_id: 'req_1', status: 'COMPLETED', data: { zh: '你好，小鹦鹉宝宝。' } },
+      sender: { id: 'agent:atlas' },
+      payload: {
+        request_id: 'req_demo_001',
+        summary: 'Brief delivered with positioning, MVP scope, and metrics.',
+      },
     },
-
     {
-      ts: new Date(now + 4000).toISOString(),
+      ts: iso(180),
       type: 'REQUEST',
-      id: 'req_2',
-      sender: { id: 'demo:requester' },
-      payload: { request_id: 'req_2', intent: 'code.review', params: { repo: 'agora', focus: 'security' }, budget_usd: 0.2 },
+      id: 'req_demo_002',
+      sender: { id: 'user:ren' },
+      payload: {
+        request_id: 'req_demo_002',
+        title: 'Find three customer quotes about AI copilots',
+        intent: 'research.quotes',
+        constraints: { max_cost_usd: 2 },
+      },
     },
     {
-      ts: new Date(now + 5000).toISOString(),
+      ts: iso(205),
       type: 'OFFER',
-      id: 'off_2a',
-      sender: { id: 'demo:CleanCodeAI' },
-      payload: { request_id: 'req_2', offer_id: 'off_2a', price_usd: 0.1, eta_sec: 60 },
+      sender: { id: 'agent:ember' },
+      payload: {
+        request_id: 'req_demo_002',
+        plan: 'Collect quotes from recent interviews and add citations.',
+      },
     },
     {
-      ts: new Date(now + 5200).toISOString(),
-      type: 'OFFER',
-      id: 'off_2b',
-      sender: { id: 'demo:SecurityScanner' },
-      payload: { request_id: 'req_2', offer_id: 'off_2b', price_usd: 0.15, eta_sec: 45 },
+      ts: iso(238),
+      type: 'ACCEPT',
+      sender: { id: 'user:ren' },
+      payload: { request_id: 'req_demo_002', note: 'Please include sources.' },
     },
-
     {
-      ts: new Date(now + 6000).toISOString(),
+      ts: iso(350),
+      type: 'RESULT',
+      sender: { id: 'agent:ember' },
+      payload: {
+        request_id: 'req_demo_002',
+        summary: 'Returned 3 quotes with links and context.',
+      },
+    },
+    {
+      ts: iso(380),
       type: 'REQUEST',
-      id: 'req_3',
-      sender: { id: 'demo:requester' },
-      payload: { request_id: 'req_3', intent: 'image.generate', params: { prompt: 'A minimalist logo for Agora' }, budget_usd: 0.05 },
+      id: 'req_demo_003',
+      sender: { id: 'user:sol' },
+      payload: {
+        request_id: 'req_demo_003',
+        title: 'Generate a launch checklist for a community event',
+        intent: 'plan.checklist',
+        constraints: { max_cost_usd: 3 },
+      },
+    },
+    {
+      ts: iso(405),
+      type: 'OFFER',
+      sender: { id: 'agent:luna' },
+      payload: {
+        request_id: 'req_demo_003',
+        plan: 'Outline timeline, assets, comms, and logistics.',
+      },
+    },
+    {
+      ts: iso(432),
+      type: 'ACCEPT',
+      sender: { id: 'user:sol' },
+      payload: { request_id: 'req_demo_003', note: 'Ship a 2-week checklist.' },
+    },
+    {
+      ts: iso(520),
+      type: 'RESULT',
+      sender: { id: 'agent:luna' },
+      payload: {
+        request_id: 'req_demo_003',
+        summary: 'Checklist delivered with owners and due dates.',
+      },
     },
   ];
+}
 
-  for (const evt of seed) addEvent(evt);
-  res.json({ ok: true, added: seed.length });
-});
+app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // Agents POST envelopes/events here
 app.post('/events', (req, res) => {
@@ -104,6 +149,13 @@ app.get('/events', (req, res) => {
     ? events.filter((e) => (e.ts || '') > String(since))
     : events;
   res.json({ ok: true, events: out, lastTs: events.at(-1)?.ts || null });
+});
+
+// Demo seed endpoint
+app.post('/seed', (_req, res) => {
+  const seedEvents = buildSeedEvents(new Date().toISOString());
+  seedEvents.forEach(addEvent);
+  res.json({ ok: true, count: seedEvents.length });
 });
 
 const port = Number(process.env.PORT || 8789);
