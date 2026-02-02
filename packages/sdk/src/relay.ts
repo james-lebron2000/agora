@@ -30,7 +30,7 @@ export class RelayClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(envelope),
       });
-      return await response.json();
+      return await (response as any).json() as { ok: boolean; id?: string; error?: string };
     } catch (err) {
       return { ok: false, error: String(err) };
     }
@@ -50,7 +50,7 @@ export class RelayClient {
         params.set('timeout', String(options.timeout || this.defaultTimeout));
         
         const response = await fetch(`${this.baseUrl}/events?${params}`);
-        const data = await response.json();
+        const data = await (response as any).json() as { ok: boolean; events: SignedEnvelope[] };
         
         if (data.ok && data.events.length > 0) {
           yield data.events;
@@ -79,7 +79,7 @@ export class RelayClient {
       params.set('timeout', '1'); // Short timeout for single fetch
       
       const response = await fetch(`${this.baseUrl}/events?${params}`);
-      return await response.json();
+      return await (response as any).json() as { ok: boolean; events: SignedEnvelope[]; hasMore?: boolean };
     } catch (err) {
       return { ok: false, events: [], hasMore: false };
     }
@@ -88,7 +88,7 @@ export class RelayClient {
   async seed(): Promise<{ ok: boolean; count?: number }> {
     try {
       const response = await fetch(`${this.baseUrl}/seed`, { method: 'POST' });
-      return await response.json();
+      return await (response as any).json() as { ok: boolean; count?: number };
     } catch (err) {
       return { ok: false };
     }
@@ -97,7 +97,7 @@ export class RelayClient {
   async health(): Promise<{ ok: boolean; version?: string }> {
     try {
       const response = await fetch(`${this.baseUrl}/health`);
-      return await response.json();
+      return await (response as any).json() as { ok: boolean; version?: string };
     } catch (err) {
       return { ok: false };
     }

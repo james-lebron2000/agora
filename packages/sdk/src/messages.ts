@@ -61,7 +61,7 @@ export class MessageBuilder {
       .id(generateId('req'))
       .type('REQUEST')
       .sender(sender)
-      .payload(payload as Record<string, unknown>);
+      .payload(payload as unknown as Record<string, unknown>);
 
     if (options?.recipient) {
       builder.recipient({ id: options.recipient });
@@ -107,7 +107,7 @@ export class MessageBuilder {
       .id(generateId('acc'))
       .type('ACCEPT')
       .sender(sender)
-      .payload(payload as Record<string, unknown>);
+      .payload(payload as unknown as Record<string, unknown>);
 
     if (options?.thread) {
       builder.thread({ id: options.thread });
@@ -151,7 +151,7 @@ export class MessageBuilder {
       .id(generateId('err'))
       .type('ERROR')
       .sender(sender)
-      .payload(payload as Record<string, unknown>);
+      .payload(payload as unknown as Record<string, unknown>);
 
     if (options?.recipient) {
       builder.recipient({ id: options.recipient });

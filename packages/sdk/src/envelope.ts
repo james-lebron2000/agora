@@ -1,5 +1,6 @@
 import canonicalize from 'canonicalize';
 import * as ed25519 from '@noble/ed25519';
+import { didKeyToPublicKey } from './did';
 
 export interface Envelope {
   version: string;
@@ -27,6 +28,7 @@ export interface Sender {
 
 export interface Recipient {
   id: string;
+  url?: string;
 }
 
 export interface Thread {
@@ -111,7 +113,7 @@ export class EnvelopeSigner {
 
     // Sign with Ed25519
     const message = new TextEncoder().encode(canonical);
-    const signature = await ed25519.sign(message, this.privateKey);
+    const signature = await ed25519.signAsync(message, this.privateKey);
     
     return {
       ...envelope,
@@ -145,21 +147,28 @@ export class EnvelopeVerifier {
     const signature = base64urlDecode(sig);
     
     try {
-      return await ed25519.verify(signature, message, publicKey);
+      return await ed25519.verifyAsync(signature, message, publicKey);
     } catch {
       return false;
     }
   }
 
   private async resolvePublicKey(senderId: string): Promise<Uint8Array | null> {
-    // TODO: Implement did:key resolution
-    // For now, this is a placeholder
+    // Support did:key format
+    if (senderId.startsWith('did:key:')) {
+      try {
+        return didKeyToPublicKey(senderId);
+      } catch {
+        return null;
+      }
+    }
+    // For non-did keys, return null (would need external resolution)
     return null;
   }
 }
 
 function base64urlEncode(bytes: Uint8Array): string {
-  const base64 = btoa(String.fromCharCode(...bytes));
+  const base64 = Buffer.from(bytes).toString('base64');
   return base64
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
@@ -171,13 +180,12 @@ function base64urlDecode(str: string): Uint8Array {
     .replace(/-/g, '+')
     .replace(/_/g, '/');
   const padded = base64.padEnd(base64.length + (4 - base64.length % 4) % 4, '=');
-  const binary = atob(padded);
-  return new Uint8Array(binary.split('').map(c => c.charCodeAt(0)));
+  return new Uint8Array(Buffer.from(padded, 'base64'));
 }
 
 // Generate new Ed25519 keypair
 export async function generateKeypair(): Promise<{ publicKey: Uint8Array; privateKey: Uint8Array }> {
-  const privateKey = ed25519.utils.randomPrivateKey();
-  const publicKey = await ed25519.getPublicKey(privateKey);
+  const privateKey = ed25519.utils.randomSecretKey();
+  const publicKey = await ed25519.getPublicKeyAsync(privateKey);
   return { publicKey, privateKey };
 }

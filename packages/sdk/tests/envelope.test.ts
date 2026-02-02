@@ -1,22 +1,53 @@
-import { describe, expect, it } from "vitest";
-import { createEnvelope, verifyEnvelope, type Signer, type Verifier } from "../src/index.js";
+import { EnvelopeBuilder, EnvelopeSigner, EnvelopeVerifier, generateKeypair } from '../src/envelope';
+import { publicKeyToDidKey } from '../src/did';
 
-const canonicalize = (value: unknown) => JSON.stringify(value);
+describe('Envelope', () => {
+  it('should build, sign, and verify an envelope', async () => {
+    // 1. Setup keys
+    const { publicKey, privateKey } = await generateKeypair();
+    const senderDid = publicKeyToDidKey(publicKey);
+    
+    // 2. Build Envelope
+    const envelope = new EnvelopeBuilder()
+      .id('msg-123')
+      .type('REQUEST')
+      .sender({ id: senderDid })
+      .payload({ task: 'test' })
+      .build();
 
-describe("envelope", () => {
-  it("creates and verifies with injected canonicalizer", async () => {
-    const signer: Signer = {
-      alg: "test",
-      sign: async (msg) => msg,
-    };
-    const verifier: Verifier = {
-      alg: "test",
-      verify: async (msg, sig) => msg.length === sig.length,
-    };
+    // 3. Sign
+    const signer = new EnvelopeSigner(privateKey);
+    const signedEnvelope = await signer.sign(envelope);
+    
+    expect(signedEnvelope.sig).toBeDefined();
 
-    const envelope = await createEnvelope({ a: 1 }, signer, { canonicalize });
-    const ok = await verifyEnvelope(envelope, verifier, { canonicalize });
+    // 4. Verify
+    const verifier = new EnvelopeVerifier();
+    const isValid = await verifier.verify(signedEnvelope);
+    
+    expect(isValid).toBe(true);
+  });
 
-    expect(ok).toBe(true);
+  it('should fail verification if modified', async () => {
+    const { publicKey, privateKey } = await generateKeypair();
+    const senderDid = publicKeyToDidKey(publicKey);
+    
+    const envelope = new EnvelopeBuilder()
+      .id('msg-123')
+      .type('REQUEST')
+      .sender({ id: senderDid })
+      .payload({ task: 'test' })
+      .build();
+
+    const signer = new EnvelopeSigner(privateKey);
+    const signedEnvelope = await signer.sign(envelope);
+    
+    // Modify payload
+    signedEnvelope.payload = { task: 'hacked' };
+    
+    const verifier = new EnvelopeVerifier();
+    const isValid = await verifier.verify(signedEnvelope);
+    
+    expect(isValid).toBe(false);
   });
 });
