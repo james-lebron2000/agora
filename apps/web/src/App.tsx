@@ -124,10 +124,7 @@ export default function App() {
       </div>
 
       <div style={{ marginTop: 14, fontSize: 12, color: '#64748b' }}>
-        Relay: <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{relayUrl}</span>
-      </div>
-      <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>
-        Tip: run <code>apps/relay</code> locally, then click <b>Run Demo</b> to inject events.
+        Status: <span style={{ color: usingSeed ? '#f59e0b' : '#10b981' }}>{usingSeed ? 'Demo Mode' : 'Connected'}</span>
       </div>
     </div>
   )
