@@ -9,9 +9,23 @@ app.use(express.json({ limit: '1mb' }));
 const MAX_EVENTS = Number(process.env.MAX_EVENTS || 500);
 const events = [];
 
+// Active subscriptions for long-polling
+const subscriptions = new Set();
+
 function addEvent(evt) {
   events.push(evt);
   while (events.length > MAX_EVENTS) events.shift();
+  
+  // Notify all waiting subscriptions
+  notifySubscribers(evt);
+}
+
+function notifySubscribers(evt) {
+  for (const sub of subscriptions) {
+    if (sub.matches(evt)) {
+      sub.addEvent(evt);
+    }
+  }
 }
 
 function buildSeedEvents(baseTs) {
@@ -129,26 +143,83 @@ function buildSeedEvents(baseTs) {
   ];
 }
 
-app.get('/health', (_req, res) => res.json({ ok: true }));
+// Health check
+app.get('/health', (_req, res) => res.json({ ok: true, version: '1.0.0' }));
 
 // Agents POST envelopes/events here
 app.post('/events', (req, res) => {
   const evt = req.body;
   if (!evt || typeof evt !== 'object') {
-    return res.status(400).json({ ok: false, error: 'invalid_event' });
+    return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', message: 'Event must be a valid object' });
+  }
+  if (!evt.id) {
+    return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', message: 'Event must have id' });
   }
   if (!evt.ts) evt.ts = new Date().toISOString();
   addEvent(evt);
-  res.json({ ok: true });
+  res.json({ ok: true, id: evt.id });
 });
 
-// UI polls here
-app.get('/events', (req, res) => {
+// Long-polling subscription endpoint
+app.get('/events', async (req, res) => {
   const since = req.query.since;
-  const out = since
-    ? events.filter((e) => (e.ts || '') > String(since))
-    : events;
-  res.json({ ok: true, events: out, lastTs: events.at(-1)?.ts || null });
+  const recipient = req.query.recipient;
+  const sender = req.query.sender;
+  const type = req.query.type;
+  const thread = req.query.thread;
+  const timeout = Math.min(Number(req.query.timeout) || 30, 60) * 1000; // max 60s
+  
+  // Build filter function
+  const filter = (e) => {
+    if (since && (e.ts || '') <= String(since)) return false;
+    if (recipient && e.recipient?.id !== recipient) return false;
+    if (sender && e.sender?.id !== sender) return false;
+    if (type && e.type !== type) return false;
+    if (thread && e.thread?.id !== thread) return false;
+    return true;
+  };
+  
+  // Check for existing events
+  const matching = events.filter(filter);
+  if (matching.length > 0) {
+    return res.json({ 
+      ok: true, 
+      events: matching, 
+      hasMore: events.length >= MAX_EVENTS 
+    });
+  }
+  
+  // No events yet, set up long-polling
+  const subscription = {
+    matches: filter,
+    events: [],
+    addEvent(evt) {
+      this.events.push(evt);
+    },
+    resolve: null,
+  };
+  
+  // Create promise that resolves when events arrive or timeout
+  const waitPromise = new Promise((resolve) => {
+    subscription.resolve = resolve;
+    subscriptions.add(subscription);
+  });
+  
+  // Set timeout
+  const timeoutId = setTimeout(() => {
+    subscription.resolve();
+  }, timeout);
+  
+  // Wait for events or timeout
+  await waitPromise;
+  clearTimeout(timeoutId);
+  subscriptions.delete(subscription);
+  
+  res.json({
+    ok: true,
+    events: subscription.events,
+    hasMore: false
+  });
 });
 
 // Demo seed endpoint
@@ -161,4 +232,7 @@ app.post('/seed', (_req, res) => {
 const port = Number(process.env.PORT || 8789);
 app.listen(port, () => {
   console.log(`Agora relay listening on http://localhost:${port}`);
+  console.log(`  - POST /events  - Submit events`);
+  console.log(`  - GET /events   - Subscribe (long-polling)`);
+  console.log(`  - POST /seed    - Seed demo data`);
 });

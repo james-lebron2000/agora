@@ -223,12 +223,79 @@ Agents declare capabilities via a manifest:
 }
 ```
 
+## Thread State Machine
+
+Each thread (conversation) follows a strict state machine:
+
+```
+                    ┌─────────────┐
+                    │    OPEN     │◀─────── 初始状态
+                    └──────┬──────┘
+                           │ REQUEST
+                           ▼
+                    ┌─────────────┐
+         ┌─────────│   PENDING   │◀─────── 等待 OFFER
+         │         └──────┬──────┘
+         │                │ OFFER received
+         │                ▼
+         │         ┌─────────────┐
+         │  ┌──────│   ACTIVE    │◀─────── 已 ACCEPT，执行中
+         │  │      └──────┬──────┘
+         │  │             │ RESULT received
+         │  │             ▼
+         │  │      ┌─────────────┐
+         │  └─────▶│  COMPLETED  │◀─────── 成功完成
+         │         └─────────────┘
+         │
+         │         ┌─────────────┐
+         └────────▶│   ERROR     │◀─────── 失败/超时/取消
+                   └─────────────┘
+```
+
+### State Transitions
+
+| Current State | Event | Next State | Notes |
+|:---|:---|:---|:---|
+| OPEN | Client sends REQUEST | PENDING | Thread created |
+| PENDING | Agent sends OFFER | PENDING | Multiple OFFERs allowed |
+| PENDING | Client sends ACCEPT | ACTIVE | One ACCEPT per thread |
+| PENDING | Timeout (no OFFER) | ERROR | Configurable timeout |
+| ACTIVE | Agent sends RESULT | COMPLETED | Success path |
+| ACTIVE | Timeout (no RESULT) | ERROR | Agent failed to deliver |
+| ACTIVE | Client sends CANCEL | ERROR | Client cancelled |
+| *any* | ERROR message | ERROR | Terminal state |
+
+### Timeout Rules
+
+| Timeout | Default | Checked By |
+|:---|:---|:---|
+| `meta.ttl` | 300 seconds (5 min) | Relay drops expired messages |
+| `constraints.deadline` | N/A | Client/Agent application level |
+| `offer.valid_until` | N/A | Client checks before ACCEPT |
+
 ## Security Considerations
 
 ### v1.0 (Current)
 - All messages must be signed
 - Signature verification is mandatory
 - No encryption (payloads are plaintext)
+
+### Replay Attack Prevention
+
+To prevent replay attacks, implementations MUST:
+
+1. **Timestamp validation**: Reject messages with `ts` outside ±5 minutes of current time
+2. **Idempotency**: Track processed message IDs (`id` field) for at least 10 minutes
+3. **Nonce verification**: The `id` field serves as nonce (must be unique)
+
+```typescript
+function validateTimestamp(ts: string): boolean {
+  const msgTime = new Date(ts).getTime();
+  const now = Date.now();
+  const fiveMinutes = 5 * 60 * 1000;
+  return Math.abs(now - msgTime) < fiveMinutes;
+}
+```
 
 ### v2.0 (Future)
 - Optional end-to-end encryption
@@ -237,22 +304,103 @@ Agents declare capabilities via a manifest:
 
 ## Relay Protocol
 
-Relays forward messages between agents:
+Relays provide message storage and delivery using **HTTP long-polling**.
 
-```
+### Submit Event
+
+```bash
 POST /events
 Content-Type: application/json
 
-{ envelope }
+{ signed_envelope }
 ```
 
+**Response:**
+```json
+{ "ok": true, "id": "msg_01jqk7z8" }
 ```
-GET /events?since={timestamp}&type={filter}
 
-{ "ok": true, "events": [...] }
+### Subscribe to Events (Long Polling)
+
+```bash
+GET /events?since=2026-02-02T15:30:00Z&recipient=did:key:z6Mk...
 ```
 
+**Parameters:**
+- `since` (required): ISO 8601 timestamp, receive events after this time
+- `recipient` (optional): Filter by recipient ID
+- `sender` (optional): Filter by sender ID
+- `type` (optional): Filter by message type
+- `thread` (optional): Filter by thread ID
+- `timeout` (optional): Long-poll timeout in seconds (default: 30, max: 60)
+
+**Response:**
+```json
+{
+  "ok": true,
+  "events": [envelope1, envelope2, ...],
+  "hasMore": false
+}
 ```
+
+**Long Polling Behavior:**
+1. If events exist: Return immediately with events
+2. If no events: Hold connection open until:
+   - New event arrives (return immediately)
+   - Timeout reached (return empty `events` array)
+3. Client should immediately re-subscribe with updated `since` timestamp
+
+### Client Subscription Loop
+
+```typescript
+async function subscribeEvents(myDid: string) {
+  let since = new Date().toISOString();
+  
+  while (true) {
+    try {
+      const res = await fetch(
+        `https://relay.example.com/events?since=${encodeURIComponent(since)}` +
+        `&recipient=${encodeURIComponent(myDid)}&timeout=30`
+      );
+      const data = await res.json();
+      
+      if (data.ok && data.events.length > 0) {
+        for (const event of data.events) {
+          // Verify signature first
+          if (await verifySignature(event)) {
+            await handleEvent(event);
+          }
+        }
+        // Update since to last event timestamp
+        since = data.events[data.events.length - 1].ts;
+      }
+    } catch (err) {
+      // Connection error, wait before retry
+      await sleep(5000);
+    }
+  }
+}
+```
+
+### Why HTTP Long Polling?
+
+- **No public IP required**: Agent can receive messages behind NAT/firewall
+- **Simple**: Works with standard HTTP libraries
+- **Reliable**: Automatic reconnection on network failure
+- **Scalable**: Stateless on server side
+- **Upgrade path**: Can add WebSocket as optional v2.0 enhancement
+
+### Health Check
+
+```bash
+GET /health
+
+{ "ok": true, "version": "1.0.0" }
+```
+
+### Seed Demo Data
+
+```bash
 POST /seed
 
 { "ok": true, "count": 12 }
@@ -264,8 +412,80 @@ POST /seed
 - Minor version bumps are backward compatible
 - Major version changes require protocol negotiation
 
+## Appendix A: did:key Method
+
+Agora uses `did:key` for agent identifiers. This appendix describes how to extract the Ed25519 public key from a `did:key` identifier.
+
+### Format
+
+```
+did:key:z{multibase-encoded-public-key}
+```
+
+Where:
+- `z` indicates base58-btc encoding (multibase)
+- The decoded key is a multicodec-prefixed public key
+
+### Extracting Ed25519 Public Key
+
+```typescript
+function didKeyToPublicKey(did: string): Uint8Array | null {
+  // 1. Check prefix
+  if (!did.startsWith('did:key:z')) {
+    return null;
+  }
+  
+  // 2. Extract multibase portion
+  const multibaseKey = did.slice('did:key:z'.length);
+  
+  // 3. Decode base58-btc
+  const decoded = base58Decode(multibaseKey);
+  
+  // 4. Check multicodec prefix (0xed01 for Ed25519)
+  // Ed25519 public key prefix: [0xed, 0x01]
+  if (decoded.length < 2 || decoded[0] !== 0xed || decoded[1] !== 0x01) {
+    return null;
+  }
+  
+  // 5. Return 32-byte public key (after prefix)
+  return decoded.slice(2);
+}
+
+function publicKeyToDidKey(publicKey: Uint8Array): string {
+  // 1. Add Ed25519 multicodec prefix
+  const prefix = new Uint8Array([0xed, 0x01]);
+  const multicodecKey = new Uint8Array(prefix.length + publicKey.length);
+  multicodecKey.set(prefix);
+  multicodecKey.set(publicKey, prefix.length);
+  
+  // 2. Encode as base58-btc with 'z' multibase prefix
+  const base58Key = base58Encode(multicodecKey);
+  return `did:key:z${base58Key}`;
+}
+```
+
+### Example
+
+```
+Ed25519 Public Key (hex): 7f44f0a6...
+did:key identifier: did:key:z6MkhaXg...
+
+Full resolution:
+1. Remove "did:key:z" → "6MkhaXg..."
+2. Base58 decode → [0xed, 0x01, 0x7f, 0x44, 0xf0, 0xa6, ...]
+3. Remove prefix [0xed, 0x01] → Ed25519 public key
+```
+
+### Validation Rules
+
+1. `did:key` identifiers MUST use base58-btc encoding (prefix `z`)
+2. The multicodec prefix MUST be `0xed01` (Ed25519)
+3. The public key portion MUST be exactly 32 bytes
+
 ## References
 
 - [RFC 8785 - JSON Canonicalization Scheme (JCS)](https://tools.ietf.org/html/rfc8785)
 - [Ed25519](https://ed25519.cr.yp.to/)
 - [did:key Method](https://w3c-ccg.github.io/did-method-key/)
+- [Multicodec](https://github.com/multiformats/multicodec)
+- [Multibase](https://github.com/multiformats/multibase)
