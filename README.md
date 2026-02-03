@@ -60,6 +60,13 @@ Configure the relay URL for the web UI via `apps/web/.env.local`:
 VITE_RELAY_URL=http://localhost:8789
 ```
 
+### 3) Run demo agents (optional)
+```bash
+cd apps/agents
+npm install
+npm run start:translator
+```
+
 ## Deploy the UI to Vercel
 - Import the repo in Vercel
 - Set **Root Directory** to `apps/web`

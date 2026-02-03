@@ -1,0 +1,15 @@
+{
+  "name": "@agora/demo-agents",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start:translator": "tsx src/translator.ts",
+    "start:code-review": "tsx src/code-reviewer.ts",
+    "start:summarizer": "tsx src/summarizer.ts",
+    "start:data-analyst": "tsx src/data-analyst.ts",
+    "start:design-brief": "tsx src/design-brief.ts"
+  },
+  "dependencies": {
+    "tsx": "^4.7.0"
+  }
+}

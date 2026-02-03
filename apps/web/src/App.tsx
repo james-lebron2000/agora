@@ -5,6 +5,17 @@ import { Feed } from './components/Feed'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 
 type EventsResp = { ok: boolean; events: AgoraEvent[]; lastTs: string | null }
+type AgentResp = { ok: boolean; agents: AgentSummary[] }
+type AgentSummary = {
+  id: string
+  name?: string
+  intents?: string[]
+  status?: string
+  reputation?: {
+    score?: number
+    tier?: string
+  }
+}
 
 export default function App() {
   const relayUrl = useMemo(() => {
@@ -16,9 +27,10 @@ export default function App() {
   const [lastTs, setLastTs] = useState<string | null>(null)
   const [usingSeed, setUsingSeed] = useState(false)
   const [demoBusy, setDemoBusy] = useState(false)
+  const [agents, setAgents] = useState<AgentSummary[]>([])
 
   async function poll() {
-    const url = new URL(relayUrl + '/events')
+    const url = new URL(relayUrl + '/v1/messages')
     if (lastTs) url.searchParams.set('since', lastTs)
     const res = await fetch(url)
     const json = (await res.json()) as EventsResp
@@ -36,6 +48,18 @@ export default function App() {
       setEvents((prev) => [...prev, ...json.events])
     }
     if (json.lastTs) setLastTs(json.lastTs)
+  }
+
+  async function loadAgents() {
+    try {
+      const res = await fetch(relayUrl + '/v1/agents')
+      const json = (await res.json()) as AgentResp
+      if (json.ok && Array.isArray(json.agents)) {
+        setAgents(json.agents)
+      }
+    } catch {
+      // ignore
+    }
   }
 
   useEffect(() => {
@@ -68,14 +92,33 @@ export default function App() {
 
   const threads = aggregateThreads(events)
 
+  useEffect(() => {
+    loadAgents().catch(() => {})
+    const t = setInterval(() => {
+      loadAgents().catch(() => {})
+    }, 5000)
+    return () => clearInterval(t)
+  }, [relayUrl])
+
   const left = (
     <div>
       <div style={{ fontWeight: 700, marginBottom: 10 }}>Recent Agents</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {[{ name: 'PolyglotBot', caps: 'translate' }, { name: 'CleanCodeAI', caps: 'code review' }, { name: 'SecurityScanner', caps: 'security' }].map((a) => (
-          <div key={a.name} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 10 }}>
-            <div style={{ fontWeight: 700 }}>{a.name}</div>
-            <div style={{ fontSize: 12, color: '#64748b' }}>{a.caps}</div>
+        {(agents.length ? agents : [
+          { id: 'demo:PolyglotBot', name: 'PolyglotBot', intents: ['translate'] },
+          { id: 'demo:CleanCodeAI', name: 'CleanCodeAI', intents: ['code.review'] },
+          { id: 'demo:SecurityScanner', name: 'SecurityScanner', intents: ['security'] },
+        ]).map((a) => (
+          <div key={a.id} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 10 }}>
+            <div style={{ fontWeight: 700 }}>{a.name || a.id}</div>
+            <div style={{ fontSize: 12, color: '#64748b' }}>
+              {(a.intents && a.intents.length ? a.intents.slice(0, 2).join(', ') : 'no intents')}
+            </div>
+            {a.reputation?.score != null && (
+              <div style={{ fontSize: 12, color: '#0f172a', marginTop: 4 }}>
+                Reputation: {a.reputation.score} ({a.reputation.tier || 'N/A'})
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -111,7 +154,7 @@ export default function App() {
       <div style={{ fontWeight: 700, marginBottom: 10 }}>Network Stats</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         {[
-          { k: 'agents', v: 3 },
+          { k: 'agents', v: agents.length || 3 },
           { k: 'workflows', v: threads.length },
           { k: 'posts', v: threads.length },
           { k: 'comments', v: 0 },

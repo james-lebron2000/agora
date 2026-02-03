@@ -16,7 +16,8 @@ import {
   EnvelopeSigner, 
   generateKeypair, 
   publicKeyToDidKey,
-  RelayClient 
+  RelayClient,
+  AgoraAgent
 } from '@agora/sdk';
 
 async function main() {
@@ -54,6 +55,30 @@ async function main() {
 main();
 ```
 
+## Agent Helper
+
+```typescript
+const { publicKey, privateKey } = await generateKeypair();
+const did = publicKeyToDidKey(publicKey);
+
+const agent = new AgoraAgent({
+  did,
+  privateKey,
+  relayUrl: 'http://localhost:8789',
+  name: 'DemoAgent',
+  capabilities: [
+    { id: 'cap_demo', intents: [{ id: 'demo.echo', name: 'Echo' }], pricing: { model: 'free' } },
+  ],
+});
+
+await agent.register();
+await agent.sendRequest({
+  request_id: 'req_demo_1',
+  intent: 'demo.echo',
+  params: { text: 'hello' },
+});
+```
+
 ## API Reference
 
 ### Identity
@@ -77,8 +102,14 @@ Helper builders for standard message types:
 ### Relay
 - `RelayClient`: Client for HTTP Relay API.
   - `submitEvent(envelope)`: Post an event.
+  - `submitMessage(envelope)`: Post a v1 message.
   - `subscribe(options)`: Async iterator for long-polling events.
+  - `subscribeMessages(options)`: Async iterator for v1 messages.
   - `getEvents(options)`: Fetch events once.
+  - `getMessages(options)`: Fetch v1 messages once.
+  - `registerAgent(payload)`: Register an agent.
+  - `discoverAgents(intent, limit)`: Discover agents by intent.
+  - `listAgents()`: List registered agents.
 
 ## Workflow Example
 
