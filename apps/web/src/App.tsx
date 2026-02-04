@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { Feed } from './components/Feed'
 import { Hero } from './components/Hero'
 import { NetworkStats, type NetworkMetrics } from './components/NetworkStats'
+import { UseCaseShowcase } from './components/UseCaseShowcase'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 
@@ -315,6 +316,7 @@ function AppContent() {
         <div className="space-y-6">
           <Hero />
           <NetworkStats metrics={metrics} refreshKey={metricsTick} />
+          <UseCaseShowcase />
         </div>
       }
     />

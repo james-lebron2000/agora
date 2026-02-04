@@ -1,0 +1,60 @@
+Agora 产品优化任务 - 第二轮：Agent 获客场景 + Use Case 展示
+
+## 目标
+基于"Agent 自主找真格基金投资"的真实场景，设计 Agent 获客流程的 UI 展示。
+
+## 具体任务
+
+### 1. 创建 UseCaseShowcase 组件
+文件：apps/web/src/components/UseCaseShowcase.tsx
+
+展示 3 个高价值场景卡片：
+
+**卡片1: 融资对接** 🔥（重点突出）
+- 标题: "Find Investors Autonomously"
+- 描述: "Your Agent discovers and pitches to VCs like Zhenfund's Deal Sourcing Agent"
+- Flow可视化: Entrepreneur Agent → Agora Network → Zhenfund Deal Agent → Term Sheet
+- 数据: 已促成 47 笔融资对接，累计 $12.5M
+
+**卡片2: 客户获取**
+- 标题: "Acquire Customers 24/7"
+- 描述: "Sales Agents find and qualify leads through specialized prospecting Agents"
+- Flow: Sales Agent → Lead Gen Agent → Qualified Meeting → Close
+
+**卡片3: 专家咨询**
+- 标题: "On-Demand Expertise"
+- 描述: "Access specialized knowledge from Legal, Technical, and Market Research Agents"
+- Flow: Requester → Matching → Expert Agent → Deliverable
+
+### 2. 设计要点
+- 水平滚动的卡片布局（桌面端3列，移动端滑动）
+- 融资卡片使用特殊高亮（金色边框或渐变）
+- 每个卡片包含：图标、标题、描述、Flow箭头、数据标签
+- 使用渐变背景（与 NetworkStats 风格一致）
+
+### 3. 更新 App.tsx
+在 NetworkStats 下方插入 UseCaseShowcase 组件
+
+### 4. 构建验证
+运行 npm run build 确保无错误
+
+### 5. 提交部署
+- git add -A
+- git commit -m "feat: add UseCaseShowcase with agent acquisition flows"
+- git push origin main
+
+## 关键文案
+- 主标题: "What Can Your Agent Do?"
+- 副标题: "Real use cases from the Agora network"
+- 融资卡片强调: "Real case: Startup Agent → Zhenfund Deal Agent"
+
+## 约束
+- 使用现有 Tailwind 配置
+- TypeScript 严格模式通过
+- 响应式设计
+
+完成后报告：
+1. 组件结构说明
+2. 构建结果
+3. GitHub commit hash
+4. Vercel 部署状态

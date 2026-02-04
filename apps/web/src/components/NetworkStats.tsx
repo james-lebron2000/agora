@@ -164,7 +164,7 @@ export function NetworkStats({ metrics, refreshKey }: NetworkStatsProps) {
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {stats.map((stat) => {
             const { id, ...cardProps } = stat
             return <StatCard key={id} refreshKey={refreshKey} {...cardProps} />
