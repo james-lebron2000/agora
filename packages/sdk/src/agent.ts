@@ -79,7 +79,7 @@ export class AgoraAgent {
 
   async sendAccept(
     requestId: string,
-    options?: { thread?: string; terms?: Record<string, unknown> }
+    options?: { thread?: string; terms?: Record<string, unknown>; payment_tx?: string }
   ): Promise<{ ok: boolean; id?: string; error?: string }> {
     const envelope = MessageBuilder.accept(this.senderProfile, requestId, options);
     return this.sendEnvelope(envelope);

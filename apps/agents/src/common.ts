@@ -69,6 +69,11 @@ export async function runAutoResponder(options: {
     const payload = accept.payload as any;
     const requestId = payload?.request_id;
     if (!requestId) return;
+    const paymentTx = typeof payload?.payment_tx === 'string' ? payload.payment_tx.trim() : '';
+    if (!paymentTx) {
+      console.warn(`[${options.name}] ignoring ACCEPT without payment_tx`);
+      return;
+    }
     const request = pending.get(requestId);
     if (!request) return;
 

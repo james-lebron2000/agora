@@ -1,0 +1,285 @@
+import { useState } from 'react'
+import { useWallet, truncateAddress } from '../hooks/useWallet'
+
+interface PaymentModalProps {
+  isOpen: boolean
+  onClose: () => void
+  onConfirm: (txHash: string) => void
+  offer: {
+    offerId: string
+    provider: string
+    priceUsd?: number
+  } | null
+  thread: {
+    requestId: string
+    intent?: string
+  } | null
+}
+
+type PaymentStep = 'confirm' | 'switch-chain' | 'processing' | 'success' | 'error'
+
+export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: PaymentModalProps) {
+  const { address, isConnected, isBaseChain, switchToBaseChain, sendUSDCTransfer, balance, connect } = useWallet()
+  const [step, setStep] = useState<PaymentStep>('confirm')
+  const [error, setError] = useState<string | null>(null)
+  const [txHash, setTxHash] = useState<string | null>(null)
+
+  if (!isOpen || !offer || !thread) return null
+
+  const price = offer.priceUsd ?? 0
+  const hasEnoughBalance = balance && parseFloat(balance) >= price
+
+  const handlePay = async () => {
+    if (!isConnected) {
+      await connect()
+      return
+    }
+
+    if (!isBaseChain) {
+      setStep('switch-chain')
+      return
+    }
+
+    setStep('processing')
+    setError(null)
+
+    try {
+      // Simulate payment to the provider (in real app, this would be an escrow contract)
+      // For demo purposes, we'll use a dummy escrow address
+      const escrowAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb'
+
+      const { txHash } = await sendUSDCTransfer(escrowAddress, price.toString())
+
+      setTxHash(txHash)
+      setStep('success')
+    } catch (err: any) {
+      setError(err.message || 'Payment failed')
+      setStep('error')
+    }
+  }
+
+  const handleSwitchChain = async () => {
+    const success = await switchToBaseChain()
+    if (success) {
+      setStep('confirm')
+    }
+  }
+
+  const handleSuccessClose = () => {
+    if (txHash) {
+      onConfirm(txHash)
+    }
+    setStep('confirm')
+    setTxHash(null)
+    setError(null)
+    onClose()
+  }
+
+  const handleRetry = () => {
+    setStep('confirm')
+    setError(null)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-agora-950/60 backdrop-blur-sm" onClick={step !== 'processing' ? onClose : undefined} />
+
+      {/* Modal */}
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-base-blue to-blue-600 px-6 py-4">
+          <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Pay with USDC
+          </h3>
+          <p className="text-blue-100 text-sm mt-1">Base Network</p>
+        </div>
+
+        {/* Content */}
+        <div className="p-6">
+          {step === 'confirm' && (
+            <>
+              {/* Transaction Summary */}
+              <div className="bg-agora-50 rounded-xl p-4 mb-6">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-agora-500 text-sm">Service</span>
+                  <span className="text-agora-900 font-medium">{thread.intent || 'Unknown'}</span>
+                </div>
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-agora-500 text-sm">Provider</span>
+                  <span className="text-agora-900 font-medium font-mono text-xs">{truncateAddress(offer.provider, 6)}</span>
+                </div>
+                <div className="border-t border-agora-200 my-3" />
+                <div className="flex justify-between items-center">
+                  <span className="text-agora-600 font-medium">Total</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl font-bold text-usdc">${price.toFixed(4)}</span>
+                    <span className="bg-usdc-light text-usdc text-xs font-semibold px-2 py-1 rounded-full">USDC</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Wallet Info */}
+              {isConnected ? (
+                <div className="mb-6 p-3 bg-base-light rounded-lg">
+                  <div className="flex justify-between items-center">
+                    <span className="text-agora-600 text-sm">Connected</span>
+                    <span className="text-agora-900 font-mono text-sm">{truncateAddress(address!, 4)}</span>
+                  </div>
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-agora-600 text-sm">Balance</span>
+                    <span className={`font-medium ${hasEnoughBalance ? 'text-success' : 'text-red-500'}`}>
+                      {balance ? `$${balance}` : 'Loading...'}
+                    </span>
+                  </div>
+                  {!isBaseChain && (
+                    <div className="mt-2 text-xs text-warning bg-warning-light px-2 py-1 rounded">
+                      Switch to Base network to continue
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="mb-6 p-4 bg-agora-100 rounded-lg text-center">
+                  <p className="text-agora-600 text-sm mb-3">Connect your wallet to pay</p>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={onClose}
+                  className="flex-1 px-4 py-3 rounded-xl border border-agora-200 text-agora-700 font-medium hover:bg-agora-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePay}
+                  disabled={isConnected && !isBaseChain}
+                  className="flex-1 px-4 py-3 rounded-xl bg-base-blue text-white font-semibold hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/25"
+                >
+                  {isConnected ? 'Pay USDC' : 'Connect Wallet'}
+                </button>
+              </div>
+
+              {isConnected && !isBaseChain && (
+                <p className="text-center text-xs text-agora-500 mt-3">
+                  Please switch to Base network to continue
+                </p>
+              )}
+            </>
+          )}
+
+          {step === 'switch-chain' && (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-base-light rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-base-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+              </div>
+              <h4 className="text-lg font-semibold text-agora-900 mb-2">Switch Network</h4>
+              <p className="text-agora-500 mb-6">Please switch to Base network to complete this payment.</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={onClose}
+                  className="flex-1 px-4 py-3 rounded-xl border border-agora-200 text-agora-700 font-medium hover:bg-agora-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSwitchChain}
+                  className="flex-1 px-4 py-3 rounded-xl bg-base-blue text-white font-semibold hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/25"
+                >
+                  Switch to Base
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 'processing' && (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-base-light rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                <svg className="w-8 h-8 text-base-blue animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              </div>
+              <h4 className="text-lg font-semibold text-agora-900 mb-2">Processing Payment</h4>
+              <p className="text-agora-500">Please confirm the transaction in your wallet...</p>
+            </div>
+          )}
+
+          {step === 'success' && (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-success-light rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h4 className="text-lg font-semibold text-agora-900 mb-2">Payment Successful!</h4>
+              <p className="text-agora-500 mb-4">Your transaction has been confirmed.</p>
+
+              {txHash && (
+                <div className="bg-agora-50 rounded-lg p-3 mb-6">
+                  <div className="text-xs text-agora-500 mb-1">Transaction Hash</div>
+                  <a
+                    href={`https://basescan.org/tx/${txHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-mono text-base-blue hover:underline break-all"
+                  >
+                    {txHash}
+                  </a>
+                </div>
+              )}
+
+              <button
+                onClick={handleSuccessClose}
+                className="w-full px-4 py-3 rounded-xl bg-success text-white font-semibold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/25"
+              >
+                Confirm Offer Acceptance
+              </button>
+            </div>
+          )}
+
+          {step === 'error' && (
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+              <h4 className="text-lg font-semibold text-agora-900 mb-2">Payment Failed</h4>
+              <p className="text-agora-500 mb-4">{error || 'Something went wrong'}</p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={onClose}
+                  className="flex-1 px-4 py-3 rounded-xl border border-agora-200 text-agora-700 font-medium hover:bg-agora-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRetry}
+                  className="flex-1 px-4 py-3 rounded-xl bg-base-blue text-white font-semibold hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/25"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="bg-agora-50 px-6 py-3 flex items-center justify-center gap-2 text-xs text-agora-500">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+          Secured by Base Network
+        </div>
+      </div>
+    </div>
+  )
+}

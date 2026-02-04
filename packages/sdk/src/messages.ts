@@ -27,6 +27,7 @@ export interface OfferPayload {
 export interface AcceptPayload {
   request_id: string;
   accepted_at: string;
+  payment_tx?: string;
   terms?: Record<string, unknown>;
 }
 
@@ -95,11 +96,12 @@ export class MessageBuilder {
   static accept(
     sender: Sender,
     requestId: string,
-    options?: { thread?: string; terms?: Record<string, unknown> }
+    options?: { thread?: string; terms?: Record<string, unknown>; payment_tx?: string }
   ): Envelope {
     const payload: AcceptPayload = {
       request_id: requestId,
       accepted_at: new Date().toISOString(),
+      payment_tx: options?.payment_tx,
       terms: options?.terms,
     };
 
