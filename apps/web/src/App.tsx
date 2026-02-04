@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Layout } from './components/Layout'
 import { Feed } from './components/Feed'
 import { Hero } from './components/Hero'
+import { NetworkStats, type NetworkMetrics } from './components/NetworkStats'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 
@@ -18,6 +19,14 @@ type AgentSummary = {
   }
 }
 
+const MOCK_METRICS: NetworkMetrics = {
+  totalAgents: 156,
+  totalTransactions: 2847,
+  totalVolume: 456320.5,
+  activeRequests: 23,
+  volume24h: 12450,
+}
+
 function AppContent() {
   const relayUrl = useMemo(() => {
     const env = (import.meta as any).env
@@ -30,6 +39,8 @@ function AppContent() {
   const [demoBusy, setDemoBusy] = useState(false)
   const [agents, setAgents] = useState<AgentSummary[]>([])
   const [recommendations, setRecommendations] = useState<AgentSummary[]>([])
+  const [metrics, setMetrics] = useState<NetworkMetrics>(MOCK_METRICS)
+  const [metricsTick, setMetricsTick] = useState(0)
 
   async function poll() {
     const url = new URL(relayUrl + '/v1/messages')
@@ -125,6 +136,14 @@ function AppContent() {
     }, 8000)
     return () => clearInterval(t)
   }, [relayUrl, topIntent])
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setMetrics({ ...MOCK_METRICS })
+      setMetricsTick((prev) => prev + 1)
+    }, 5000)
+    return () => clearInterval(t)
+  }, [])
 
   const left = (
     <div>
@@ -287,7 +306,19 @@ function AppContent() {
     </div>
   )
 
-  return <Layout left={left} center={center} right={right} hero={<Hero />} />
+  return (
+    <Layout
+      left={left}
+      center={center}
+      right={right}
+      hero={
+        <div className="space-y-6">
+          <Hero />
+          <NetworkStats metrics={metrics} refreshKey={metricsTick} />
+        </div>
+      }
+    />
+  )
 }
 
 export default function App() {
