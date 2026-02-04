@@ -1,4 +1,31 @@
-import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, type ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  WagmiProvider,
+  createConfig,
+  http,
+  useAccount,
+  useBalance,
+  useChainId,
+  useDisconnect,
+  useSwitchChain,
+  useWriteContract,
+} from 'wagmi'
+import { base } from 'wagmi/chains'
+import {
+  RainbowKitProvider,
+  connectorsForWallets,
+  useConnectModal,
+  lightTheme,
+} from '@rainbow-me/rainbowkit'
+import {
+  coinbaseWallet,
+  metaMaskWallet,
+  rainbowWallet,
+  trustWallet,
+  walletConnectWallet,
+} from '@rainbow-me/rainbowkit/wallets'
+import { parseUnits, type Address } from 'viem'
 
 // USDC Contract ABI (minimal for transfer and balanceOf)
 export const USDC_ABI = [
@@ -57,13 +84,13 @@ export const USDC_ABI = [
 export const USDC_CONTRACT_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
 
 // Base chain ID
-export const BASE_CHAIN_ID = '0x2105' // 8453 in hex
+export const BASE_CHAIN_ID = base.id
 
 interface WalletState {
   address: string | null
   isConnected: boolean
   isConnecting: boolean
-  chainId: string | null
+  chainId: number | null
   error: string | null
   balance: string | null
 }
@@ -78,236 +105,136 @@ interface WalletContextType extends WalletState {
 
 const WalletContext = createContext<WalletContextType | null>(null)
 
-export function WalletProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<WalletState>({
-    address: null,
-    isConnected: false,
-    isConnecting: false,
-    chainId: null,
-    error: null,
-    balance: null,
+const walletConnectProjectId =
+  (import.meta as any).env?.VITE_WALLETCONNECT_PROJECT_ID || '00000000000000000000000000000000'
+
+const chains = [base] as const
+
+const connectors = connectorsForWallets(
+  [
+    {
+      groupName: 'Wallets',
+      wallets: [
+        metaMaskWallet,
+        walletConnectWallet,
+        coinbaseWallet,
+        trustWallet,
+        rainbowWallet,
+      ],
+    },
+  ],
+  {
+    projectId: walletConnectProjectId,
+    appName: 'Agora',
+  },
+)
+
+const wagmiConfig = createConfig({
+  chains,
+  connectors,
+  transports: {
+    [base.id]: http('https://mainnet.base.org'),
+  },
+  ssr: false,
+})
+
+const queryClient = new QueryClient()
+
+function WalletStateProvider({ children }: { children: ReactNode }) {
+  const { address, isConnected, isConnecting } = useAccount()
+  const chainId = useChainId()
+  const { openConnectModal } = useConnectModal()
+  const { disconnectAsync } = useDisconnect()
+  const { switchChainAsync } = useSwitchChain()
+  const { data: balanceData } = useBalance({
+    address: address as Address | undefined,
+    token: USDC_CONTRACT_BASE as Address,
+    chainId: base.id,
+    query: {
+      enabled: Boolean(address),
+    },
   })
+  const { writeContractAsync } = useWriteContract()
 
-  // Check if already connected on mount
-  useEffect(() => {
-    const checkConnection = async () => {
-      if (typeof window === 'undefined' || !(window as any).ethereum) return
+  const balance = useMemo(() => {
+    if (!balanceData) return null
+    const formatted = Number(balanceData.formatted)
+    if (Number.isNaN(formatted)) return null
+    return formatted.toFixed(2)
+  }, [balanceData])
 
-      try {
-        const ethereum = (window as any).ethereum
-        const accounts = await ethereum.request({ method: 'eth_accounts' })
-        const chainId = await ethereum.request({ method: 'eth_chainId' })
-
-        if (accounts.length > 0) {
-          setState(prev => ({
-            ...prev,
-            address: accounts[0],
-            isConnected: true,
-            chainId,
-          }))
-          fetchBalance(accounts[0])
-        }
-      } catch (err) {
-        console.error('Failed to check wallet connection:', err)
-      }
-    }
-
-    checkConnection()
-  }, [])
-
-  // Listen for account and chain changes
-  useEffect(() => {
-    if (typeof window === 'undefined' || !(window as any).ethereum) return
-
-    const ethereum = (window as any).ethereum
-
-    const handleAccountsChanged = (accounts: string[]) => {
-      if (accounts.length === 0) {
-        setState(prev => ({
-          ...prev,
-          address: null,
-          isConnected: false,
-          balance: null,
-        }))
-      } else {
-        setState(prev => ({
-          ...prev,
-          address: accounts[0],
-          isConnected: true,
-        }))
-        fetchBalance(accounts[0])
-      }
-    }
-
-    const handleChainChanged = (chainId: string) => {
-      setState(prev => ({ ...prev, chainId }))
-      if (state.address) {
-        fetchBalance(state.address)
-      }
-    }
-
-    ethereum.on('accountsChanged', handleAccountsChanged)
-    ethereum.on('chainChanged', handleChainChanged)
-
-    return () => {
-      ethereum.removeListener('accountsChanged', handleAccountsChanged)
-      ethereum.removeListener('chainChanged', handleChainChanged)
-    }
-  }, [state.address])
-
-  const fetchBalance = async (address: string) => {
-    if (typeof window === 'undefined' || !(window as any).ethereum) return
-
-    try {
-      const ethereum = (window as any).ethereum
-
-      // Get USDC balance using eth_call
-      const data = `0x70a08231${address.slice(2).padStart(64, '0')}`
-      const result = await ethereum.request({
-        method: 'eth_call',
-        params: [{
-          to: USDC_CONTRACT_BASE,
-          data,
-        }, 'latest'],
-      })
-
-      // USDC has 6 decimals
-      const balanceRaw = BigInt(result)
-      const balanceFormatted = Number(balanceRaw) / 1e6
-      setState(prev => ({ ...prev, balance: balanceFormatted.toFixed(2) }))
-    } catch (err) {
-      console.error('Failed to fetch balance:', err)
-      setState(prev => ({ ...prev, balance: null }))
+  const connect = async () => {
+    if (openConnectModal) {
+      openConnectModal()
+      return
     }
   }
 
-  const connect = useCallback(async () => {
-    if (typeof window === 'undefined' || !(window as any).ethereum) {
-      setState(prev => ({ ...prev, error: 'No wallet detected. Please install MetaMask or another Web3 wallet.' }))
-      return
-    }
+  const disconnect = () => {
+    disconnectAsync().catch(() => {})
+  }
 
-    setState(prev => ({ ...prev, isConnecting: true, error: null }))
-
+  const switchToBaseChain = async (): Promise<boolean> => {
     try {
-      const ethereum = (window as any).ethereum
-      const accounts = await ethereum.request({ method: 'eth_requestAccounts' })
-      const chainId = await ethereum.request({ method: 'eth_chainId' })
-
-      if (accounts.length > 0) {
-        setState(prev => ({
-          ...prev,
-          address: accounts[0],
-          isConnected: true,
-          chainId,
-          isConnecting: false,
-        }))
-        fetchBalance(accounts[0])
-      }
-    } catch (err: any) {
-      setState(prev => ({
-        ...prev,
-        error: err.message || 'Failed to connect wallet',
-        isConnecting: false,
-      }))
-    }
-  }, [])
-
-  const disconnect = useCallback(() => {
-    setState({
-      address: null,
-      isConnected: false,
-      isConnecting: false,
-      chainId: null,
-      error: null,
-      balance: null,
-    })
-  }, [])
-
-  const switchToBaseChain = useCallback(async (): Promise<boolean> => {
-    if (typeof window === 'undefined' || !(window as any).ethereum) return false
-
-    try {
-      const ethereum = (window as any).ethereum
-
-      try {
-        await ethereum.request({
-          method: 'wallet_switchEthereumChain',
-          params: [{ chainId: BASE_CHAIN_ID }],
-        })
-        return true
-      } catch (switchError: any) {
-        // Chain not added to wallet
-        if (switchError.code === 4902) {
-          await ethereum.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: BASE_CHAIN_ID,
-              chainName: 'Base',
-              nativeCurrency: {
-                name: 'Ethereum',
-                symbol: 'ETH',
-                decimals: 18,
-              },
-              rpcUrls: ['https://mainnet.base.org'],
-              blockExplorerUrls: ['https://basescan.org'],
-            }],
-          })
-          return true
-        }
-        throw switchError
-      }
+      await switchChainAsync({ chainId: base.id })
+      return true
     } catch (err) {
       console.error('Failed to switch to Base chain:', err)
       return false
     }
-  }, [])
+  }
 
-  const sendUSDCTransfer = useCallback(async (to: string, amount: string): Promise<{ txHash: string }> => {
-    if (typeof window === 'undefined' || !(window as any).ethereum) {
-      throw new Error('No wallet detected')
-    }
-
-    if (!state.address) {
+  const sendUSDCTransfer = async (to: string, amount: string): Promise<{ txHash: string }> => {
+    if (!address) {
       throw new Error('Wallet not connected')
     }
 
-    const ethereum = (window as any).ethereum
-
-    // Convert amount to USDC units (6 decimals)
-    const amountUnits = BigInt(Math.floor(parseFloat(amount) * 1e6))
-
-    // Encode transfer function call
-    // transfer(address,uint256) = 0xa9059cbb
-    const toPadded = to.slice(2).toLowerCase().padStart(64, '0')
-    const amountHex = amountUnits.toString(16).padStart(64, '0')
-    const data = `0xa9059cbb${toPadded}${amountHex}`
-
-    const txHash = await ethereum.request({
-      method: 'eth_sendTransaction',
-      params: [{
-        from: state.address,
-        to: USDC_CONTRACT_BASE,
-        data,
-      }],
+    const amountUnits = parseUnits(amount, 6)
+    const txHash = await writeContractAsync({
+      address: USDC_CONTRACT_BASE as Address,
+      abi: USDC_ABI,
+      functionName: 'transfer',
+      args: [to as Address, amountUnits],
     })
 
     return { txHash }
-  }, [state.address])
+  }
 
-  const isBaseChain = state.chainId === BASE_CHAIN_ID
+  const contextValue: WalletContextType = {
+    address: address ?? null,
+    isConnected,
+    isConnecting,
+    chainId: isConnected ? chainId : null,
+    error: null,
+    balance,
+    connect,
+    disconnect,
+    switchToBaseChain,
+    sendUSDCTransfer,
+    isBaseChain: isConnected && chainId === base.id,
+  }
 
+  return <WalletContext.Provider value={contextValue}>{children}</WalletContext.Provider>
+}
+
+export function WalletProvider({ children }: { children: ReactNode }) {
   return (
-    <WalletContext.Provider value={{
-      ...state,
-      connect,
-      disconnect,
-      switchToBaseChain,
-      sendUSDCTransfer,
-      isBaseChain,
-    }}>
-      {children}
-    </WalletContext.Provider>
+    <WagmiProvider config={wagmiConfig}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider
+          initialChain={base}
+          appInfo={{ appName: 'Agora' }}
+          theme={lightTheme({
+            accentColor: '#0052FF',
+            accentColorForeground: '#ffffff',
+            borderRadius: 'medium',
+            fontStack: 'system',
+          })}
+        >
+          <WalletStateProvider>{children}</WalletStateProvider>
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
   )
 }
 

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useWallet, truncateAddress } from '../hooks/useWallet'
 
 export function WalletButton() {
-  const { address, isConnected, isConnecting, connect, disconnect, isBaseChain, balance } = useWallet()
+  const { address, isConnected, isConnecting, connect, disconnect, isBaseChain, balance, switchToBaseChain } = useWallet()
   const [showDropdown, setShowDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -20,7 +20,7 @@ export function WalletButton() {
   if (!isConnected) {
     return (
       <button
-        onClick={connect}
+        onClick={() => connect()}
         disabled={isConnecting}
         className="flex items-center gap-2 px-4 py-2.5 bg-base-blue text-white rounded-xl font-semibold hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 animate-fade-in"
       >
@@ -60,7 +60,7 @@ export function WalletButton() {
         {/* Balance */}
         {balance && (
           <span className="text-agora-500 font-medium text-sm">
-            ${parseFloat(balance).toFixed(2)}
+            ${balance}
           </span>
         )}
 
@@ -114,6 +114,21 @@ export function WalletButton() {
 
           {/* Actions */}
           <div className="p-2">
+            {!isBaseChain && (
+              <button
+                onClick={() => {
+                  switchToBaseChain().catch(() => {})
+                  setShowDropdown(false)
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-base-blue hover:bg-base-light transition-colors text-sm"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+                Switch to Base
+              </button>
+            )}
+
             <a
               href={`https://basescan.org/address/${address}`}
               target="_blank"

@@ -1,7 +1,17 @@
 import type { ReactNode } from 'react'
 import { WalletButton } from './WalletButton'
 
-export function Layout({ left, center, right }: { left: ReactNode; center: ReactNode; right: ReactNode }) {
+export function Layout({
+  left,
+  center,
+  right,
+  hero,
+}: {
+  left: ReactNode
+  center: ReactNode
+  right: ReactNode
+  hero?: ReactNode
+}) {
   return (
     <div className="min-h-screen bg-agora-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -30,6 +40,8 @@ export function Layout({ left, center, right }: { left: ReactNode; center: React
             <WalletButton />
           </div>
         </header>
+
+        {hero && <div className="mb-6">{hero}</div>}
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

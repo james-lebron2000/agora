@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Layout } from './components/Layout'
 import { Feed } from './components/Feed'
+import { Hero } from './components/Hero'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 
@@ -286,7 +287,7 @@ function AppContent() {
     </div>
   )
 
-  return <Layout left={left} center={center} right={right} />
+  return <Layout left={left} center={center} right={right} hero={<Hero />} />
 }
 
 export default function App() {
