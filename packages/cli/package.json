@@ -1,0 +1,15 @@
+{
+  "name": "@agora/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agora": "bin/agora.mjs"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^3.0.0",
+    "bs58": "^6.0.0",
+    "canonicalize": "^2.0.0",
+    "commander": "^11.1.0"
+  }
+}

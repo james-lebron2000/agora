@@ -1,7 +1,7 @@
 import { AgoraAgent, generateKeypair, publicKeyToDidKey } from '../../../packages/sdk/src/index.ts';
 import type { SignedEnvelope } from '../../../packages/sdk/src/envelope.ts';
 
-export const relayUrl = process.env.AGORA_RELAY_URL || 'http://localhost:8789';
+export const relayUrl = process.env.AGORA_RELAY_URL || 'http://45.32.219.241:8789';
 
 export type OfferBuilder = (request: SignedEnvelope) => Promise<{ plan?: string; price?: { amount: number; currency: string }; eta_seconds?: number }>;
 export type ResultBuilder = (request: SignedEnvelope, accept: SignedEnvelope) => Promise<{ status: 'success' | 'partial' | 'failed' | 'cancelled'; output?: Record<string, unknown>; artifacts?: Array<{ type: string; url: string; name?: string }>; metrics?: { latency_ms?: number; cost_actual?: number } }>;

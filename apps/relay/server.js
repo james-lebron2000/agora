@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { createStorage } from './storage.js';
 
 const app = express();
 app.use(cors());
@@ -12,13 +13,10 @@ const events = [];
 // In-memory agent registry for discovery (MVP).
 const AGENT_TTL_MS = Number(process.env.AGENT_TTL_MS || 5 * 60 * 1000);
 const agents = new Map();
-const reputations = new Map();
 const requestIndex = new Map();
 const requesterHistory = new Map();
 
-// Escrow + ledger (MVP in-memory)
-const escrows = new Map();
-const ledger = new Map();
+const storage = await createStorage({ databaseUrl: process.env.DATABASE_URL });
 
 // Active subscriptions for long-polling
 const subscriptions = new Set();
@@ -26,8 +24,7 @@ const subscriptions = new Set();
 function addEvent(evt) {
   events.push(evt);
   while (events.length > MAX_EVENTS) events.shift();
-
-  trackEvent(evt);
+  void trackEvent(evt);
   
   // Notify all waiting subscriptions
   notifySubscribers(evt);
@@ -86,10 +83,10 @@ function computeAgentStatus(agent) {
   return { status: isOnline ? 'online' : 'offline', last_seen: agent.last_seen || null };
 }
 
-function decorateAgent(agent) {
+async function decorateAgent(agent) {
   if (!agent) return null;
   const status = computeAgentStatus(agent);
-  const reputation = reputations.get(agent.id);
+  const reputation = await getOrCreateReputation(agent.id);
   return {
     ...agent,
     ...status,
@@ -97,40 +94,47 @@ function decorateAgent(agent) {
   };
 }
 
-function ensureLedgerAccount(id) {
-  if (!id) return null;
-  if (!ledger.has(id)) {
-    ledger.set(id, { id, balance: 0, currency: 'USDC', updated_at: new Date().toISOString() });
-  }
-  return ledger.get(id);
+function createReputation(agentId) {
+  return {
+    agent_id: agentId,
+    total_orders: 0,
+    success_orders: 0,
+    on_time_orders: 0,
+    rating_count: 0,
+    rating_positive: 0,
+    avg_response_ms: null,
+    disputes: 0,
+    score: 0,
+    tier: '青铜',
+    updated_at: new Date().toISOString(),
+  };
 }
 
-function adjustBalance(id, amount) {
-  const account = ensureLedgerAccount(id);
-  if (!account) return null;
-  account.balance = Number((account.balance + amount).toFixed(6));
-  account.updated_at = new Date().toISOString();
+async function getOrCreateReputation(agentId) {
+  if (!agentId) return null;
+  const existing = await storage.getReputation(agentId);
+  if (existing) return existing;
+  const rep = createReputation(agentId);
+  await storage.saveReputation(rep);
+  return rep;
+}
+
+async function ensureLedgerAccount(id) {
+  if (!id) return null;
+  const existing = await storage.getLedgerAccount(id);
+  if (existing) return existing;
+  const account = { id, balance: 0, currency: 'USDC', updated_at: new Date().toISOString() };
+  await storage.saveLedgerAccount(account);
   return account;
 }
 
-function ensureReputation(agentId) {
-  if (!agentId) return null;
-  if (!reputations.has(agentId)) {
-    reputations.set(agentId, {
-      agent_id: agentId,
-      total_orders: 0,
-      success_orders: 0,
-      on_time_orders: 0,
-      rating_count: 0,
-      rating_positive: 0,
-      avg_response_ms: null,
-      disputes: 0,
-      score: 0,
-      tier: '青铜',
-      updated_at: new Date().toISOString(),
-    });
-  }
-  return reputations.get(agentId);
+async function adjustBalance(id, amount) {
+  const account = await ensureLedgerAccount(id);
+  if (!account) return null;
+  account.balance = Number((account.balance + amount).toFixed(6));
+  account.updated_at = new Date().toISOString();
+  await storage.saveLedgerAccount(account);
+  return account;
 }
 
 function computeReputation(rep) {
@@ -170,7 +174,7 @@ function recordInteraction(requesterId, providerId, intent) {
   requesterHistory.set(requesterId, history);
 }
 
-function trackEvent(evt) {
+async function trackEvent(evt) {
   const payload = evt?.payload || {};
   const requestId = payload.request_id || payload.requestId;
   if (evt?.type === 'REQUEST' && requestId) {
@@ -186,7 +190,7 @@ function trackEvent(evt) {
     const requestInfo = requestIndex.get(String(requestId));
     recordInteraction(requestInfo?.requester, evt.sender?.id, requestInfo?.intent);
 
-    const rep = ensureReputation(evt.sender?.id);
+    const rep = await getOrCreateReputation(evt.sender?.id);
     if (rep) {
       rep.total_orders += 1;
       if (payload.status === 'success' || payload.status === 'partial') rep.success_orders += 1;
@@ -196,6 +200,7 @@ function trackEvent(evt) {
           : Math.round((rep.avg_response_ms * 0.7) + (payload.metrics.latency_ms * 0.3));
       }
       computeReputation(rep);
+      await storage.saveReputation(rep);
     }
   }
 }
@@ -407,7 +412,7 @@ app.post('/v1/messages', (req, res) => {
 app.get('/v1/messages', handleGetMessages);
 
 // Agent registry (MVP)
-app.post('/v1/agents', (req, res) => {
+app.post('/v1/agents', async (req, res) => {
   const body = req.body || {};
   const agent = body.agent && typeof body.agent === 'object' ? body.agent : body;
   if (!agent?.id) {
@@ -430,15 +435,17 @@ app.post('/v1/agents', (req, res) => {
     intents: extractIntentsFromCapabilities(caps),
     status: body.status || agent.status || 'online',
   });
+  await getOrCreateReputation(record.id);
 
-  res.json({ ok: true, agent: decorateAgent(record) });
+  res.json({ ok: true, agent: await decorateAgent(record) });
 });
 
-app.get('/v1/agents', (_req, res) => {
-  res.json({ ok: true, agents: Array.from(agents.values()).map(decorateAgent) });
+app.get('/v1/agents', async (_req, res) => {
+  const enriched = await Promise.all(Array.from(agents.values()).map((agent) => decorateAgent(agent)));
+  res.json({ ok: true, agents: enriched });
 });
 
-app.post('/v1/agents/:did/heartbeat', (req, res) => {
+app.post('/v1/agents/:did/heartbeat', async (req, res) => {
   const did = req.params.did;
   const existing = agents.get(did);
   if (!existing) {
@@ -448,7 +455,7 @@ app.post('/v1/agents/:did/heartbeat', (req, res) => {
     ...existing,
     status: req.body?.status || existing.status || 'online',
   });
-  res.json({ ok: true, agent: decorateAgent(record) });
+  res.json({ ok: true, agent: await decorateAgent(record) });
 });
 
 app.get('/v1/agents/:did/status', (req, res) => {
@@ -458,43 +465,43 @@ app.get('/v1/agents/:did/status', (req, res) => {
   res.json({ ok: true, id: did, ...status });
 });
 
-app.get('/v1/discover', (req, res) => {
+app.get('/v1/discover', async (req, res) => {
   const intent = String(req.query.intent || '');
   const limit = Math.min(Number(req.query.limit) || 10, 50);
   const all = Array.from(agents.values());
   const filtered = intent
     ? all.filter((agent) => Array.isArray(agent.intents) && agent.intents.includes(intent))
     : all;
-  const ranked = filtered
-    .map((agent) => {
-      const rep = reputations.get(agent.id);
-      const status = computeAgentStatus(agent);
-      const score = (rep?.score || 0) + (status.status === 'online' ? 5 : 0);
-      return { agent: decorateAgent(agent), score };
-    })
+  const rankedWithScores = await Promise.all(filtered.map(async (agent) => {
+    const rep = await getOrCreateReputation(agent.id);
+    const status = computeAgentStatus(agent);
+    const score = (rep?.score || 0) + (status.status === 'online' ? 5 : 0);
+    return { agent: await decorateAgent(agent), score };
+  }));
+  const ranked = rankedWithScores
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map((row) => row.agent);
   res.json({ ok: true, agents: ranked });
 });
 
-app.get('/v1/agents/:did', (req, res) => {
+app.get('/v1/agents/:did', async (req, res) => {
   const did = req.params.did;
   const agent = agents.get(did);
   if (!agent) {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Agent not registered' });
   }
-  res.json({ ok: true, agent: decorateAgent(agent) });
+  res.json({ ok: true, agent: await decorateAgent(agent) });
 });
 
 // Reputation system (MVP)
-app.post('/v1/reputation/submit', (req, res) => {
+app.post('/v1/reputation/submit', async (req, res) => {
   const body = req.body || {};
   const agentId = body.agent_id || body.agentId;
   if (!agentId) {
     return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', message: 'agent_id required' });
   }
-  const rep = ensureReputation(agentId);
+  const rep = await getOrCreateReputation(agentId);
   rep.total_orders += body.total_orders_delta ? Number(body.total_orders_delta) : 0;
   rep.success_orders += body.success_orders_delta ? Number(body.success_orders_delta) : 0;
   rep.on_time_orders += body.on_time_orders_delta ? Number(body.on_time_orders_delta) : 0;
@@ -517,12 +524,13 @@ app.post('/v1/reputation/submit', (req, res) => {
   if (body.dispute === true) rep.disputes += 1;
 
   computeReputation(rep);
+  await storage.saveReputation(rep);
   res.json({ ok: true, reputation: rep });
 });
 
-app.get('/v1/reputation/:did', (req, res) => {
+app.get('/v1/reputation/:did', async (req, res) => {
   const did = req.params.did;
-  const rep = reputations.get(did);
+  const rep = await storage.getReputation(did);
   if (!rep) {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'No reputation found' });
   }
@@ -530,7 +538,7 @@ app.get('/v1/reputation/:did', (req, res) => {
 });
 
 // Recommendation API (MVP)
-app.get('/v1/recommend', (req, res) => {
+app.get('/v1/recommend', async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 5, 20);
   const requester = req.query.requester ? String(req.query.requester) : null;
   const intentQuery = req.query.intent || req.query.intents || req.query.basedOn || '';
@@ -556,11 +564,11 @@ app.get('/v1/recommend', (req, res) => {
     candidates = candidates.filter((agent) => intents.some((intent) => agent.intents?.includes(intent)));
   }
 
-  const ranked = candidates
-    .map((agent) => {
-      const rep = reputations.get(agent.id);
-      return { agent: decorateAgent(agent), score: rep?.score || 0 };
-    })
+  const rankedWithScores = await Promise.all(candidates.map(async (agent) => {
+    const rep = await getOrCreateReputation(agent.id);
+    return { agent: await decorateAgent(agent), score: rep?.score || 0 };
+  }));
+  const ranked = rankedWithScores
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map((row) => row.agent);
@@ -569,7 +577,7 @@ app.get('/v1/recommend', (req, res) => {
 });
 
 // Escrow + settlement (MVP)
-app.post('/v1/escrow/hold', (req, res) => {
+app.post('/v1/escrow/hold', async (req, res) => {
   const body = req.body || {};
   const requestId = body.request_id || body.requestId;
   const payer = body.payer;
@@ -592,15 +600,15 @@ app.post('/v1/escrow/hold', (req, res) => {
     status: 'HELD',
     held_at: new Date().toISOString(),
   };
-  escrows.set(String(requestId), record);
+  await storage.saveEscrow(record);
   res.json({ ok: true, escrow: record });
 });
 
-app.post('/v1/escrow/release', (req, res) => {
+app.post('/v1/escrow/release', async (req, res) => {
   const body = req.body || {};
   const requestId = body.request_id || body.requestId;
   const resolution = body.resolution || 'success';
-  const record = escrows.get(String(requestId));
+  const record = await storage.getEscrow(String(requestId));
   if (!record) {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Escrow not found' });
   }
@@ -610,37 +618,38 @@ app.post('/v1/escrow/release', (req, res) => {
   }
 
   if (resolution === 'refund') {
-    adjustBalance(record.payer, record.amount);
+    await adjustBalance(record.payer, record.amount);
     record.status = 'REFUNDED';
   } else {
     const fee = Number((record.amount * (record.fee_bps / 10000)).toFixed(6));
     const payout = Number((record.amount - fee).toFixed(6));
-    adjustBalance(record.payee, payout);
-    adjustBalance('platform', fee);
+    await adjustBalance(record.payee, payout);
+    await adjustBalance('platform', fee);
     record.status = 'RELEASED';
     record.fee = fee;
     record.payout = payout;
   }
 
   record.released_at = new Date().toISOString();
-  escrows.set(String(requestId), record);
+  await storage.saveEscrow(record);
   res.json({ ok: true, escrow: record });
 });
 
-app.get('/v1/escrow/:requestId', (req, res) => {
-  const record = escrows.get(String(req.params.requestId));
+app.get('/v1/escrow/:requestId', async (req, res) => {
+  const record = await storage.getEscrow(String(req.params.requestId));
   if (!record) {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Escrow not found' });
   }
   res.json({ ok: true, escrow: record });
 });
 
-app.get('/v1/ledger', (_req, res) => {
-  res.json({ ok: true, accounts: Array.from(ledger.values()) });
+app.get('/v1/ledger', async (_req, res) => {
+  const accounts = await storage.listLedgerAccounts();
+  res.json({ ok: true, accounts });
 });
 
-app.get('/v1/ledger/:id', (req, res) => {
-  const account = ledger.get(req.params.id);
+app.get('/v1/ledger/:id', async (req, res) => {
+  const account = await storage.getLedgerAccount(req.params.id);
   if (!account) {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Account not found' });
   }
@@ -660,4 +669,5 @@ app.listen(port, () => {
   console.log(`  - POST /events  - Submit events`);
   console.log(`  - GET /events   - Subscribe (long-polling)`);
   console.log(`  - POST /seed    - Seed demo data`);
+  console.log(`  - Storage mode  - ${storage.mode}`);
 });

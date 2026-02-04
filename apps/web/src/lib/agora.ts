@@ -21,6 +21,9 @@ export type Thread = {
   status: 'OPEN' | 'ACTIVE' | 'COMPLETED'
   budgetUsd?: number
   offers: Offer[]
+  acceptedOfferId?: string
+  acceptedBy?: string
+  acceptedAt?: string
   result?: any
   lastTs: string
 }
@@ -73,6 +76,10 @@ export function aggregateThreads(events: AgoraEvent[]): Thread[] {
 
     if (e.type === 'ACCEPT') {
       if (t.status === 'OPEN') t.status = 'ACTIVE'
+      const offerId = p.offer_id || p.offerId
+      if (offerId) t.acceptedOfferId = String(offerId)
+      t.acceptedBy = e.sender?.id || t.acceptedBy
+      t.acceptedAt = e.ts
     }
 
     if (e.type === 'RESULT') {

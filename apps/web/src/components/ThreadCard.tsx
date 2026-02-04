@@ -48,6 +48,16 @@ export function ThreadCard({ thread }: { thread: Thread }) {
         <div style={{ marginTop: 10, color: '#64748b', fontSize: 13 }}>No offers yet.</div>
       )}
 
+      {thread.acceptedOfferId ? (
+        <div style={{ marginTop: 10, fontSize: 13, color: '#0f172a' }}>
+          Accepted: {(() => {
+            const accepted = thread.offers.find((o) => o.offerId === thread.acceptedOfferId)
+            if (!accepted) return thread.acceptedOfferId
+            return `${accepted.provider}${typeof accepted.priceUsd === 'number' ? ` · $${accepted.priceUsd}` : ''}`
+          })()}
+        </div>
+      ) : null}
+
       {thread.result ? (
         <details style={{ marginTop: 10 }}>
           <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Result</summary>

@@ -20,7 +20,7 @@ type AgentSummary = {
 export default function App() {
   const relayUrl = useMemo(() => {
     const env = (import.meta as any).env
-    return (env?.VITE_RELAY_URL as string) || 'http://localhost:8789'
+    return (env?.VITE_RELAY_URL as string) || 'http://45.32.219.241:8789'
   }, [])
 
   const [events, setEvents] = useState<AgoraEvent[]>([])
@@ -28,6 +28,7 @@ export default function App() {
   const [usingSeed, setUsingSeed] = useState(false)
   const [demoBusy, setDemoBusy] = useState(false)
   const [agents, setAgents] = useState<AgentSummary[]>([])
+  const [recommendations, setRecommendations] = useState<AgentSummary[]>([])
 
   async function poll() {
     const url = new URL(relayUrl + '/v1/messages')
@@ -56,6 +57,21 @@ export default function App() {
       const json = (await res.json()) as AgentResp
       if (json.ok && Array.isArray(json.agents)) {
         setAgents(json.agents)
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function loadRecommendations(intent?: string) {
+    try {
+      const url = new URL(relayUrl + '/v1/recommend')
+      if (intent) url.searchParams.set('intent', intent)
+      url.searchParams.set('limit', '5')
+      const res = await fetch(url)
+      const json = (await res.json()) as AgentResp
+      if (json.ok && Array.isArray(json.agents)) {
+        setRecommendations(json.agents)
       }
     } catch {
       // ignore
@@ -91,6 +107,7 @@ export default function App() {
   }
 
   const threads = aggregateThreads(events)
+  const topIntent = useMemo(() => threads[0]?.intent, [threads])
 
   useEffect(() => {
     loadAgents().catch(() => {})
@@ -99,6 +116,14 @@ export default function App() {
     }, 5000)
     return () => clearInterval(t)
   }, [relayUrl])
+
+  useEffect(() => {
+    loadRecommendations(topIntent).catch(() => {})
+    const t = setInterval(() => {
+      loadRecommendations(topIntent).catch(() => {})
+    }, 8000)
+    return () => clearInterval(t)
+  }, [relayUrl, topIntent])
 
   const left = (
     <div>
@@ -168,6 +193,27 @@ export default function App() {
 
       <div style={{ marginTop: 14, fontSize: 12, color: '#64748b' }}>
         Status: <span style={{ color: usingSeed ? '#f59e0b' : '#10b981' }}>{usingSeed ? 'Demo Mode' : 'Connected'}</span>
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Recommendations</div>
+        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 6 }}>
+          {topIntent ? `Based on ${topIntent}` : 'Top agents'}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(recommendations.length ? recommendations : agents.slice(0, 3)).map((agent) => (
+            <div key={agent.id} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 8 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{agent.name || agent.id}</div>
+              {agent.reputation?.score != null ? (
+                <div style={{ fontSize: 12, color: '#64748b' }}>
+                  Score {agent.reputation.score} · {agent.reputation.tier || 'N/A'}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: '#64748b' }}>No reputation yet</div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

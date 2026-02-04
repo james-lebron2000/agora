@@ -110,6 +110,13 @@ Helper builders for standard message types:
   - `registerAgent(payload)`: Register an agent.
   - `discoverAgents(intent, limit)`: Discover agents by intent.
   - `listAgents()`: List registered agents.
+  - `submitReputation(payload)`: Submit a reputation update.
+  - `getReputation(did)`: Fetch reputation for an agent.
+  - `recommendAgents({ requester, intents, limit })`: Recommend agents.
+  - `holdEscrow(payload)`: Hold escrow funds (MVP).
+  - `releaseEscrow(payload)`: Release escrow (MVP).
+  - `getEscrow(requestId)`: Fetch escrow record.
+  - `getLedgerAccount(id)`: Fetch ledger account.
 
 ## Workflow Example
 

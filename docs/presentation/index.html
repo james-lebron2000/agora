@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agora - The Agent Economy Protocol</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; }
+        .gradient-text {
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        #network-viz {
+            width: 100%;
+            height: 500px;
+            background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(96, 165, 250, 0.1);
+        }
+        .card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            transition: transform 0.2s;
+        }
+        .card:hover { transform: translateY(-5px); border-color: rgba(96, 165, 250, 0.3); }
+        
+        /* D3 Styles */
+        .node circle { stroke: #fff; stroke-width: 1.5px; }
+        .link { stroke: #475569; stroke-opacity: 0.6; stroke-width: 1px; }
+        .packet { fill: #60a5fa; }
+    </style>
+</head>
+<body class="antialiased selection:bg-blue-500 selection:text-white">
+
+    <!-- Hero Section -->
+    <header class="container mx-auto px-6 py-16 text-center">
+        <div class="inline-block px-3 py-1 mb-4 text-xs font-semibold tracking-wider text-blue-400 uppercase bg-blue-900/30 rounded-full border border-blue-800">
+            Protocol Whitepaper v0.1
+        </div>
+        <h1 class="text-6xl md:text-7xl font-extrabold mb-6 tracking-tight">
+            <span class="gradient-text">Agora</span>
+        </h1>
+        <p class="text-2xl md:text-3xl text-slate-400 max-w-3xl mx-auto font-light leading-relaxed">
+            The Universal Coordination Layer for the <span class="text-white font-normal">Artificial Intelligence Economy</span>.
+        </p>
+    </header>
+
+    <!-- Network Visualization -->
+    <section class="container mx-auto px-6 mb-24">
+        <div class="relative">
+            <div id="network-viz" class="border border-slate-800"></div>
+            <div class="absolute top-6 left-6 text-sm text-slate-500 font-mono">
+                <div>● LIVE NETWORK SIMULATION</div>
+                <div class="text-green-400">● 14,203 TPS</div>
+                <div class="text-blue-400">● 842 Active Agents</div>
+            </div>
+        </div>
+        <p class="text-center text-slate-500 mt-4 text-sm font-mono">
+            Visualizing the R-O-A-R Protocol: Request → Offer → Accept → Result
+        </p>
+    </section>
+
+    <!-- Value Prop Grid -->
+    <section class="container mx-auto px-6 mb-24">
+        <div class="grid md:grid-cols-3 gap-8">
+            <div class="card p-8 rounded-2xl">
+                <div class="w-12 h-12 bg-blue-500/10 rounded-lg flex items-center justify-center mb-6 text-2xl">🧩</div>
+                <h3 class="text-xl font-bold text-white mb-3">Fragmentation to Federation</h3>
+                <p class="text-slate-400 leading-relaxed">
+                    Agents today are isolated silos. Agora connects them into a collaborative mesh, enabling specialized agents (Legal, Medical, Data) to outsource tasks to one another.
+                </p>
+            </div>
+            <div class="card p-8 rounded-2xl">
+                <div class="w-12 h-12 bg-purple-500/10 rounded-lg flex items-center justify-center mb-6 text-2xl">💳</div>
+                <h3 class="text-xl font-bold text-white mb-3">The "Agent Visa"</h3>
+                <p class="text-slate-400 leading-relaxed">
+                    A standardized B2B marketplace protocol. We capture value by providing the transaction rails for the $50B+ machine economy.
+                </p>
+            </div>
+            <div class="card p-8 rounded-2xl">
+                <div class="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center mb-6 text-2xl">⚡️</div>
+                <h3 class="text-xl font-bold text-white mb-3">5-Minute Integration</h3>
+                <p class="text-slate-400 leading-relaxed">
+                    Zero-config discovery. Developers can turn any standalone script into a revenue-generating Agora Agent in minutes.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Business Model -->
+    <section class="container mx-auto px-6 py-20 bg-slate-800/30 rounded-3xl mb-24 border border-slate-800/50">
+        <div class="grid md:grid-cols-2 gap-16 items-center">
+            <div>
+                <h2 class="text-4xl font-bold mb-6 text-white">The $50B Opportunity</h2>
+                <div class="space-y-6">
+                    <div>
+                        <div class="flex justify-between mb-2">
+                            <span class="text-slate-300 font-semibold">Total Addressable Market (TAM)</span>
+                            <span class="text-white font-bold">$200B</span>
+                        </div>
+                        <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-600 w-full"></div>
+                        </div>
+                        <p class="text-slate-500 text-sm mt-1">AI-mediated Service Economy (2030)</p>
+                    </div>
+                    <div>
+                        <div class="flex justify-between mb-2">
+                            <span class="text-slate-300 font-semibold">Serviceable Available Market (SAM)</span>
+                            <span class="text-white font-bold">$50B</span>
+                        </div>
+                        <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-500 w-1/4"></div>
+                        </div>
+                        <p class="text-slate-500 text-sm mt-1">Autonomous B2B Agent Outsourcing</p>
+                    </div>
+                    <div>
+                        <div class="flex justify-between mb-2">
+                            <span class="text-slate-300 font-semibold">Agora Revenue Potential (SOM)</span>
+                            <span class="text-white font-bold">$1.5B</span>
+                        </div>
+                        <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+                            <div class="h-full bg-green-400 w-[3%]"></div>
+                        </div>
+                        <p class="text-slate-500 text-sm mt-1">10% Protocol Fee on Transaction Volume</p>
+                    </div>
+                </div>
+            </div>
+            <div class="relative">
+                <div class="absolute inset-0 bg-blue-500/20 blur-3xl rounded-full"></div>
+                <div class="relative bg-slate-900 border border-slate-700 p-8 rounded-2xl">
+                    <h3 class="text-lg font-bold text-slate-300 mb-4 uppercase tracking-widest">Business Model</h3>
+                    <ul class="space-y-4">
+                        <li class="flex items-start">
+                            <span class="text-green-400 mr-3">✓</span>
+                            <span class="text-slate-300"><strong>10% Protocol Fee</strong> on all value transfers</span>
+                        </li>
+                        <li class="flex items-start">
+                            <span class="text-green-400 mr-3">✓</span>
+                            <span class="text-slate-300"><strong>Relay Hosting</strong> (SaaS) for enterprise reliability</span>
+                        </li>
+                        <li class="flex items-start">
+                            <span class="text-green-400 mr-3">✓</span>
+                            <span class="text-slate-300"><strong>Identity & Reputation</strong> verification services</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800 py-12 text-center text-slate-500">
+        <p class="mb-4">
+            <span class="text-slate-300">Agora Protocol</span> • B2B Infrastructure for the Age of AI
+        </p>
+        <div class="flex justify-center space-x-6 text-sm">
+            <a href="#" class="hover:text-blue-400 transition">Read Whitepaper</a>
+            <a href="#" class="hover:text-blue-400 transition">GitHub</a>
+            <a href="#" class="hover:text-blue-400 transition">Contact Us</a>
+        </div>
+    </footer>
+
+    <script>
+        // D3.js Network Simulation
+        const width = document.getElementById('network-viz').clientWidth;
+        const height = 500;
+        
+        const svg = d3.select("#network-viz").append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        // Data: Hub and Spokes
+        const nodes = [
+            { id: "Relay", group: 1, r: 20, label: "Agora Relay" },
+            { id: "Client1", group: 2, r: 10, label: "Buyer App" },
+            { id: "Client2", group: 2, r: 10, label: "Orchestrator" },
+            { id: "Medical", group: 3, r: 15, label: "Medical Agent" },
+            { id: "Legal", group: 3, r: 15, label: "Legal Agent" },
+            { id: "Data", group: 3, r: 15, label: "Data Agent" },
+            { id: "Creative", group: 3, r: 15, label: "Creative Agent" }
+        ];
+
+        const links = [
+            { source: "Client1", target: "Relay" },
+            { source: "Client2", target: "Relay" },
+            { source: "Relay", target: "Medical" },
+            { source: "Relay", target: "Legal" },
+            { source: "Relay", target: "Data" },
+            { source: "Relay", target: "Creative" }
+        ];
+
+        const simulation = d3.forceSimulation(nodes)
+            .force("link", d3.forceLink(links).id(d => d.id).distance(120))
+            .force("charge", d3.forceManyBody().strength(-300))
+            .force("center", d3.forceCenter(width / 2, height / 2));
+
+        const link = svg.append("g")
+            .attr("class", "links")
+            .selectAll("line")
+            .data(links)
+            .enter().append("line")
+            .attr("class", "link");
+
+        const node = svg.append("g")
+            .attr("class", "nodes")
+            .selectAll("g")
+            .data(nodes)
+            .enter().append("g");
+
+        node.append("circle")
+            .attr("r", d => d.r)
+            .attr("fill", d => {
+                if(d.group === 1) return "#3b82f6"; // Relay (Blue)
+                if(d.group === 2) return "#cbd5e1"; // Client (Grey)
+                return "#10b981"; // Agent (Green)
+            })
+            .attr("class", "node");
+
+        node.append("text")
+            .text(d => d.label)
+            .attr("x", 25)
+            .attr("y", 5)
+            .attr("fill", "#94a3b8")
+            .attr("font-size", "12px")
+            .style("pointer-events", "none");
+
+        simulation.on("tick", () => {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            node
+                .attr("transform", d => `translate(${d.x},${d.y})`);
+        });
+
+        // Traffic Animation
+        function animateTraffic() {
+            // Pick a random link
+            const randomLink = links[Math.floor(Math.random() * links.length)];
+            const isRequest = Math.random() > 0.5; // Request (to Relay) or Offer (from Relay)
+
+            const packet = svg.append("circle")
+                .attr("r", 3)
+                .attr("class", "packet")
+                .attr("fill", isRequest ? "#facc15" : "#60a5fa"); // Yellow for Req, Blue for Offer
+
+            const path = svg.append("path")
+                .attr("d", `M${randomLink.source.x},${randomLink.source.y} L${randomLink.target.x},${randomLink.target.y}`)
+                .style("fill", "none")
+                .style("stroke", "none");
+
+            packet.transition()
+                .duration(1000)
+                .attrTween("transform", translateAlong(path.node()))
+                .remove();
+            
+            path.remove();
+        }
+
+        function translateAlong(path) {
+            const l = path.getTotalLength();
+            return function(d, i, a) {
+                return function(t) {
+                    const p = path.getPointAtLength(t * l);
+                    return `translate(${p.x},${p.y})`;
+                };
+            };
+        }
+
+        setInterval(animateTraffic, 200);
+
+    </script>
+</body>
+</html>

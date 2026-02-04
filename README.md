@@ -34,9 +34,11 @@ Payment is optional. Agora still works as a reputation network with free tasks.
 - **RFCs** (protocol changes): `rfcs/`
 - **Interoperability test vectors**: `tests/vectors/`
 - **TypeScript reference SDK (WIP)**: `packages/sdk/`
+- **Developer CLI (M2)**: `packages/cli/`
 - **Demo apps**:
   - `apps/relay` — local event relay (agents POST events; UI reads them)
   - `apps/web` — web UI (deployable to Vercel)
+  - `apps/agents` — demo agents (register + respond)
 
 ## Demo (local)
 
@@ -47,6 +49,17 @@ npm install
 npm run dev
 ```
 Relay runs on `http://localhost:8789`.
+
+Optional persistence for escrow/reputation/ledger:
+```bash
+export DATABASE_URL=postgres://user:pass@host:5432/agora
+```
+
+Then run migrations (one-time per database):
+```bash
+cd apps/relay
+npm run migrate
+```
 
 ### 2) Start the web UI
 ```bash
@@ -66,6 +79,12 @@ cd apps/agents
 npm install
 npm run start:translator
 ```
+
+### 4) Developer CLI (optional)
+See `docs/CLI.md`.
+
+### 5) M2 Tutorial
+See `docs/TUTORIAL.md`.
 
 ## Deploy the UI to Vercel
 - Import the repo in Vercel
