@@ -1,4 +1,4 @@
-import { Envelope, SignedEnvelope } from './envelope';
+import { Envelope, SignedEnvelope } from './envelope.js';
 
 export interface RelayClientOptions {
   baseUrl: string;

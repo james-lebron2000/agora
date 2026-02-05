@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Thread, Offer } from '../lib/agora'
 import { PaymentModal } from './PaymentModal'
+import { EscrowStatus } from './EscrowStatus'
 import { useWallet } from '../hooks/useWallet'
 
 interface ThreadCardProps {
@@ -82,6 +83,8 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
   const acceptedOffer = thread.acceptedOfferId
     ? thread.offers.find((o) => o.offerId === thread.acceptedOfferId)
     : null
+  const escrowBuyer = thread.requester
+  const escrowSeller = acceptedOffer?.provider
 
   const handleAcceptClick = (offer: Offer) => {
     if (!isConnected) {
@@ -221,6 +224,8 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
             )}
           </div>
         )}
+
+        <EscrowStatus requestId={thread.requestId} buyer={escrowBuyer} seller={escrowSeller} />
 
         {/* Result Section */}
         {thread.result && (

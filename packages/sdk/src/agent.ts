@@ -1,11 +1,11 @@
-import { Envelope, EnvelopeSigner, MessageType, Sender, SignedEnvelope } from './envelope';
+import { Envelope, EnvelopeSigner, MessageType, Sender, SignedEnvelope } from './envelope.js';
 import {
   MessageBuilder,
   RequestPayload,
   OfferPayload,
   ResultPayload,
-} from './messages';
-import { RelayClient, SubscribeOptions, AgentRegistration, AgentRecord } from './relay';
+} from './messages.js';
+import { RelayClient, SubscribeOptions, AgentRegistration, AgentRecord } from './relay.js';
 
 export interface AgoraAgentOptions {
   did: string;

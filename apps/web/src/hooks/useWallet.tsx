@@ -11,7 +11,7 @@ import {
   useSwitchChain,
   useWriteContract,
 } from 'wagmi'
-import { base } from 'wagmi/chains'
+import { base, baseSepolia } from 'wagmi/chains'
 import {
   RainbowKitProvider,
   connectorsForWallets,
@@ -26,6 +26,7 @@ import {
   walletConnectWallet,
 } from '@rainbow-me/rainbowkit/wallets'
 import { parseUnits, type Address } from 'viem'
+import { PREFERRED_CHAIN, SUPPORTED_CHAINS, resolveUsdcAddress } from '../lib/chain'
 
 // USDC Contract ABI (minimal for transfer and balanceOf)
 export const USDC_ABI = [
@@ -80,12 +81,6 @@ export const USDC_ABI = [
   },
 ] as const
 
-// Base chain USDC contract address
-export const USDC_CONTRACT_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
-
-// Base chain ID
-export const BASE_CHAIN_ID = base.id
-
 interface WalletState {
   address: string | null
   isConnected: boolean
@@ -108,7 +103,12 @@ const WalletContext = createContext<WalletContextType | null>(null)
 const walletConnectProjectId =
   (import.meta as any).env?.VITE_WALLETCONNECT_PROJECT_ID || '00000000000000000000000000000000'
 
-const chains = [base] as const
+const chains = SUPPORTED_CHAINS
+
+const baseRpcUrl =
+  (import.meta as any).env?.VITE_BASE_RPC_URL || base.rpcUrls.default.http[0]
+const baseSepoliaRpcUrl =
+  (import.meta as any).env?.VITE_BASE_SEPOLIA_RPC_URL || baseSepolia.rpcUrls.default.http[0]
 
 const connectors = connectorsForWallets(
   [
@@ -133,7 +133,8 @@ const wagmiConfig = createConfig({
   chains,
   connectors,
   transports: {
-    [base.id]: http('https://mainnet.base.org'),
+    [base.id]: http(baseRpcUrl),
+    [baseSepolia.id]: http(baseSepoliaRpcUrl),
   },
   ssr: false,
 })
@@ -146,10 +147,12 @@ function WalletStateProvider({ children }: { children: ReactNode }) {
   const { openConnectModal } = useConnectModal()
   const { disconnectAsync } = useDisconnect()
   const { switchChainAsync } = useSwitchChain()
+  const activeChainId = isConnected ? chainId : PREFERRED_CHAIN.id
+  const usdcAddress = resolveUsdcAddress(activeChainId)
   const { data: balanceData } = useBalance({
     address: address as Address | undefined,
-    token: USDC_CONTRACT_BASE as Address,
-    chainId: base.id,
+    token: usdcAddress,
+    chainId: activeChainId,
     query: {
       enabled: Boolean(address),
     },
@@ -176,7 +179,7 @@ function WalletStateProvider({ children }: { children: ReactNode }) {
 
   const switchToBaseChain = async (): Promise<boolean> => {
     try {
-      await switchChainAsync({ chainId: base.id })
+      await switchChainAsync({ chainId: PREFERRED_CHAIN.id })
       return true
     } catch (err) {
       console.error('Failed to switch to Base chain:', err)
@@ -191,7 +194,7 @@ function WalletStateProvider({ children }: { children: ReactNode }) {
 
     const amountUnits = parseUnits(amount, 6)
     const txHash = await writeContractAsync({
-      address: USDC_CONTRACT_BASE as Address,
+      address: usdcAddress,
       abi: USDC_ABI,
       functionName: 'transfer',
       args: [to as Address, amountUnits],
@@ -211,7 +214,7 @@ function WalletStateProvider({ children }: { children: ReactNode }) {
     disconnect,
     switchToBaseChain,
     sendUSDCTransfer,
-    isBaseChain: isConnected && chainId === base.id,
+    isBaseChain: isConnected && chainId === PREFERRED_CHAIN.id,
   }
 
   return <WalletContext.Provider value={contextValue}>{children}</WalletContext.Provider>
@@ -222,7 +225,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider
-          initialChain={base}
+          initialChain={PREFERRED_CHAIN}
           appInfo={{ appName: 'Agora' }}
           theme={lightTheme({
             accentColor: '#0052FF',

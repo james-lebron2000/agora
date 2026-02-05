@@ -1,5 +1,9 @@
 import { useState } from 'react'
-import { useWallet, truncateAddress } from '../hooks/useWallet'
+import { isAddress, parseUnits } from 'viem'
+import { useWriteContract } from 'wagmi'
+import { useWallet, truncateAddress, USDC_ABI } from '../hooks/useWallet'
+import { getChainLabel, getExplorerBaseUrl, resolveUsdcAddress } from '../lib/chain'
+import { ESCROW_ABI, encodeRequestId, getEscrowAddress } from '../lib/escrow'
 
 interface PaymentModalProps {
   isOpen: boolean
@@ -19,15 +23,20 @@ interface PaymentModalProps {
 type PaymentStep = 'confirm' | 'switch-chain' | 'processing' | 'success' | 'error'
 
 export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: PaymentModalProps) {
-  const { address, isConnected, isBaseChain, switchToBaseChain, sendUSDCTransfer, balance, connect } = useWallet()
+  const { address, isConnected, isBaseChain, switchToBaseChain, balance, connect, chainId } = useWallet()
+  const { writeContractAsync } = useWriteContract()
   const [step, setStep] = useState<PaymentStep>('confirm')
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<string | null>(null)
 
   if (!isOpen || !offer || !thread) return null
 
+  const escrowAddress = getEscrowAddress()
   const price = offer.priceUsd ?? 0
   const hasEnoughBalance = balance && parseFloat(balance) >= price
+  const chainLabel = getChainLabel(chainId ?? undefined)
+  const explorerBaseUrl = getExplorerBaseUrl(chainId ?? undefined)
+  const usdcAddress = resolveUsdcAddress(chainId ?? undefined)
 
   const handlePay = async () => {
     if (!isConnected) {
@@ -44,13 +53,29 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
     setError(null)
 
     try {
-      // Simulate payment to the provider (in real app, this would be an escrow contract)
-      // For demo purposes, we'll use a dummy escrow address
-      const escrowAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb'
+      if (!escrowAddress) {
+        throw new Error('Escrow contract not configured')
+      }
+      if (!isAddress(offer.provider)) {
+        throw new Error('Seller address is not a valid EVM address')
+      }
 
-      const { txHash } = await sendUSDCTransfer(escrowAddress, price.toString())
+      const amountUnits = parseUnits(price.toString(), 6)
+      await writeContractAsync({
+        address: usdcAddress,
+        abi: USDC_ABI,
+        functionName: 'approve',
+        args: [escrowAddress, amountUnits],
+      })
 
-      setTxHash(txHash)
+      const depositTx = await writeContractAsync({
+        address: escrowAddress,
+        abi: ESCROW_ABI,
+        functionName: 'deposit',
+        args: [encodeRequestId(thread.requestId), offer.provider, amountUnits],
+      })
+
+      setTxHash(depositTx)
       setStep('success')
     } catch (err: any) {
       setError(err.message || 'Payment failed')
@@ -95,7 +120,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
             </svg>
             Pay with USDC
           </h3>
-          <p className="text-blue-100 text-sm mt-1">Base Network</p>
+          <p className="text-blue-100 text-sm mt-1">{chainLabel}</p>
         </div>
 
         {/* Content */}
@@ -166,7 +191,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
 
               {isConnected && !isBaseChain && (
                 <p className="text-center text-xs text-agora-500 mt-3">
-                  Please switch to Base network to continue
+                  Please switch to {chainLabel} to continue
                 </p>
               )}
             </>
@@ -180,7 +205,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                 </svg>
               </div>
               <h4 className="text-lg font-semibold text-agora-900 mb-2">Switch Network</h4>
-              <p className="text-agora-500 mb-6">Please switch to Base network to complete this payment.</p>
+              <p className="text-agora-500 mb-6">Please switch to {chainLabel} to complete this payment.</p>
               <div className="flex gap-3">
                 <button
                   onClick={onClose}
@@ -192,7 +217,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                   onClick={handleSwitchChain}
                   className="flex-1 px-4 py-3 rounded-xl bg-base-blue text-white font-semibold hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/25"
                 >
-                  Switch to Base
+                  Switch to {chainLabel}
                 </button>
               </div>
             </div>
@@ -225,7 +250,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                 <div className="bg-agora-50 rounded-lg p-3 mb-6">
                   <div className="text-xs text-agora-500 mb-1">Transaction Hash</div>
                   <a
-                    href={`https://basescan.org/tx/${txHash}`}
+                    href={`${explorerBaseUrl}/tx/${txHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs font-mono text-base-blue hover:underline break-all"
@@ -277,7 +302,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
-          Secured by Base Network
+          Secured by {chainLabel}
         </div>
       </div>
     </div>

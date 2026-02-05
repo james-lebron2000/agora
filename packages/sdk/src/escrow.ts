@@ -1,0 +1,339 @@
+import {
+  createPublicClient,
+  createWalletClient,
+  http,
+  isHex,
+  keccak256,
+  padHex,
+  parseUnits,
+  toBytes,
+  type Address,
+  type Chain,
+  type Hash,
+  type Hex,
+} from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { base, baseSepolia } from 'viem/chains';
+
+export type EscrowNetwork = 'base' | 'base-sepolia';
+
+export type EscrowStatus = 'NONE' | 'DEPOSITED' | 'RELEASED' | 'REFUNDED';
+
+export const ESCROW_TIMEOUT_SEC = 24 * 60 * 60;
+const ESCROW_USDC_DECIMALS = 6;
+
+export const ESCROW_ADDRESSES: Record<EscrowNetwork, Address> = {
+  base: '0x0000000000000000000000000000000000000000',
+  'base-sepolia': '0x0000000000000000000000000000000000000000',
+};
+
+const NETWORK_CHAINS: Record<EscrowNetwork, Chain> = {
+  base,
+  'base-sepolia': baseSepolia,
+};
+
+export const ESCROW_ABI = [
+  {
+    type: 'function',
+    name: 'deposit',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'requestId', type: 'bytes32' },
+      { name: 'seller', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'release',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'requestId', type: 'bytes32' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'refund',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'requestId', type: 'bytes32' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'escrows',
+    stateMutability: 'view',
+    inputs: [{ name: 'requestId', type: 'bytes32' }],
+    outputs: [
+      { name: 'buyer', type: 'address' },
+      { name: 'seller', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'createdAt', type: 'uint64' },
+      { name: 'status', type: 'uint8' },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'Deposited',
+    inputs: [
+      { name: 'requestId', type: 'bytes32', indexed: true },
+      { name: 'buyer', type: 'address', indexed: true },
+      { name: 'seller', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'Released',
+    inputs: [
+      { name: 'requestId', type: 'bytes32', indexed: true },
+      { name: 'seller', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+      { name: 'fee', type: 'uint256', indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'Refunded',
+    inputs: [
+      { name: 'requestId', type: 'bytes32', indexed: true },
+      { name: 'buyer', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+    anonymous: false,
+  },
+] as const;
+
+export interface EscrowClientOptions {
+  privateKey?: Hex;
+  network?: EscrowNetwork;
+  chain?: Chain;
+  rpcUrl?: string;
+  escrowAddress?: Address;
+}
+
+export interface DepositOptions extends EscrowClientOptions {
+  requestId: string | Hex;
+  amount: bigint | number | string;
+  seller: Address;
+  decimals?: number;
+}
+
+export interface EscrowActionOptions extends EscrowClientOptions {
+  requestId: string | Hex;
+}
+
+export interface EscrowStatusResult {
+  requestId: Hex;
+  buyer: Address;
+  seller: Address;
+  amount: bigint;
+  createdAt: bigint;
+  status: EscrowStatus;
+}
+
+export interface EscrowEventHandlers {
+  requestId?: string | Hex;
+  onDeposited?: (log: { requestId: Hex; buyer: Address; seller: Address; amount: bigint }) => void;
+  onReleased?: (log: { requestId: Hex; seller: Address; amount: bigint; fee: bigint }) => void;
+  onRefunded?: (log: { requestId: Hex; buyer: Address; amount: bigint }) => void;
+}
+
+export function encodeRequestId(requestId: string | Hex): Hex {
+  if (isHex(requestId)) {
+    if (requestId.length === 66) return requestId as Hex;
+    return padHex(requestId as Hex, { size: 32 });
+  }
+  return keccak256(toBytes(requestId));
+}
+
+function resolveBaseChain(options: EscrowClientOptions): Chain {
+  if (options.chain) return options.chain;
+  if (options.network) return NETWORK_CHAINS[options.network];
+  return baseSepolia;
+}
+
+function resolveRpcUrl(chain: Chain, rpcUrl?: string): string {
+  return rpcUrl ?? chain.rpcUrls.default.http[0];
+}
+
+function resolveEscrowAddress(chain: Chain, override?: Address): Address {
+  if (override) return override;
+  if (chain.id === base.id) return ESCROW_ADDRESSES.base;
+  if (chain.id === baseSepolia.id) return ESCROW_ADDRESSES['base-sepolia'];
+  throw new Error(`Unsupported chain ${chain.id} for escrow`);
+}
+
+function parseUsdcAmount(amount: bigint | number | string, decimals = ESCROW_USDC_DECIMALS): bigint {
+  if (typeof amount === 'bigint') return amount;
+  return parseUnits(amount.toString(), decimals);
+}
+
+function statusFromValue(value: number): EscrowStatus {
+  switch (value) {
+    case 1:
+      return 'DEPOSITED';
+    case 2:
+      return 'RELEASED';
+    case 3:
+      return 'REFUNDED';
+    default:
+      return 'NONE';
+  }
+}
+
+function createClients(options: EscrowClientOptions) {
+  const chain = resolveBaseChain(options);
+  const rpcUrl = resolveRpcUrl(chain, options.rpcUrl);
+  const transport = http(rpcUrl);
+  const publicClient = createPublicClient({ chain, transport });
+  const escrowAddress = resolveEscrowAddress(chain, options.escrowAddress);
+
+  if (!options.privateKey) {
+    return { chain, publicClient, escrowAddress };
+  }
+
+  const account = privateKeyToAccount(options.privateKey);
+  const walletClient = createWalletClient({ account, chain, transport });
+  return { chain, publicClient, walletClient, account, escrowAddress };
+}
+
+export async function deposit(options: DepositOptions): Promise<Hash> {
+  const { walletClient, account, escrowAddress } = createClients(options);
+  if (!walletClient || !account) {
+    throw new Error('privateKey is required to deposit');
+  }
+  const requestId = encodeRequestId(options.requestId);
+  const value = parseUsdcAmount(options.amount, options.decimals);
+
+  return walletClient.writeContract({
+    address: escrowAddress,
+    abi: ESCROW_ABI,
+    functionName: 'deposit',
+    args: [requestId, options.seller, value],
+    account,
+  });
+}
+
+export async function release(options: EscrowActionOptions): Promise<Hash> {
+  const { walletClient, account, escrowAddress } = createClients(options);
+  if (!walletClient || !account) {
+    throw new Error('privateKey is required to release');
+  }
+  const requestId = encodeRequestId(options.requestId);
+
+  return walletClient.writeContract({
+    address: escrowAddress,
+    abi: ESCROW_ABI,
+    functionName: 'release',
+    args: [requestId],
+    account,
+  });
+}
+
+export async function refund(options: EscrowActionOptions): Promise<Hash> {
+  const { walletClient, account, escrowAddress } = createClients(options);
+  if (!walletClient || !account) {
+    throw new Error('privateKey is required to refund');
+  }
+  const requestId = encodeRequestId(options.requestId);
+
+  return walletClient.writeContract({
+    address: escrowAddress,
+    abi: ESCROW_ABI,
+    functionName: 'refund',
+    args: [requestId],
+    account,
+  });
+}
+
+export async function getEscrowStatus(options: EscrowActionOptions): Promise<EscrowStatusResult> {
+  const { publicClient, escrowAddress } = createClients(options);
+  const requestId = encodeRequestId(options.requestId);
+
+  const escrow = await publicClient.readContract({
+    address: escrowAddress,
+    abi: ESCROW_ABI,
+    functionName: 'escrows',
+    args: [requestId],
+  });
+
+  const [buyer, seller, amount, createdAt, status] = escrow as [
+    Address,
+    Address,
+    bigint,
+    bigint,
+    number,
+  ];
+
+  return {
+    requestId,
+    buyer,
+    seller,
+    amount,
+    createdAt,
+    status: statusFromValue(Number(status)),
+  };
+}
+
+export function watchEscrowEvents(options: EscrowClientOptions & EscrowEventHandlers): () => void {
+  const { publicClient, escrowAddress } = createClients(options);
+  const requestId = options.requestId ? encodeRequestId(options.requestId) : undefined;
+  const unwatchers: Array<() => void> = [];
+
+  if (options.onDeposited) {
+    unwatchers.push(
+      publicClient.watchContractEvent({
+        address: escrowAddress,
+        abi: ESCROW_ABI,
+        eventName: 'Deposited',
+        args: requestId ? { requestId } : undefined,
+        onLogs: (logs) => {
+          logs.forEach((log) => {
+            const args = log.args as { requestId: Hex; buyer: Address; seller: Address; amount: bigint };
+            options.onDeposited?.(args);
+          });
+        },
+      }),
+    );
+  }
+
+  if (options.onReleased) {
+    unwatchers.push(
+      publicClient.watchContractEvent({
+        address: escrowAddress,
+        abi: ESCROW_ABI,
+        eventName: 'Released',
+        args: requestId ? { requestId } : undefined,
+        onLogs: (logs) => {
+          logs.forEach((log) => {
+            const args = log.args as { requestId: Hex; seller: Address; amount: bigint; fee: bigint };
+            options.onReleased?.(args);
+          });
+        },
+      }),
+    );
+  }
+
+  if (options.onRefunded) {
+    unwatchers.push(
+      publicClient.watchContractEvent({
+        address: escrowAddress,
+        abi: ESCROW_ABI,
+        eventName: 'Refunded',
+        args: requestId ? { requestId } : undefined,
+        onLogs: (logs) => {
+          logs.forEach((log) => {
+            const args = log.args as { requestId: Hex; buyer: Address; amount: bigint };
+            options.onRefunded?.(args);
+          });
+        },
+      }),
+    );
+  }
+
+  return () => {
+    unwatchers.forEach((unwatch) => unwatch());
+  };
+}

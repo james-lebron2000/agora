@@ -1,8 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { useWallet, truncateAddress } from '../hooks/useWallet'
+import { getChainLabel, getExplorerBaseUrl } from '../lib/chain'
 
 export function WalletButton() {
   const { address, isConnected, isConnecting, connect, disconnect, isBaseChain, balance, switchToBaseChain } = useWallet()
+  const chainLabel = getChainLabel()
+  const explorerBaseUrl = getExplorerBaseUrl()
   const [showDropdown, setShowDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -101,7 +104,7 @@ export function WalletButton() {
             <div className="flex justify-between items-center text-sm">
               <span className="text-agora-500">Network</span>
               <span className={`font-medium ${isBaseChain ? 'text-success' : 'text-warning'}`}>
-                {isBaseChain ? 'Base' : 'Unsupported'}
+                {isBaseChain ? chainLabel : 'Unsupported'}
               </span>
             </div>
             {balance && (
@@ -125,12 +128,12 @@ export function WalletButton() {
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                 </svg>
-                Switch to Base
+                Switch to {chainLabel}
               </button>
             )}
 
             <a
-              href={`https://basescan.org/address/${address}`}
+              href={`${explorerBaseUrl}/address/${address}`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-3 px-3 py-2 rounded-lg text-agora-700 hover:bg-agora-50 transition-colors text-sm"

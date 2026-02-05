@@ -1,6 +1,6 @@
 import canonicalize from 'canonicalize';
 import * as ed25519 from '@noble/ed25519';
-import { didKeyToPublicKey } from './did';
+import { didKeyToPublicKey } from './did.js';
 
 export interface Envelope {
   version: string;

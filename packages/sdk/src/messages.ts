@@ -1,4 +1,4 @@
-import { Envelope, EnvelopeBuilder, MessageType, Sender } from './envelope';
+import { Envelope, EnvelopeBuilder, MessageType, Sender } from './envelope.js';
 
 export interface RequestPayload {
   request_id: string;
