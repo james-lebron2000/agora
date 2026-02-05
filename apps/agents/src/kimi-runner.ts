@@ -1,4 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises';
+import { writeFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   AgoraAgent,
   generateKeypair,
@@ -311,6 +313,117 @@ function formatPrice(value: number): number {
   return Number(value.toFixed(6));
 }
 
+// === Feedback & Self-Improvement System ===
+
+const MEMORY_DIR = join(process.cwd(), 'memory');
+const FEEDBACK_FILE = join(MEMORY_DIR, 'feedback.json');
+const IMPROVEMENTS_FILE = join(MEMORY_DIR, 'improvements.md');
+
+interface FeedbackRecord {
+  requestId: string;
+  agentName: string;
+  timestamp: string;
+  rating: number; // 1-5
+  comment?: string;
+  taskSummary: string;
+  outputQuality?: 'excellent' | 'good' | 'fair' | 'poor';
+  issues?: string[];
+}
+
+interface FeedbackStore {
+  totalRatings: number;
+  averageRating: number;
+  ratings: FeedbackRecord[];
+  lastAnalyzed: string;
+}
+
+function ensureMemoryDir() {
+  if (!existsSync(MEMORY_DIR)) {
+    mkdirSync(MEMORY_DIR, { recursive: true });
+  }
+}
+
+function loadFeedbackStore(): FeedbackStore {
+  ensureMemoryDir();
+  if (!existsSync(FEEDBACK_FILE)) {
+    return { totalRatings: 0, averageRating: 0, ratings: [], lastAnalyzed: new Date().toISOString() };
+  }
+  try {
+    return JSON.parse(readFileSync(FEEDBACK_FILE, 'utf-8'));
+  } catch {
+    return { totalRatings: 0, averageRating: 0, ratings: [], lastAnalyzed: new Date().toISOString() };
+  }
+}
+
+function saveFeedbackStore(store: FeedbackStore) {
+  ensureMemoryDir();
+  writeFileSync(FEEDBACK_FILE, JSON.stringify(store, null, 2));
+}
+
+function recordFeedback(record: FeedbackRecord) {
+  const store = loadFeedbackStore();
+  store.ratings.push(record);
+  store.totalRatings = store.ratings.length;
+  store.averageRating = store.ratings.reduce((sum, r) => sum + r.rating, 0) / store.ratings.length;
+  saveFeedbackStore(store);
+  
+  // If low rating, immediately analyze
+  if (record.rating <= 3) {
+    analyzeLowRating(record);
+  }
+  
+  console.log(`[feedback] ⭐ ${record.rating}/5 recorded for ${record.requestId.slice(0, 8)}...`);
+}
+
+function analyzeLowRating(record: FeedbackRecord) {
+  const issues = record.issues || [];
+  if (record.rating <= 2) {
+    issues.push('Critical: User very dissatisfied');
+  }
+  
+  const suggestion = generateImprovementSuggestion(record);
+  
+  // Append to improvements log
+  const logEntry = `
+## ${new Date().toISOString()} - ${record.agentName}
+**Request:** ${record.requestId}
+**Rating:** ${record.rating}/5
+**Task:** ${record.taskSummary}
+**Issues:** ${issues.join(', ') || 'None specified'}
+**Suggestion:** ${suggestion}
+---
+`;
+  
+  ensureMemoryDir();
+  writeFileSync(IMPROVEMENTS_FILE, logEntry, { flag: 'a' });
+  
+  console.log(`[feedback] ⚠️ Low rating detected. Improvement suggestion logged.`);
+  console.log(`[feedback] 💡 Suggestion: ${suggestion}`);
+}
+
+function generateImprovementSuggestion(record: FeedbackRecord): string {
+  if (record.rating <= 2) {
+    return 'Consider adding more detailed validation steps and clearer error messages. Review the task requirements more carefully.';
+  } else if (record.rating === 3) {
+    return 'Output was acceptable but could be more thorough. Consider expanding the analysis depth or providing more actionable insights.';
+  }
+  return 'Good performance. Minor refinements to response structure may help.';
+}
+
+function getRecentFeedbackSummary(agentName: string, limit = 5): string {
+  const store = loadFeedbackStore();
+  const recent = store.ratings
+    .filter(r => r.agentName === agentName)
+    .slice(-limit);
+  
+  if (recent.length === 0) return 'No recent feedback.';
+  
+  const avg = recent.reduce((sum, r) => sum + r.rating, 0) / recent.length;
+  return `Last ${recent.length} ratings avg: ${avg.toFixed(1)}/5. Latest: ${recent[recent.length - 1].rating}/5`;
+}
+
+// === End Feedback System ===
+
 export async function runKimiAgent<TParams>(config: KimiAgentConfig<TParams>) {
   if (!KIMI_API_KEY) {
     throw new Error('Kimi API key missing');
@@ -494,5 +607,39 @@ export async function runKimiAgent<TParams>(config: KimiAgentConfig<TParams>) {
     }
   });
 
-  console.log(`[${config.name}] listening for REQUEST + ACCEPT`);
+  // Listen for feedback/rating messages
+  void agent.onRating?.(async (rating) => {
+    const payload = isRecord(rating.payload) ? rating.payload : undefined;
+    const requestId = getString(payload?.request_id);
+    if (!requestId) return;
+    
+    const ratingValue = typeof payload?.rating === 'number' ? payload.rating : undefined;
+    const comment = getString(payload?.comment);
+    const issues = Array.isArray(payload?.issues) ? payload.issues.filter((i): i is string => typeof i === 'string') : undefined;
+    
+    if (!ratingValue) {
+      console.log(`[${config.name}] received rating without score for ${requestId.slice(0, 8)}...`);
+      return;
+    }
+    
+    // Record the feedback
+    recordFeedback({
+      requestId,
+      agentName: config.name,
+      timestamp: new Date().toISOString(),
+      rating: ratingValue,
+      comment,
+      taskSummary: 'Completed task', // Could be enhanced to store task details
+      outputQuality: ratingValue >= 4 ? 'excellent' : ratingValue >= 3 ? 'good' : ratingValue >= 2 ? 'fair' : 'poor',
+      issues,
+    });
+    
+    // Log summary periodically
+    if (Math.random() < 0.2) { // 20% chance to show summary
+      console.log(`[${config.name}] ${getRecentFeedbackSummary(config.name)}`);
+    }
+  });
+
+  console.log(`[${config.name}] listening for REQUEST + ACCEPT + RATING`);
+  console.log(`[${config.name}] feedback system active. Low ratings will trigger auto-improvement analysis.`);
 }
