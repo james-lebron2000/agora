@@ -1,73 +1,196 @@
-import { runAutoResponder } from './common.ts';
+import { runKimiAgent, getString } from './kimi-runner.ts';
 
 const intents = ['physical.action', 'human.verify'];
+const agentName = 'HumanBridge';
+
+const PRICE_PER_CHAR = 0.00015;
+const MIN_PRICE = 0.5;
+const MAX_CHARS = 3000;
 
 const capabilities = [
   {
     id: 'cap_human_task_bridge_v1',
     name: 'Human Task Bridge',
-    description: 'Dispatch a real human to perform verification or physical-world actions and return proof.',
+    description: 'AI-powered task planning and coordination for physical-world actions requiring human execution. Creates detailed task specifications for human operators.',
     intents: intents.map((id) => ({ id, name: id })),
     pricing: {
-      model: 'fixed',
-      currency: 'USD',
-      fixed_price: 1.5,
+      model: 'metered',
+      currency: 'USDC',
+      metered_unit: 'character',
+      metered_rate: PRICE_PER_CHAR,
     },
   },
 ];
 
-runAutoResponder({
-  name: 'HumanBridge',
+type HumanTaskParams = {
+  task?: string;
+  location?: string;
+  urgency?: string;
+  complexity?: number;
+  proof_type?: string;
+  requirements?: string[];
+  text: string;
+};
+
+function readText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim() || undefined;
+  if (Array.isArray(value)) {
+    const joined = value.filter((item) => typeof item === 'string').join('\n');
+    return joined.trim() || undefined;
+  }
+  return undefined;
+}
+
+function parseParams(params: Record<string, unknown>): HumanTaskParams | null {
+  const task = getString(params.task) || getString(params.action) || getString(params.job);
+  const location = getString(params.location) || getString(params.city) || 'remote';
+  const urgency = getString(params.urgency) || 'standard';
+  const complexity = typeof params.complexity === 'number' ? params.complexity : 1;
+  const proofType = getString(params.proof_type) || getString(params.proof) || 'description';
+
+  const requirements = Array.isArray(params.requirements)
+    ? params.requirements.filter((r): r is string => typeof r === 'string')
+    : [];
+
+  const text =
+    readText(params.details)
+    || readText(params.instructions)
+    || readText(params.description)
+    || readText(params.text)
+    || readText(params.input)
+    || (task ? `Human task: ${task} at ${location}` : undefined);
+
+  if (!text) return null;
+
+  return { task, location, urgency, complexity, proof_type: proofType, requirements, text };
+}
+
+runKimiAgent({
+  name: agentName,
   intents,
   capabilities,
-  buildOffer: async (request) => {
-    const params = (request.payload as any)?.params || {};
-    const urgency = String(params.urgency || 'standard');
-    const complexity = Number(params.complexity || 1);
-    const location = String(params.location || 'remote');
-
-    let amount = 1.25;
-    if (urgency === 'rush') amount += 1.25;
-    if (complexity >= 3) amount += 1.5;
-    else if (complexity === 2) amount += 0.75;
-    if (location !== 'remote') amount += 0.5;
-
-    amount = Math.min(5, Math.max(1, amount));
-
-    const etaMinutes = urgency === 'rush' ? 8 : 18 + Math.max(0, complexity - 1) * 6;
-
-    return {
-      plan: 'Route a human operator, complete the action, and return verifiable proof of work.',
-      price: { amount: Number(amount.toFixed(2)), currency: 'USD' },
-      eta_seconds: etaMinutes * 60,
-    };
+  maxChars: MAX_CHARS,
+  pricePerChar: PRICE_PER_CHAR,
+  minPrice: MIN_PRICE,
+  etaSeconds: (task) => {
+    const urgency = (task.params.urgency || 'standard').toLowerCase();
+    const complexity = task.params.complexity || 1;
+    const baseEta = urgency === 'rush' ? 60 : 120;
+    return baseEta + complexity * 30;
   },
-  buildResult: async (request) => {
-    const params = (request.payload as any)?.params || {};
-    const task = String(params.task || 'human verification');
-    const proofType = String(params.proof_type || 'captcha');
-    const location = String(params.location || 'remote');
+  parseParams,
+  extractInput: (params) => params.text,
+  buildPlan: (task) => {
+    const { task: taskName, location } = task.params;
+    const taskLabel = taskName || 'physical task';
+    const locLabel = location || 'specified location';
+    return `Plan and coordinate human execution of ${taskLabel} at ${locLabel}.`;
+  },
+  buildPrompt: (task) => {
+    const { task: taskName, location, complexity, proof_type } = task.params;
 
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    const systemPrompt = `You are an expert operations coordinator specializing in planning and specifying human-executed tasks.
 
-    const proof =
-      proofType === 'photo'
-        ? 'https://example.com/proofs/human-bridge/photo-2048.jpg'
-        : 'X7K2M9';
+⚠️ NOTE: This agent plans and specifies tasks for human operators. Actual execution requires integration with human task marketplaces (e.g., TaskRabbit, MTurk, Field Agent).
+
+Analyze the task requirements and create:
+
+1. Detailed task specification
+2. Required skills and qualifications
+3. Estimated time and cost
+4. Verification/proof requirements
+5. Risk assessment
+
+Provide output in this structured format:
+
+TASK SPECIFICATION:
+- Task name
+- Detailed description
+- Success criteria
+- Deliverables
+
+OPERATIONAL PLAN:
+- Location: Address or area
+- Time estimate: Hours
+- Skill level required: Basic/Intermediate/Expert
+- Equipment/tools needed
+
+PERSONNEL REQUIREMENTS:
+- Required skills
+- Certifications (if any)
+- Background checks needed
+- Estimated labor cost
+
+VERIFICATION PROTOCOL:
+- Proof of completion type
+- Documentation required
+- Quality checkpoints
+- Approval process
+
+RISK & COMPLIANCE:
+- Safety considerations
+- Legal requirements
+- Insurance implications
+- Contingency plans`;
+
+    let userPrompt = '';
+
+    if (taskName) userPrompt += `Task: ${taskName}\n`;
+    if (location) userPrompt += `Location: ${location}\n`;
+    if (complexity) userPrompt += `Complexity Level: ${complexity}/5\n`;
+    if (proof_type) userPrompt += `Proof Type: ${proof_type}\n`;
+
+    userPrompt += `\nTask Details:\n${task.input}\n\n`;
+
+    userPrompt += `Please create a complete task specification for human execution.`;
+
+    return { system: systemPrompt, user: userPrompt };
+  },
+  formatOutput: (content, task) => {
+    const { task: taskName, location, complexity, proof_type } = task.params;
+
+    // Extract time estimate
+    const timeMatch = content.match(/(?:Time estimate|Duration)[\s:]*(\d+(?:\.\d+)?)\s*(hour|hr|h)/i);
+    const costMatch = content.match(/(?:Cost|Budget|Price)[\s:]*\$?(\d+(?:\.\d+)?)/i);
+
+    // Extract deliverables
+    const deliverables: string[] = [];
+    const deliverMatch = content.match(/(?:Deliverable|Output|Result)[\s\S]*?(?=\n\n|Verification|Risk|$)/i);
+    if (deliverMatch) {
+      const bulletMatches = deliverMatch[0].match(/[-•]\s*([^\n]+)/g);
+      if (bulletMatches) {
+        bulletMatches.forEach(b => deliverables.push(b.replace(/^[-•]\s*/, '').trim()));
+      }
+    }
+
+    // Generate task ID
+    const taskId = `HTB-${Date.now().toString(36).toUpperCase()}`;
 
     return {
-      status: 'success',
-      output: {
-        task,
-        location,
-        proof_of_human_work: {
-          type: proofType,
-          value: proof,
-          summary: 'Proof of Human Work',
-        },
-        notes: ['Simulated RentAHuman API response after human task completion.'],
+      task: taskName || 'Unspecified Task',
+      location: location || 'remote',
+      task_specification: {
+        complexity: complexity || 1,
+        estimated_hours: timeMatch ? parseFloat(timeMatch[1]) : undefined,
+        estimated_cost_usd: costMatch ? parseFloat(costMatch[1]) : undefined,
+        proof_required: proof_type || 'description',
       },
-      metrics: { latency_ms: 5000, cost_actual: 1.5 },
+      deliverables: deliverables.length > 0 ? deliverables : undefined,
+      task_id: taskId,
+      status: 'planned',
+      notes: [
+        'Task specification complete',
+        'Requires human operator assignment',
+        'Integration with task marketplace pending',
+      ],
+      full_specification: content,
     };
   },
+  buildOfferExtras: (task) => ({
+    task_type: task.params.task,
+    location: task.params.location,
+    complexity: task.params.complexity,
+    proof_type: task.params.proof_type,
+    note: 'Task planning only - human execution marketplace integration required',
+  }),
 });

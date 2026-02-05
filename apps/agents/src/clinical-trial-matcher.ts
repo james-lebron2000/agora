@@ -1,75 +1,241 @@
-import { runAutoResponder } from './common.ts';
+import { runKimiAgent, getString } from './kimi-runner.ts';
 
 const intents = ['health.trial.match', 'health.trial.search'];
+const agentName = 'TrialBridge';
+
+const PRICE_PER_CHAR = 0.00012;
+const MIN_PRICE = 0.4;
+const MAX_CHARS = 8000;
 
 const capabilities = [
   {
     id: 'cap_clinical_trial_matcher_v1',
     name: 'Clinical Trial Matcher',
-    description: 'Match patient profiles to clinical trial criteria.',
+    description: 'AI-powered matching of patient profiles to clinical trial eligibility criteria. Analyzes medical history, biomarkers, and demographics to identify suitable trials.',
     intents: intents.map((id) => ({ id, name: id })),
     pricing: {
-      model: 'fixed',
-      currency: 'USD',
-      fixed_price: 0.55,
+      model: 'metered',
+      currency: 'USDC',
+      metered_unit: 'character',
+      metered_rate: PRICE_PER_CHAR,
     },
   },
 ];
 
-runAutoResponder({
-  name: 'TrialBridge',
+type TrialParams = {
+  profile?: string;
+  conditions?: string[];
+  location?: string;
+  demographics?: Record<string, unknown>;
+  biomarkers?: Record<string, unknown>;
+  depth?: string;
+  urgency?: string;
+  text: string;
+};
+
+function readText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim() || undefined;
+  if (Array.isArray(value)) {
+    const joined = value.filter((item) => typeof item === 'string').join('\n');
+    return joined.trim() || undefined;
+  }
+  return undefined;
+}
+
+function parseParams(params: Record<string, unknown>): TrialParams | null {
+  const profile = getString(params.profile) || getString(params.patient);
+  const location = getString(params.location) || getString(params.city) || getString(params.region);
+  const depth = getString(params.depth) || 'standard';
+  const urgency = getString(params.urgency) || 'standard';
+
+  const conditions = Array.isArray(params.conditions)
+    ? params.conditions.filter((c): c is string => typeof c === 'string')
+    : getString(params.condition)
+      ? [getString(params.condition)!]
+      : [];
+
+  const demographics = typeof params.demographics === 'object' && params.demographics !== null
+    ? params.demographics as Record<string, unknown>
+    : undefined;
+
+  const biomarkers = typeof params.biomarkers === 'object' && params.biomarkers !== null
+    ? params.biomarkers as Record<string, unknown>
+    : undefined;
+
+  // Extract patient information
+  const text =
+    readText(params.medical_history)
+    || readText(params.clinical_history)
+    || readText(params.summary)
+    || readText(params.details)
+    || readText(params.text)
+    || readText(params.input)
+    || (profile ? `Patient Profile: ${profile}` : undefined);
+
+  if (!text) return null;
+
+  return { profile, conditions, location, demographics, biomarkers, depth, urgency, text };
+}
+
+runKimiAgent({
+  name: agentName,
   intents,
   capabilities,
-  buildOffer: async (request) => {
-    const params = (request.payload as any)?.params || {};
-    const conditions = Array.isArray(params.conditions) ? params.conditions.length : 1;
-    const depth = String(params.depth || 'standard');
-    const urgency = String(params.urgency || 'standard');
+  maxChars: MAX_CHARS,
+  pricePerChar: PRICE_PER_CHAR,
+  minPrice: MIN_PRICE,
+  etaSeconds: (task) => {
+    const depth = (task.params.depth || 'standard').toLowerCase();
+    const urgency = (task.params.urgency || 'standard').toLowerCase();
+    const baseEta = urgency === 'rush' ? 120 : depth === 'deep' ? 300 : 180;
+    return Math.min(600, baseEta + Math.round(task.charCount / 80));
+  },
+  parseParams,
+  extractInput: (params) => params.text,
+  buildPlan: (task) => {
+    const { conditions, location, depth } = task.params;
+    const conditionsLabel = conditions && conditions.length > 0
+      ? conditions.join(', ')
+      : 'specified conditions';
+    const locationLabel = location || 'any location';
+    const depthLabel = depth === 'deep' ? 'comprehensive' : 'standard';
+    return `Match patient to clinical trials for ${conditionsLabel} near ${locationLabel} with ${depthLabel} analysis.`;
+  },
+  buildPrompt: (task) => {
+    const { profile, conditions, location, demographics, biomarkers, depth } = task.params;
 
-    let amount = 0.3 + conditions * 0.08;
-    if (depth === 'deep') amount += 0.2;
-    if (urgency === 'rush') amount += 0.15;
+    const systemPrompt = `You are an expert clinical research coordinator specializing in trial matching and eligibility assessment.
 
-    const eta = urgency === 'rush' ? 240 : 420;
+Analyze the patient profile and identify suitable clinical trials by:
+
+1. Understanding the primary diagnosis and stage
+2. Evaluating biomarker status and genetic markers
+3. Considering demographic factors (age, sex, location)
+4. Assessing prior treatments and treatment resistance
+5. Checking performance status and comorbidities
+6. Identifying inclusion/exclusion criteria matches
+
+Provide output in this structured format:
+
+PATIENT SUMMARY:
+- Primary diagnosis
+- Key biomarkers
+- Performance status
+- Prior treatments
+
+TRIAL MATCHES: (list top 3-5 matches)
+For each trial:
+- Trial ID: (e.g., NCTXXXXXXXX)
+- Title: Brief trial name
+- Match Score: 0-1.0 (estimated compatibility)
+- Phase: I/II/III/IV
+- Key Inclusion Criteria Met: list
+- Key Exclusion Criteria Check: list any concerns
+- Rationale: Why this trial fits
+- Distance/Location: if location provided
+
+EXCLUSIONS FLAGGED:
+- List any criteria that may disqualify
+
+RECOMMENDATIONS:
+- Priority trials to pursue
+- Additional testing needed
+- Next steps for enrollment
+
+Note: Trial IDs should be formatted like NCT followed by 8 digits if possible.`;
+
+    let userPrompt = '';
+
+    if (profile) {
+      userPrompt += `Patient Profile Summary: ${profile}\n\n`;
+    }
+
+    if (conditions && conditions.length > 0) {
+      userPrompt += `Medical Conditions: ${conditions.join(', ')}\n\n`;
+    }
+
+    if (location) {
+      userPrompt += `Preferred Location: ${location}\n\n`;
+    }
+
+    if (demographics && Object.keys(demographics).length > 0) {
+      userPrompt += `Demographics:\n${JSON.stringify(demographics, null, 2)}\n\n`;
+    }
+
+    if (biomarkers && Object.keys(biomarkers).length > 0) {
+      userPrompt += `Biomarkers:\n${JSON.stringify(biomarkers, null, 2)}\n\n`;
+    }
+
+    userPrompt += `Detailed Patient Information:\n${task.input}\n\n`;
+
+    userPrompt += `Please provide trial matches with ${depth === 'deep' ? 'comprehensive' : 'standard'} analysis.`;
+
+    return { system: systemPrompt, user: userPrompt };
+  },
+  formatOutput: (content, task) => {
+    const { profile, location, conditions } = task.params;
+
+    // Parse matches from AI output
+    const matches: Array<{
+      trial_id: string;
+      title: string;
+      match_score: number;
+      phase?: string;
+      key_criteria?: string[];
+      exclusions?: string[];
+      rationale: string;
+      distance_km?: number;
+    }> = [];
+
+    // Extract trial sections using regex
+    const trialSections = content.split(/(?:Trial\s+Match\s*\d+:|Match\s*\d+:|Trial\s*ID:|\d+\.[\s]*)/i);
+
+    trialSections.forEach((section) => {
+      const idMatch = section.match(/(?:Trial\s+ID|NCT)[\s:]*([A-Z0-9]+)/i);
+      const titleMatch = section.match(/(?:Title|Name)[\s:]*([^\n]+)/i);
+      const scoreMatch = section.match(/(?:Match\s*Score|Compatibility)[\s:]*(0?\.\d+|\d\.\d+|\d+)/i);
+      const phaseMatch = section.match(/(?:Phase)[\s:]*(I{1,3}V?|IV)/i);
+      const rationaleMatch = section.match(/(?:Rationale|Why)[\s:]*([^\n]+(?:\n(?![A-Z][\w\s]+:)[^\n]+)*)/i);
+
+      if (idMatch || titleMatch) {
+        matches.push({
+          trial_id: idMatch?.[1] || 'NCT00000000',
+          title: titleMatch?.[1]?.trim() || 'Unknown Trial',
+          match_score: parseFloat(scoreMatch?.[1] || '0.5'),
+          phase: phaseMatch?.[1] || undefined,
+          rationale: rationaleMatch?.[1]?.trim() || 'See full analysis',
+        });
+      }
+    });
+
+    // Extract exclusions
+    const exclusions: string[] = [];
+    const exclusionMatch = content.match(/(?:Exclusions?\s+Flagged|Potential\s+Exclusions)[\s\S]*?(?=\n\n|Recommendations?|Next\s+Steps|$)/i);
+    if (exclusionMatch) {
+      const bulletMatches = exclusionMatch[0].match(/[-•]\s*([^\n]+)/g);
+      if (bulletMatches) {
+        bulletMatches.forEach(b => exclusions.push(b.replace(/^[-•]\s*/, '').trim()));
+      }
+    }
 
     return {
-      plan: 'Parse patient profile, match inclusion/exclusion, rank trials by fit.',
-      price: { amount: Number(amount.toFixed(2)), currency: 'USD' },
-      eta_seconds: eta,
+      profile: profile || 'Unknown',
+      location: location || 'Unspecified',
+      conditions: conditions || [],
+      matches: matches.length > 0 ? matches : undefined,
+      exclusions_flagged: exclusions.length > 0 ? exclusions : undefined,
+      next_steps: [
+        'Review trial matches with healthcare provider',
+        'Verify eligibility with trial coordinators',
+        'Prepare medical records for screening',
+      ],
+      full_analysis: content,
     };
   },
-  buildResult: async (request) => {
-    const params = (request.payload as any)?.params || {};
-    const profile = String(params.profile || 'Lung Cancer Stage IV, EGFR mutation');
-    const location = String(params.location || 'Shanghai');
-
-    // TODO: Replace mocks with ClinicalTrials.gov API, FHIR patient data,
-    // and hospital trial registries.
-    return {
-      status: 'success',
-      output: {
-        profile,
-        location,
-        matches: [
-          {
-            trial_id: 'NCT04512345',
-            title: 'EGFR Inhibitor Combination Study',
-            match_score: 0.95,
-            distance_km: 12,
-            key_criteria: ['EGFR exon 19 del', 'ECOG 0-1'],
-          },
-          {
-            trial_id: 'NCT01298765',
-            title: 'Targeted Therapy for Metastatic NSCLC',
-            match_score: 0.88,
-            distance_km: 24,
-            key_criteria: ['Stage IV', 'No prior TKI resistance'],
-          },
-        ],
-        exclusions_flagged: ['Recent immunotherapy within 30 days.'],
-        next_steps: ['Confirm biomarker panel', 'Contact trial coordinators'],
-      },
-      metrics: { latency_ms: 8200, cost_actual: 0.49 },
-    };
-  },
+  buildOfferExtras: (task) => ({
+    conditions: task.params.conditions,
+    location: task.params.location,
+    depth: task.params.depth,
+    urgency: task.params.urgency,
+  }),
 });

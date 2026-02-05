@@ -1,65 +1,181 @@
-import { runAutoResponder } from './common.ts';
+import { runKimiAgent, getString } from './kimi-runner.ts';
 
 const intents = ['logistics.hs.classify', 'logistics.duty.estimate'];
+const agentName = 'TariffNavigator';
+
+const PRICE_PER_CHAR = 0.00008;
+const MIN_PRICE = 0.25;
+const MAX_CHARS = 3000;
 
 const capabilities = [
   {
     id: 'cap_hs_classifier_v1',
     name: 'Global Logistics HS Code Classifier',
-    description: 'Classify products for customs and estimate duty rates.',
+    description: 'AI-powered HS code classification for customs and international trade. Provides tariff estimates and classification rationale.',
     intents: intents.map((id) => ({ id, name: id })),
     pricing: {
-      model: 'fixed',
-      currency: 'USD',
-      fixed_price: 0.3,
+      model: 'metered',
+      currency: 'USDC',
+      metered_unit: 'character',
+      metered_rate: PRICE_PER_CHAR,
     },
   },
 ];
 
-runAutoResponder({
-  name: 'TariffNavigator',
+type HSParams = {
+  desc?: string;
+  description?: string;
+  product?: string;
+  dest?: string;
+  destination?: string;
+  country?: string;
+  complexity?: string;
+  text: string;
+};
+
+function readText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim() || undefined;
+  if (Array.isArray(value)) {
+    const joined = value.filter((item) => typeof item === 'string').join('\n');
+    return joined.trim() || undefined;
+  }
+  return undefined;
+}
+
+function parseParams(params: Record<string, unknown>): HSParams | null {
+  const desc = getString(params.desc) || getString(params.description) || getString(params.product);
+  const dest = getString(params.dest) || getString(params.destination) || getString(params.country) || 'USA';
+  const complexity = getString(params.complexity) || 'standard';
+
+  const text =
+    readText(params.specifications)
+    || readText(params.details)
+    || readText(params.materials)
+    || readText(params.usage)
+    || readText(params.text)
+    || readText(params.input)
+    || (desc ? `Classify: ${desc} for import to ${dest}` : undefined);
+
+  if (!text) return null;
+
+  return { desc, description: desc, product: desc, dest, destination: dest, country: dest, complexity, text };
+}
+
+runKimiAgent({
+  name: agentName,
   intents,
   capabilities,
-  buildOffer: async (request) => {
-    const params = (request.payload as any)?.params || {};
-    const destCount = Array.isArray(params.destinations) ? params.destinations.length : 1;
-    const complexity = String(params.complexity || 'standard');
-
-    let amount = 0.2 + destCount * 0.05;
-    if (complexity === 'advanced') amount += 0.15;
-
-    return {
-      plan: 'Map product description to HS headings and apply destination duty rules.',
-      price: { amount: Number(amount.toFixed(2)), currency: 'USD' },
-      eta_seconds: 180,
-    };
+  maxChars: MAX_CHARS,
+  pricePerChar: PRICE_PER_CHAR,
+  minPrice: MIN_PRICE,
+  etaSeconds: 120,
+  parseParams,
+  extractInput: (params) => params.text,
+  buildPlan: (task) => {
+    const { desc, dest } = task.params;
+    const product = desc || 'product';
+    return `Classify ${product} to HS code for import to ${dest}.`;
   },
-  buildResult: async (request) => {
-    const params = (request.payload as any)?.params || {};
-    const desc = String(params.desc || 'Bluetooth Smart Thermos');
-    const dest = String(params.dest || 'Germany');
+  buildPrompt: (task) => {
+    const { dest } = task.params;
 
-    // TODO: Replace mocks with EU TARIC/US HTS/WCO rulings databases
-    // and official customs duty calculators per jurisdiction.
+    const systemPrompt = `You are an expert customs classification specialist with deep knowledge of the Harmonized System (HS) codes and international trade regulations.
+
+⚠️ DISCLAIMER: This is an AI-powered preliminary classification. Always verify with official customs rulings and consult a licensed customs broker for high-value shipments.
+
+Analyze the product description and provide:
+
+1. Primary HS code classification
+2. Alternative classifications considered
+3. Duty and tax estimates
+4. Compliance flags and requirements
+
+Provide output in this structured format:
+
+CLASSIFICATION:
+- HS Code: XXXX.XX (6-digit minimum, 8-10 digit if applicable)
+- Chapter: XX - Chapter name
+- Heading: XXXX - Heading description
+- Rationale: Why this classification was chosen
+
+PRODUCT ANALYSIS:
+- Material composition
+- Primary function/use
+- Technical specifications
+
+ALTERNATIVES CONSIDERED:
+- HS XXXX.XX - Why it was rejected
+- HS XXXX.XX - Why it was rejected
+
+DUTY & TAX ESTIMATE (for ${dest}):
+- Import duty rate: X%
+- VAT/GST rate: X%
+- Additional fees: (if applicable)
+- Total landed cost estimate: X%
+
+COMPLIANCE FLAGS:
+- Required documentation
+- Special permits/licenses needed
+- Country of origin marking requirements
+- Known issue areas
+
+NEXT STEPS:
+- Recommended verification steps
+- When to engage a customs broker`;
+
+    const userPrompt = `Destination Country: ${dest}\n\nProduct Description:\n${task.input}\n\nPlease provide HS code classification and duty estimate.`;
+
+    return { system: systemPrompt, user: userPrompt };
+  },
+  formatOutput: (content, task) => {
+    const { desc, dest } = task.params;
+
+    // Extract HS code
+    const hsMatch = content.match(/(?:HS Code|Heading)[\s:]*(\d{4}\.?\d{2}(?:\.?\d{2})?)/i);
+    const chapterMatch = content.match(/(?:Chapter)[\s:]*(\d{2})[^\d]/i);
+    const dutyMatch = content.match(/(?:Duty|Tariff)[\s:]*(\d+(?:\.\d+)?)\s*%/i);
+    const vatMatch = content.match(/(?:VAT|GST)[\s:]*(\d+(?:\.\d+)?)\s*%/i);
+
+    // Extract alternatives
+    const alternatives: string[] = [];
+    const altMatch = content.match(/(?:Alternative|Considered)[\s\S]*?(?=\n\n|Duty|Compliance|$)/i);
+    if (altMatch) {
+      const codeMatches = altMatch[0].match(/\d{4}\.\d{2}/g);
+      if (codeMatches) {
+        codeMatches.forEach(c => alternatives.push(c));
+      }
+    }
+
+    // Extract flags
+    const flags: string[] = [];
+    const flagsMatch = content.match(/(?:Flag|Requirement|Documentation)[\s\S]*?(?=\n\n|Next|$)/i);
+    if (flagsMatch) {
+      const bulletMatches = flagsMatch[0].match(/[-•]\s*([^\n]+)/g);
+      if (bulletMatches) {
+        bulletMatches.forEach(b => flags.push(b.replace(/^[-•]\s*/, '').trim()));
+      }
+    }
+
     return {
-      status: 'success',
-      output: {
-        description: desc,
-        destination: dest,
-        classification: {
-          hs_code: '8517.62',
-          chapter: '85',
-          rationale: 'Primary function is wireless communication for data transmission.',
-        },
-        duty_estimate: {
-          rate_pct: 0,
-          vat_pct: 19,
-          additional_notes: 'Subject to VAT at import value in Germany.',
-        },
-        alternatives_considered: ['8516.79', '3924.10'],
-        flags: ['Keep product spec sheet available for customs queries.'],
+      description: desc || 'Product',
+      destination: dest,
+      classification: {
+        hs_code: hsMatch?.[1]?.replace(/\./g, '') || '0000.00',
+        chapter: chapterMatch?.[1] || '00',
+        rationale: 'AI-powered classification based on product description',
       },
-      metrics: { latency_ms: 5600, cost_actual: 0.27 },
+      duty_estimate: {
+        rate_pct: dutyMatch ? parseFloat(dutyMatch[1]) : 0,
+        vat_pct: vatMatch ? parseFloat(vatMatch[1]) : 0,
+      },
+      alternatives_considered: alternatives.length > 0 ? alternatives : undefined,
+      flags: flags.length > 0 ? flags : undefined,
+      disclaimer: 'Preliminary classification. Verify with official customs resources.',
+      full_analysis: content,
     };
   },
+  buildOfferExtras: (task) => ({
+    destination: task.params.dest,
+    complexity: task.params.complexity,
+  }),
 });

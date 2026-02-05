@@ -1,83 +1,216 @@
-import { runAutoResponder } from './common.ts';
+import { runKimiAgent, getString } from './kimi-runner.ts';
 
 const intents = ['supplychain.part.alternative', 'supplychain.part.quote'];
+const agentName = 'SupplyBridge';
+
+const PRICE_PER_CHAR = 0.00008;
+const MIN_PRICE = 0.3;
+const MAX_CHARS = 5000;
 
 const capabilities = [
   {
     id: 'cap_component_sourcing_v1',
     name: 'Electronic Component Sourcing Expert',
-    description: 'Find pin-compatible alternatives and live inventory quotes.',
+    description: 'AI-powered analysis for finding pin-compatible alternatives and evaluating component specifications. Provides sourcing recommendations based on technical requirements.',
     intents: intents.map((id) => ({ id, name: id })),
     pricing: {
-      model: 'fixed',
-      currency: 'USD',
-      fixed_price: 0.4,
+      model: 'metered',
+      currency: 'USDC',
+      metered_unit: 'character',
+      metered_rate: PRICE_PER_CHAR,
     },
   },
 ];
 
-runAutoResponder({
-  name: 'SupplyBridge',
+type ComponentParams = {
+  part?: string;
+  mpn?: string;
+  stock_needed?: number;
+  part_count?: number;
+  urgency?: string;
+  specs?: Record<string, unknown>;
+  text: string;
+};
+
+function readText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim() || undefined;
+  if (Array.isArray(value)) {
+    const joined = value.filter((item) => typeof item === 'string').join('\n');
+    return joined.trim() || undefined;
+  }
+  return undefined;
+}
+
+function parseParams(params: Record<string, unknown>): ComponentParams | null {
+  const part = getString(params.part) || getString(params.mpn) || getString(params.component);
+  const stockNeeded = typeof params.stock_needed === 'number' ? params.stock_needed : 1000;
+  const partCount = typeof params.part_count === 'number' ? params.part_count : 1;
+  const urgency = getString(params.urgency) || 'standard';
+
+  const specs = typeof params.specs === 'object' && params.specs !== null
+    ? params.specs as Record<string, unknown>
+    : undefined;
+
+  // Extract component information
+  const text =
+    readText(params.description)
+    || readText(params.requirements)
+    || readText(params.specifications)
+    || readText(params.details)
+    || readText(params.text)
+    || readText(params.input)
+    || (part ? `Source component: ${part}, quantity: ${stockNeeded}` : undefined);
+
+  if (!text) return null;
+
+  return { part, mpn: part, stock_needed: stockNeeded, part_count: partCount, urgency, specs, text };
+}
+
+runKimiAgent({
+  name: agentName,
   intents,
   capabilities,
-  buildOffer: async (request) => {
-    const params = (request.payload as any)?.params || {};
-    const stockNeeded = Number(params.stock_needed || 1000);
-    const partCount = Number(params.part_count || 1);
-    const urgency = String(params.urgency || 'standard');
+  maxChars: MAX_CHARS,
+  pricePerChar: PRICE_PER_CHAR,
+  minPrice: MIN_PRICE,
+  etaSeconds: (task) => {
+    const urgency = (task.params.urgency || 'standard').toLowerCase();
+    const baseEta = urgency === 'rush' ? 90 : 150;
+    return Math.min(300, baseEta + Math.round(task.charCount / 100));
+  },
+  parseParams,
+  extractInput: (params) => params.text,
+  buildPlan: (task) => {
+    const { part, stock_needed, urgency } = task.params;
+    const partLabel = part || 'specified component';
+    const qtyLabel = stock_needed || 'required quantity';
+    const urgencyLabel = urgency === 'rush' ? 'rush' : 'standard';
+    return `Source ${partLabel} (${qtyLabel} units) with pin-compatible alternatives (${urgencyLabel} priority).`;
+  },
+  buildPrompt: (task) => {
+    const { part, stock_needed, specs } = task.params;
 
-    let amount = 0.25 + partCount * 0.1;
-    if (stockNeeded >= 5000) amount += 0.2;
-    if (urgency === 'rush') amount += 0.2;
+    const systemPrompt = `You are an expert electronic component sourcing specialist with deep knowledge of semiconductors, passives, and supply chain alternatives.
 
-    const eta = urgency === 'rush' ? 150 : 300;
+Analyze the component request and provide:
+
+1. Primary component analysis - key specifications needed
+2. Pin-compatible alternatives (Chinese/domestic options when applicable)
+3. Critical specifications to verify
+4. Potential sourcing considerations
+
+Provide output in this structured format:
+
+REQUESTED COMPONENT:
+- Part number/description
+- Key specifications
+- Critical parameters
+
+ALTERNATIVES: (suggest 2-4 alternatives)
+For each:
+- MPN: Manufacturer part number
+- Manufacturer: Company name
+- Compatibility: pin-to-pin / functional / adapter required
+- Key specs: Voltage, package, speed, etc.
+- Estimated lead time: Short/Medium/Long term
+- Cost tier: Premium/Standard/Budget
+- Availability: High/Medium/Low
+
+VERIFICATION CHECKLIST:
+- Parameters that must match
+- Common pitfalls to avoid
+
+NOTES:
+- Important considerations
+- Known issues with alternatives`;
+
+    let userPrompt = '';
+
+    if (part) {
+      userPrompt += `Target Component: ${part}\n\n`;
+    }
+
+    if (stock_needed) {
+      userPrompt += `Required Quantity: ${stock_needed} units\n\n`;
+    }
+
+    if (specs && Object.keys(specs).length > 0) {
+      userPrompt += `Technical Requirements:\n${JSON.stringify(specs, null, 2)}\n\n`;
+    }
+
+    userPrompt += `Component Details:\n${task.input}\n\n`;
+
+    userPrompt += `Please provide sourcing recommendations with pin-compatible alternatives.`;
+
+    return { system: systemPrompt, user: userPrompt };
+  },
+  formatOutput: (content, task) => {
+    const { part, stock_needed } = task.params;
+
+    // Parse alternatives from AI output
+    const alternatives: Array<{
+      mpn: string;
+      manufacturer?: string;
+      compatibility: string;
+      specs?: Record<string, string>;
+      lead_time?: string;
+      cost_tier?: string;
+      availability?: string;
+    }> = [];
+
+    // Extract alternative sections
+    const altMatches = content.match(/(?:MPN|Alternative|Option)[\s\S]*?(?=\n\n|MPN|Alternative|Option|Verification|Notes|$)/gi);
+
+    if (altMatches) {
+      altMatches.forEach((match) => {
+        const mpnMatch = match.match(/(?:MPN|Part)[\s:]*([A-Z0-9\-_]+)/i);
+        const mfgMatch = match.match(/(?:Manufacturer|Mfg)[\s:]*([^\n]+)/i);
+        const compatMatch = match.match(/(?:Compatibility)[\s:]*(pin-to-pin|functional|adapter[^\n]*)/i);
+        const specsMatch = match.match(/(?:Key specs|Specifications)[\s:]*([^\n]+(?:\n[-•][^\n]+)*)/i);
+
+        if (mpnMatch) {
+          const specs: Record<string, string> = {};
+          if (specsMatch) {
+            const specLines = specsMatch[1].split(/\n/);
+            specLines.forEach((line) => {
+              const kv = line.match(/[-•]?\s*([^:]+):\s*(.+)/);
+              if (kv) {
+                specs[kv[1].trim().toLowerCase()] = kv[2].trim();
+              }
+            });
+          }
+
+          alternatives.push({
+            mpn: mpnMatch[1],
+            manufacturer: mfgMatch?.[1]?.trim(),
+            compatibility: compatMatch?.[1]?.trim() || 'unknown',
+            specs,
+          });
+        }
+      });
+    }
+
+    // Extract notes
+    const notes: string[] = [];
+    const notesMatch = content.match(/(?:Notes|Considerations|Important)[\s\S]*?(?=\n\n|$)/i);
+    if (notesMatch) {
+      const bulletMatches = notesMatch[0].match(/[-•]\s*([^\n]+)/g);
+      if (bulletMatches) {
+        bulletMatches.forEach(b => notes.push(b.replace(/^[-•]\s*/, '').trim()));
+      }
+    }
 
     return {
-      plan: 'Check pin compatibility, validate specs, and source inventory with lead times.',
-      price: { amount: Number(amount.toFixed(2)), currency: 'USD' },
-      eta_seconds: eta,
+      requested_part: part || 'Unknown',
+      stock_needed: stock_needed || 1000,
+      alternatives: alternatives.length > 0 ? alternatives : undefined,
+      notes: notes.length > 0 ? notes : undefined,
+      full_analysis: content,
     };
   },
-  buildResult: async (request) => {
-    const params = (request.payload as any)?.params || {};
-    const part = String(params.part || 'STM32F103C8T6');
-    const stockNeeded = Number(params.stock_needed || 5000);
-
-    // TODO: Replace mocks with DigiKey/Mouser/Octopart/LCSC/HQHuaqiang APIs
-    // plus manufacturer datasheet parsing for pin-to-pin verification.
-    return {
-      status: 'success',
-      output: {
-        requested_part: part,
-        stock_needed: stockNeeded,
-        alternatives: [
-          {
-            mpn: 'GD32F103C8T6',
-            compatibility: 'pin-to-pin',
-            voltage: '2.6V-3.6V',
-            flash_kb: 64,
-            source: 'HQChips',
-            unit_price_usd: 1.18,
-            lead_time_days: 3,
-            available_qty: 12000,
-          },
-          {
-            mpn: 'CH32F103C8T6',
-            compatibility: 'pin-to-pin',
-            voltage: '2.7V-3.6V',
-            flash_kb: 64,
-            source: 'LCSC',
-            unit_price_usd: 0.92,
-            lead_time_days: 7,
-            available_qty: 8000,
-          },
-        ],
-        notes: [
-          'Both alternatives support same package (LQFP48).',
-          'Check USB peripheral differences before drop-in.',
-        ],
-      },
-      metrics: { latency_ms: 6800, cost_actual: 0.36 },
-    };
-  },
+  buildOfferExtras: (task) => ({
+    part: task.params.part,
+    stock_needed: task.params.stock_needed,
+    urgency: task.params.urgency,
+  }),
 });
