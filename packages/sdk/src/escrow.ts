@@ -2,6 +2,7 @@ import {
   createPublicClient,
   createWalletClient,
   http,
+  isAddress,
   isHex,
   keccak256,
   padHex,
@@ -31,6 +32,10 @@ const NETWORK_CHAINS: Record<EscrowNetwork, Chain> = {
   base,
   'base-sepolia': baseSepolia,
 };
+
+const ENV_ESCROW_ADDRESS = process.env.AGORA_ESCROW_CONTRACT_ADDRESS;
+const ENV_ESCROW_ADDRESS_BASE = process.env.AGORA_ESCROW_CONTRACT_ADDRESS_BASE;
+const ENV_ESCROW_ADDRESS_BASE_SEPOLIA = process.env.AGORA_ESCROW_CONTRACT_ADDRESS_BASE_SEPOLIA;
 
 export const ESCROW_ABI = [
   {
@@ -158,8 +163,23 @@ function resolveRpcUrl(chain: Chain, rpcUrl?: string): string {
   return rpcUrl ?? chain.rpcUrls.default.http[0];
 }
 
+function resolveEnvEscrowAddress(chain: Chain): Address | undefined {
+  const byNetwork = chain.id === base.id
+    ? ENV_ESCROW_ADDRESS_BASE
+    : chain.id === baseSepolia.id
+      ? ENV_ESCROW_ADDRESS_BASE_SEPOLIA
+      : undefined;
+  const candidate = byNetwork || ENV_ESCROW_ADDRESS;
+  if (candidate && isAddress(candidate)) {
+    return candidate as Address;
+  }
+  return undefined;
+}
+
 function resolveEscrowAddress(chain: Chain, override?: Address): Address {
   if (override) return override;
+  const envAddress = resolveEnvEscrowAddress(chain);
+  if (envAddress) return envAddress;
   if (chain.id === base.id) return ESCROW_ADDRESSES.base;
   if (chain.id === baseSepolia.id) return ESCROW_ADDRESSES['base-sepolia'];
   throw new Error(`Unsupported chain ${chain.id} for escrow`);

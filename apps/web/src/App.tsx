@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Layout } from './components/Layout'
 import { Feed } from './components/Feed'
 import { Hero } from './components/Hero'
+import { AnalyticsDashboard } from './components/AnalyticsDashboard'
 import { NetworkStats, type NetworkMetrics } from './components/NetworkStats'
 import { UseCaseShowcase } from './components/UseCaseShowcase'
 import { WalletProvider } from './hooks/useWallet'
@@ -9,11 +10,26 @@ import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 
 type EventsResp = { ok: boolean; events: AgoraEvent[]; lastTs: string | null }
 type AgentResp = { ok: boolean; agents: AgentSummary[] }
+type AgentPricing = {
+  model?: string
+  currency?: string
+  fixed_price?: number
+  metered_unit?: string
+  metered_rate?: number
+}
+type AgentCapability = {
+  id?: string
+  name?: string
+  description?: string
+  intents?: Array<{ id?: string; name?: string }>
+  pricing?: AgentPricing
+}
 type AgentSummary = {
   id: string
   name?: string
   intents?: string[]
   status?: string
+  capabilities?: AgentCapability[]
   reputation?: {
     score?: number
     tier?: string
@@ -28,11 +44,143 @@ const MOCK_METRICS: NetworkMetrics = {
   volume24h: 12450,
 }
 
+type Route = 'home' | 'analytics'
+
+const FALLBACK_AGENTS: AgentSummary[] = [
+  {
+    id: 'demo:PolyglotPro',
+    name: 'Polyglot Pro',
+    intents: ['translation'],
+    capabilities: [
+      {
+        id: 'cap_polyglot_translation_v1',
+        name: 'Translation',
+        pricing: { model: 'metered', currency: 'USDC', metered_unit: 'character', metered_rate: 0.001 },
+      },
+    ],
+  },
+  {
+    id: 'demo:CleanCodeAI',
+    name: 'CleanCodeAI',
+    intents: ['code.review'],
+    capabilities: [
+      {
+        id: 'cap_code_review_v1',
+        name: 'Code Review',
+        pricing: { model: 'metered', currency: 'USDC', metered_unit: 'line', metered_rate: 0.005 },
+      },
+    ],
+  },
+  {
+    id: 'demo:DataLens',
+    name: 'DataLens',
+    intents: ['data.analysis'],
+    capabilities: [
+      {
+        id: 'cap_data_analysis_v1',
+        name: 'Data Analyst',
+        pricing: { model: 'metered', currency: 'USDC', metered_unit: 'row', metered_rate: 0.0001 },
+      },
+    ],
+  },
+  {
+    id: 'demo:SecurityScanner',
+    name: 'SecurityScanner',
+    intents: ['security.audit'],
+    capabilities: [
+      {
+        id: 'cap_security_audit_v1',
+        name: 'Security Audit',
+        pricing: { model: 'fixed', currency: 'USD', fixed_price: 0.25 },
+      },
+    ],
+  },
+  {
+    id: 'demo:Summarizer',
+    name: 'Summarizer',
+    intents: ['summarization'],
+    capabilities: [
+      {
+        id: 'cap_summarize_v1',
+        name: 'Summarization',
+        pricing: { model: 'metered', currency: 'USD', metered_unit: 'character', metered_rate: 0.0005 },
+      },
+    ],
+  },
+]
+
+const priceFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 })
+
+function formatPricing(pricing?: AgentPricing): string {
+  if (!pricing) return 'pricing not listed'
+  const currency = pricing.currency || 'USD'
+  if (pricing.model === 'fixed' && typeof pricing.fixed_price === 'number') {
+    return `${priceFormatter.format(pricing.fixed_price)} ${currency} fixed`
+  }
+  if (pricing.model === 'metered' && typeof pricing.metered_rate === 'number') {
+    const unit = pricing.metered_unit || 'unit'
+    return `${priceFormatter.format(pricing.metered_rate)} ${currency}/${unit}`
+  }
+  return pricing.model || 'custom pricing'
+}
+
+function useRoute(): { route: Route; navigate: (route: Route) => void } {
+  const getRoute = () => (window.location.pathname.startsWith('/analytics') ? 'analytics' : 'home')
+  const [route, setRoute] = useState<Route>(() => getRoute())
+
+  useEffect(() => {
+    const handlePop = () => setRoute(getRoute())
+    window.addEventListener('popstate', handlePop)
+    return () => window.removeEventListener('popstate', handlePop)
+  }, [])
+
+  const navigate = (next: Route) => {
+    const path = next === 'analytics' ? '/analytics' : '/'
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path)
+      setRoute(next)
+    }
+  }
+
+  return { route, navigate }
+}
+
+function NavLink({
+  label,
+  href,
+  active,
+  onClick,
+}: {
+  label: string
+  href: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <a
+      href={href}
+      onClick={(event) => {
+        event.preventDefault()
+        onClick()
+      }}
+      aria-current={active ? 'page' : undefined}
+      className={`px-3 py-1.5 rounded-full border text-sm transition-colors ${
+        active
+          ? 'bg-agora-900 text-white border-agora-900 hover:text-white'
+          : 'bg-white text-agora-700 border-agora-200 hover:border-base-blue/40 hover:text-base-blue'
+      }`}
+    >
+      {label}
+    </a>
+  )
+}
+
 function AppContent() {
   const relayUrl = useMemo(() => {
     const env = (import.meta as any).env
     return (env?.VITE_RELAY_URL as string) || 'http://45.32.219.241:8789'
   }, [])
+  const { route, navigate } = useRoute()
 
   const [events, setEvents] = useState<AgoraEvent[]>([])
   const [lastTs, setLastTs] = useState<string | null>(null)
@@ -146,6 +294,8 @@ function AppContent() {
     return () => clearInterval(t)
   }, [])
 
+  const agentsForDisplay = agents.length ? agents : FALLBACK_AGENTS
+
   const left = (
     <div>
       <div className="flex items-center gap-2 mb-4">
@@ -157,11 +307,7 @@ function AppContent() {
         <h2 className="font-bold text-agora-900">Recent Agents</h2>
       </div>
       <div className="space-y-3">
-        {(agents.length ? agents : [
-          { id: 'demo:PolyglotBot', name: 'PolyglotBot', intents: ['translate'] },
-          { id: 'demo:CleanCodeAI', name: 'CleanCodeAI', intents: ['code.review'] },
-          { id: 'demo:SecurityScanner', name: 'SecurityScanner', intents: ['security'] },
-        ]).map((a) => (
+        {agentsForDisplay.slice(0, 6).map((a) => (
           <div key={a.id} className="p-3 bg-agora-50 rounded-xl border border-agora-100 hover:border-base-blue/30 transition-colors group">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-gradient-to-br from-agora-200 to-agora-300 rounded-lg flex items-center justify-center text-xs font-bold text-agora-600">
@@ -189,7 +335,7 @@ function AppContent() {
     </div>
   )
 
-  const center = (
+  const homeCenter = (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -307,18 +453,104 @@ function AppContent() {
     </div>
   )
 
+  const analyticsCenter = (
+    <div className="space-y-8">
+      <AnalyticsDashboard relayUrl={relayUrl} />
+
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-base-light rounded-lg flex items-center justify-center">
+            <svg className="w-4 h-4 text-base-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m-6-8h6m2 10H7a2 2 0 01-2-2V6a2 2 0 012-2h8l4 4v10a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-bold text-agora-900">Agent Catalog & Pricing</h3>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {agentsForDisplay.map((agent) => {
+            const status = agent.status || 'unknown'
+            const statusClass =
+              status === 'online'
+                ? 'bg-success-light text-success'
+                : status === 'offline'
+                  ? 'bg-agora-100 text-agora-500'
+                  : 'bg-warning-light text-warning'
+            return (
+              <div key={agent.id} className="p-4 bg-white rounded-2xl border border-agora-200 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-agora-900">{agent.name || agent.id}</div>
+                    <div className="text-xs text-agora-500">{agent.id}</div>
+                  </div>
+                  <span className={`text-xs px-2 py-1 rounded-full ${statusClass}`}>
+                    {status}
+                  </span>
+                </div>
+                <div className="text-xs text-agora-500 mt-2">
+                  Intents: {agent.intents?.length ? agent.intents.join(', ') : 'no intents'}
+                </div>
+                <div className="mt-3 space-y-2">
+                  {agent.capabilities?.length ? (
+                    agent.capabilities.map((cap, index) => (
+                      <div key={cap.id || cap.name || `${agent.id}-${index}`} className="p-2 bg-agora-50 rounded-lg border border-agora-100">
+                        <div className="text-sm font-semibold text-agora-800">
+                          {cap.name || cap.id || 'Capability'}
+                        </div>
+                        {cap.description && (
+                          <div className="text-xs text-agora-500 mt-0.5">{cap.description}</div>
+                        )}
+                        <div className="text-xs text-agora-600 mt-1">
+                          {formatPricing(cap.pricing)}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-xs text-agora-400">No pricing details yet.</div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+
+  const nav = (
+    <>
+      <NavLink
+        label="Home"
+        href="/"
+        active={route === 'home'}
+        onClick={() => navigate('home')}
+      />
+      <NavLink
+        label="Analytics"
+        href="/analytics"
+        active={route === 'analytics'}
+        onClick={() => navigate('analytics')}
+      />
+    </>
+  )
+
   return (
     <Layout
       left={left}
-      center={center}
+      center={route === 'analytics' ? analyticsCenter : homeCenter}
       right={right}
       hero={
-        <div className="space-y-6">
-          <Hero />
-          <NetworkStats metrics={metrics} refreshKey={metricsTick} />
-          <UseCaseShowcase />
-        </div>
+        route === 'analytics'
+          ? undefined
+          : (
+            <div className="space-y-6">
+              <Hero />
+              <NetworkStats metrics={metrics} refreshKey={metricsTick} />
+              <UseCaseShowcase />
+            </div>
+          )
       }
+      nav={nav}
     />
   )
 }

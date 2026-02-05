@@ -1,46 +1,84 @@
-import { runAutoResponder } from './common.ts';
+import { runKimiAgent, getString } from './kimi-runner.ts';
 
 const intents = ['code.review', 'security.audit'];
+const agentName = 'CleanCodeAI';
+
+const PRICE_PER_CHAR = 0.00015;
+const MIN_PRICE = 0.15;
+const MAX_CHARS = 9000;
 
 const capabilities = [
   {
     id: 'cap_code_review_v1',
     name: 'Code Review',
-    description: 'Provide concise review notes and risks.',
+    description: 'Provide concise review notes and risks using Kimi.',
     intents: intents.map((id) => ({ id, name: id })),
     pricing: {
-      model: 'fixed',
-      currency: 'USD',
-      fixed_price: 0.15,
+      model: 'metered',
+      currency: 'USDC',
+      metered_unit: 'character',
+      metered_rate: PRICE_PER_CHAR,
     },
   },
 ];
 
-runAutoResponder({
-  name: 'CleanCodeAI',
+type CodeReviewParams = {
+  repo?: string;
+  focus?: string;
+  text: string;
+};
+
+function readText(value: unknown): string | undefined {
+  if (typeof value === 'string') return value.trim() || undefined;
+  if (Array.isArray(value)) {
+    const joined = value.filter((item) => typeof item === 'string').join('\n');
+    return joined.trim() || undefined;
+  }
+  return undefined;
+}
+
+function parseParams(params: Record<string, unknown>): CodeReviewParams | null {
+  const repo = getString(params.repo) || getString(params.repository) || getString(params.project);
+  const focus = getString(params.focus) || getString(params.area) || getString(params.priority);
+  const text =
+    readText(params.diff)
+    || readText(params.patch)
+    || readText(params.code)
+    || readText(params.snippet)
+    || readText(params.text)
+    || readText(params.input);
+
+  if (!text) return null;
+  return { repo: repo || undefined, focus: focus || undefined, text };
+}
+
+runKimiAgent({
+  name: agentName,
   intents,
   capabilities,
-  buildOffer: async () => {
+  maxChars: MAX_CHARS,
+  pricePerChar: PRICE_PER_CHAR,
+  minPrice: MIN_PRICE,
+  etaSeconds: (task) => Math.min(240, 60 + Math.round(task.charCount / 120)),
+  parseParams,
+  extractInput: (params) => params.text,
+  buildPlan: (task) => {
+    const repoLabel = task.params.repo ? `for ${task.params.repo}` : 'for the submission';
+    const focusLabel = task.params.focus ? ` with focus on ${task.params.focus}` : '';
+    return `Review ${repoLabel}${focusLabel}, highlight risks, and suggest fixes.`;
+  },
+  buildPrompt: (task) => {
+    const repoLabel = task.params.repo ? `Repository: ${task.params.repo}\n` : '';
+    const focusLabel = task.params.focus ? `Focus: ${task.params.focus}\n` : '';
     return {
-      plan: 'Review structure, edge cases, and security risks.',
-      price: { amount: 0.15, currency: 'USD' },
-      eta_seconds: 90,
+      system: 'You are a senior code reviewer. Provide concise, actionable feedback. Prioritize correctness, security, and maintainability. Use short bullets and include severity tags (high/med/low).',
+      user: `${repoLabel}${focusLabel}Code to review:\n${task.input}`,
     };
   },
-  buildResult: async (request) => {
-    const repo = String((request.payload as any)?.params?.repo || 'repo');
-    const focus = String((request.payload as any)?.params?.focus || 'general');
-    return {
-      status: 'success',
-      output: {
-        summary: `Reviewed ${repo} with focus on ${focus}.`,
-        findings: [
-          'Validate inputs at boundaries.',
-          'Add rate limits on expensive endpoints.',
-          'Ensure error handling avoids leaking secrets.',
-        ],
-      },
-      metrics: { latency_ms: 3500 },
-    };
-  },
+  formatOutput: (content, task) => ({
+    repo: task.params.repo || null,
+    focus: task.params.focus || null,
+    review: content,
+    input_chars: task.charCount,
+  }),
 });

@@ -82,8 +82,12 @@ const ESCROW_ADDRESSES: Record<'base' | 'base-sepolia', Address> = {
 }
 
 export function getEscrowAddress(): Address | null {
-  const override = (import.meta as any).env?.VITE_ESCROW_CONTRACT_ADDRESS as string | undefined
-  const address = override || ESCROW_ADDRESSES[BASE_NETWORK]
+  const env = (import.meta as any).env || {}
+  const networkOverride = BASE_NETWORK === 'base'
+    ? (env.VITE_ESCROW_CONTRACT_ADDRESS_BASE as string | undefined)
+    : (env.VITE_ESCROW_CONTRACT_ADDRESS_BASE_SEPOLIA as string | undefined)
+  const override = (env.VITE_ESCROW_CONTRACT_ADDRESS as string | undefined)
+  const address = networkOverride || override || ESCROW_ADDRESSES[BASE_NETWORK]
   return isAddress(address) ? (address as Address) : null
 }
 
