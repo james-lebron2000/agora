@@ -46,6 +46,12 @@ export interface TransferUsdcOptions extends PaymentClientOptions {
   decimals?: number;
 }
 
+export interface TransferNativeOptions extends PaymentClientOptions {
+  recipient: Address;
+  amount: bigint | number | string;
+  decimals?: number;
+}
+
 export function resolveBaseChain(options: PaymentClientOptions): Chain {
   if (options.chain) return options.chain;
   if (options.network) return NETWORK_CHAINS[options.network];
@@ -106,5 +112,21 @@ export async function transferUSDC(options: TransferUsdcOptions): Promise<Hash> 
     functionName: 'transfer',
     args: [options.recipient, value],
     account,
+  });
+}
+
+function parseNativeAmount(amount: bigint | number | string, decimals = 18): bigint {
+  if (typeof amount === 'bigint') return amount;
+  return parseUnits(amount.toString(), decimals);
+}
+
+export async function transferNative(options: TransferNativeOptions): Promise<Hash> {
+  const { walletClient, account } = createClients(options);
+  const value = parseNativeAmount(options.amount, options.decimals);
+
+  return walletClient.sendTransaction({
+    account,
+    to: options.recipient,
+    value,
   });
 }

@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { createStorage } from './storage.js';
+import { createUsdcPaymentVerifier } from './paymentVerifier.js';
 
 const app = express();
 app.use(cors());
@@ -17,6 +18,9 @@ const requestIndex = new Map();
 const requesterHistory = new Map();
 
 const storage = await createStorage({ databaseUrl: process.env.DATABASE_URL });
+const paymentVerifier = createUsdcPaymentVerifier();
+const REQUIRE_ACCEPT_PAYMENT_VERIFY = ['1', 'true', 'yes', 'required']
+  .includes(String(process.env.AGORA_REQUIRE_PAYMENT_VERIFY || '').toLowerCase());
 
 // Active subscriptions for long-polling
 const subscriptions = new Set();
@@ -47,6 +51,38 @@ function normalizeEnvelope(input) {
   if (!envelope.id) return null;
   if (!envelope.ts) envelope.ts = new Date().toISOString();
   return envelope;
+}
+
+function extractAddressFromDid(value) {
+  if (typeof value !== 'string') return null;
+  const match = value.match(/^eip155:(\d+):(0x[a-fA-F0-9]{40})$/);
+  if (!match) return null;
+  return match[2];
+}
+
+function extractAcceptPaymentPayload(evt) {
+  const payload = evt?.payload && typeof evt.payload === 'object' ? evt.payload : {};
+  const terms = payload.terms && typeof payload.terms === 'object' ? payload.terms : {};
+  const txHash = payload.payment_tx || payload.tx_hash || payload.txHash;
+  const amount = payload.amount_usdc ?? payload.amount ?? terms.amount_usdc ?? terms.amount;
+  const senderId = evt?.sender?.id;
+  const fallbackPayer = extractAddressFromDid(senderId);
+  const payer = payload.payer || terms.payer || fallbackPayer || null;
+  const payee = payload.payee || terms.payee || terms.provider || null;
+  const chain = payload.chain || payload.network || terms.chain || terms.network || 'base-sepolia';
+  const token = payload.token || terms.token || 'USDC';
+  const requestId = payload.request_id || payload.requestId;
+
+  return {
+    txHash,
+    amount,
+    payer,
+    payee,
+    chain,
+    token,
+    requestId,
+    senderId,
+  };
 }
 
 function extractIntentsFromCapabilities(capabilities) {
@@ -400,11 +436,45 @@ async function handleGetMessages(req, res) {
 app.get('/events', handleGetMessages);
 
 // v1 messages API
-app.post('/v1/messages', (req, res) => {
+app.post('/v1/messages', async (req, res) => {
   const evt = normalizeEnvelope(req.body);
   if (!evt) {
     return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', message: 'Envelope must be a valid object' });
   }
+
+  if (evt.type === 'ACCEPT' && REQUIRE_ACCEPT_PAYMENT_VERIFY) {
+    const payment = extractAcceptPaymentPayload(evt);
+    if (!payment.txHash || !payment.payer || !payment.payee || payment.amount == null) {
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_PAYMENT_METADATA',
+        message: 'ACCEPT requires payment_tx, payer, payee, and amount when AGORA_REQUIRE_PAYMENT_VERIFY is enabled',
+      });
+    }
+    const verified = await paymentVerifier.verifyUSDCTransfer({
+      txHash: payment.txHash,
+      chain: payment.chain,
+      token: payment.token,
+      payer: payment.payer,
+      payee: payment.payee,
+      amount: payment.amount,
+      senderId: payment.senderId,
+    });
+    if (!verified.ok) {
+      return res.status(402).json({
+        ok: false,
+        error: 'PAYMENT_NOT_VERIFIED',
+        message: verified.message || verified.error || 'Payment verification failed',
+        details: verified,
+      });
+    }
+    const safePayload = evt.payload && typeof evt.payload === 'object' ? evt.payload : {};
+    evt.payload = {
+      ...safePayload,
+      payment_verification: verified.payment,
+    };
+  }
+
   addEvent(evt);
   res.json({ ok: true, id: evt.id });
 });
@@ -574,6 +644,45 @@ app.get('/v1/recommend', async (req, res) => {
     .map((row) => row.agent);
 
   res.json({ ok: true, agents: ranked });
+});
+
+app.post('/v1/payments/verify', async (req, res) => {
+  const body = req.body || {};
+  const txHash = body.tx_hash || body.txHash || body.payment_tx;
+  const chain = body.chain || body.network;
+  const token = body.token || 'USDC';
+  const payer = body.payer || body.buyer;
+  const payee = body.payee || body.seller || body.provider;
+  const amount = body.amount ?? body.amount_usdc ?? body.price;
+  const senderId = body.sender_id || body.senderId;
+
+  const verification = await paymentVerifier.verifyUSDCTransfer({
+    txHash,
+    chain,
+    token,
+    payer,
+    payee,
+    amount,
+    senderId,
+  });
+
+  if (!verification.ok) {
+    const statusCode = verification.error === 'TX_NOT_FOUND' || verification.error === 'TX_UNCONFIRMED'
+      ? 409
+      : 400;
+    return res.status(statusCode).json({
+      ok: false,
+      error: verification.error || 'PAYMENT_VERIFY_FAILED',
+      message: verification.message || 'Failed to verify payment',
+      pending: verification.pending || false,
+      confirmations: verification.confirmations ?? null,
+    });
+  }
+
+  return res.json({
+    ok: true,
+    payment: verification.payment,
+  });
 });
 
 // Escrow + settlement (MVP)

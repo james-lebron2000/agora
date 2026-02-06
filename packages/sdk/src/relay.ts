@@ -65,6 +65,20 @@ export interface LedgerAccount {
   updated_at: string;
 }
 
+export interface PaymentVerification {
+  tx_hash: string;
+  chain: string;
+  token: string;
+  status: string;
+  confirmations: number;
+  amount: string | null;
+  amount_units: string | null;
+  payer: string | null;
+  payee: string | null;
+  block_number: number | null;
+  verified_at: string;
+}
+
 export class RelayClient {
   private baseUrl: string;
   private defaultTimeout: number;
@@ -313,6 +327,34 @@ export class RelayClient {
     try {
       const response = await fetch(`${this.baseUrl}/v1/ledger/${encodeURIComponent(id)}`);
       return await (response as any).json() as { ok: boolean; account?: LedgerAccount; error?: string };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  }
+
+  async verifyPayment(payload: {
+    tx_hash: string;
+    chain?: 'base' | 'base-sepolia' | string;
+    token?: 'USDC' | string;
+    payer?: string;
+    payee?: string;
+    amount?: number | string;
+    sender_id?: string;
+  }): Promise<{ ok: boolean; payment?: PaymentVerification; error?: string; message?: string; pending?: boolean; confirmations?: number | null }> {
+    try {
+      const response = await fetch(`${this.baseUrl}/v1/payments/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return await (response as any).json() as {
+        ok: boolean;
+        payment?: PaymentVerification;
+        error?: string;
+        message?: string;
+        pending?: boolean;
+        confirmations?: number | null;
+      };
     } catch (err) {
       return { ok: false, error: String(err) };
     }

@@ -5,6 +5,8 @@ import { Hero } from './components/Hero'
 import { AnalyticsDashboard } from './components/AnalyticsDashboard'
 import { NetworkStats, type NetworkMetrics } from './components/NetworkStats'
 import { UseCaseShowcase } from './components/UseCaseShowcase'
+import { PostTaskModal } from './components/PostTaskModal'
+import { QuickStart } from './components/QuickStart'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 
@@ -112,8 +114,8 @@ const FALLBACK_AGENTS: AgentSummary[] = [
 const priceFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 })
 
 function formatPricing(pricing?: AgentPricing): string {
-  if (!pricing) return 'pricing not listed'
-  const currency = pricing.currency || 'USD'
+  if (!pricing) return 'Not set'
+  const currency = pricing.currency || 'USDC'
   if (pricing.model === 'fixed' && typeof pricing.fixed_price === 'number') {
     return `${priceFormatter.format(pricing.fixed_price)} ${currency} fixed`
   }
@@ -121,7 +123,7 @@ function formatPricing(pricing?: AgentPricing): string {
     const unit = pricing.metered_unit || 'unit'
     return `${priceFormatter.format(pricing.metered_rate)} ${currency}/${unit}`
   }
-  return pricing.model || 'custom pricing'
+  return pricing.model === 'free' ? 'Free' : 'Custom'
 }
 
 function useRoute(): { route: Route; navigate: (route: Route) => void } {
@@ -190,6 +192,7 @@ function AppContent() {
   const [recommendations, setRecommendations] = useState<AgentSummary[]>([])
   const [metrics, setMetrics] = useState<NetworkMetrics>(MOCK_METRICS)
   const [metricsTick, setMetricsTick] = useState(0)
+  const [isPostTaskModalOpen, setIsPostTaskModalOpen] = useState(false)
 
   async function poll() {
     const url = new URL(relayUrl + '/v1/messages')
@@ -296,6 +299,47 @@ function AppContent() {
 
   const agentsForDisplay = agents.length ? agents : FALLBACK_AGENTS
 
+  const handlePostTask = async (task: {
+    intent: string
+    title: string
+    description: string
+    budget: number
+    params: Record<string, string>
+  }) => {
+    // Create a new REQUEST event
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const newEvent: AgoraEvent = {
+      ts: new Date().toISOString(),
+      type: 'REQUEST',
+      id: requestId,
+      sender: { id: 'web:user' },
+      payload: {
+        request_id: requestId,
+        intent: task.intent,
+        title: task.title,
+        description: task.description,
+        budget_usd: task.budget,
+        params: task.params,
+      },
+    }
+
+    // Send to relay
+    try {
+      const response = await fetch(`${relayUrl}/v1/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ envelope: newEvent }),
+      })
+      if (response.ok) {
+        setEvents((prev) => [newEvent, ...prev])
+      }
+    } catch (err) {
+      console.error('Failed to post task:', err)
+      // Still add to local events for demo purposes
+      setEvents((prev) => [newEvent, ...prev])
+    }
+  }
+
   const left = (
     <div>
       <div className="flex items-center gap-2 mb-4">
@@ -304,7 +348,7 @@ function AppContent() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
         </div>
-        <h2 className="font-bold text-agora-900">Recent Agents</h2>
+        <h2 className="font-bold text-agora-900">Online Agents</h2>
       </div>
       <div className="space-y-3">
         {agentsForDisplay.slice(0, 6).map((a) => (
@@ -316,7 +360,7 @@ function AppContent() {
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-agora-900 text-sm truncate">{a.name || a.id}</div>
                 <div className="text-xs text-agora-500 truncate">
-                  {(a.intents && a.intents.length ? a.intents.slice(0, 2).join(', ') : 'no intents')}
+                  {(a.intents && a.intents.length ? a.intents.slice(0, 2).join(', ') : 'No skills yet')}
                 </div>
               </div>
             </div>
@@ -336,14 +380,26 @@ function AppContent() {
   )
 
   const homeCenter = (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div id="post-task">
+      <QuickStart />
+
+      <div className="flex items-center justify-between mb-6 mt-6">
         <div>
-          <h2 className="text-xl font-bold text-agora-900">Workflow Posts</h2>
+          <h2 className="text-xl font-bold text-agora-900">Task Marketplace</h2>
           <p className={`text-sm mt-1 ${usingSeed ? 'text-warning' : 'text-success'}`}>
-            {usingSeed ? 'Showing seed demo data (relay empty/unreachable).' : 'Live feed (relay events).'}
+            {usingSeed ? 'Showing demo data (relay not connected).' : 'Live task feed (connected to relay).'}
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <button
+          onClick={() => setIsPostTaskModalOpen(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-success text-white rounded-xl font-medium hover:bg-emerald-600 transition-all shadow-lg shadow-success/20"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Post Task
+        </button>
         <button
           onClick={() => runDemo()}
           disabled={demoBusy}
@@ -367,6 +423,7 @@ function AppContent() {
             </>
           )}
         </button>
+        </div>
       </div>
 
       <Feed
@@ -376,6 +433,12 @@ function AppContent() {
           // Force a poll to get the latest events
           poll().catch(() => {})
         }}
+      />
+
+      <PostTaskModal
+        isOpen={isPostTaskModalOpen}
+        onClose={() => setIsPostTaskModalOpen(false)}
+        onSubmit={handlePostTask}
       />
     </div>
   )
@@ -394,13 +457,13 @@ function AppContent() {
         </div>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { k: 'agents', v: agents.length || 3, icon: '🤖' },
-            { k: 'workflows', v: threads.length, icon: '📊' },
-            { k: 'posts', v: threads.length, icon: '📝' },
-            { k: 'volume', v: '$' + threads.reduce((acc, t) => acc + (t.budgetUsd || 0), 0).toFixed(2), icon: '💰' },
+            { k: 'Online Agents', v: agents.length || 3, icon: '🤖' },
+            { k: 'Active Workflows', v: threads.length, icon: '📊' },
+            { k: 'Task Posts', v: threads.length, icon: '📝' },
+            { k: 'Total Volume', v: '$' + threads.reduce((acc, t) => acc + (t.budgetUsd || 0), 0).toFixed(2), icon: '💰' },
           ].map((s) => (
             <div key={s.k} className="p-3 bg-agora-50 rounded-xl border border-agora-100">
-              <div className="text-xs text-agora-500 uppercase tracking-wider mb-1">{s.k}</div>
+              <div className="text-xs text-agora-500 mb-1">{s.k}</div>
               <div className="font-bold text-agora-900 text-lg">{s.v}</div>
             </div>
           ))}
@@ -412,12 +475,12 @@ function AppContent() {
         <div className="flex items-center gap-2 mb-2">
           <span className={`w-2 h-2 rounded-full ${usingSeed ? 'bg-warning' : 'bg-success'} ${!usingSeed && 'animate-pulse'}`} />
           <span className="text-sm font-medium text-agora-700">
-            Status: {usingSeed ? 'Demo Mode' : 'Connected'}
+            Status:{usingSeed ? 'Demo Mode' : 'Connected'}
           </span>
         </div>
         <p className="text-xs text-agora-500">
           {usingSeed
-            ? 'Using demo data. Start the relay for live data.'
+            ? 'Using demo data. Start relay for live data.'
             : 'Connected to Agora relay network.'}
         </p>
       </div>
@@ -430,10 +493,10 @@ function AppContent() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
             </svg>
           </div>
-          <h2 className="font-bold text-agora-900">Recommendations</h2>
+          <h2 className="font-bold text-agora-900">Recommended Agents</h2>
         </div>
         <div className="text-xs text-agora-500 mb-3">
-          {topIntent ? `Based on ${topIntent}` : 'Top agents'}
+          {topIntent ? `Based on${topIntent}` : 'Top Agents'}
         </div>
         <div className="space-y-2">
           {(recommendations.length ? recommendations : agents.slice(0, 3)).map((agent) => (
@@ -441,7 +504,7 @@ function AppContent() {
               <div className="font-semibold text-agora-900 text-sm">{agent.name || agent.id}</div>
               {agent.reputation?.score != null ? (
                 <div className="text-xs text-agora-500 mt-1">
-                  Score {agent.reputation.score} · {agent.reputation.tier || 'N/A'}
+                  Score{agent.reputation.score} · {agent.reputation.tier || 'N/A'}
                 </div>
               ) : (
                 <div className="text-xs text-agora-400 mt-1">No reputation yet</div>
@@ -470,6 +533,7 @@ function AppContent() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {agentsForDisplay.map((agent) => {
             const status = agent.status || 'unknown'
+            const statusText = status === 'online' ? 'online' : status === 'offline' ? 'offline' : 'unknown'
             const statusClass =
               status === 'online'
                 ? 'bg-success-light text-success'
@@ -484,18 +548,18 @@ function AppContent() {
                     <div className="text-xs text-agora-500">{agent.id}</div>
                   </div>
                   <span className={`text-xs px-2 py-1 rounded-full ${statusClass}`}>
-                    {status}
+                    {statusText}
                   </span>
                 </div>
                 <div className="text-xs text-agora-500 mt-2">
-                  Intents: {agent.intents?.length ? agent.intents.join(', ') : 'no intents'}
+                  Skills: {agent.intents?.length ? agent.intents.join(', ') : 'No skills yet'}
                 </div>
                 <div className="mt-3 space-y-2">
                   {agent.capabilities?.length ? (
                     agent.capabilities.map((cap, index) => (
                       <div key={cap.id || cap.name || `${agent.id}-${index}`} className="p-2 bg-agora-50 rounded-lg border border-agora-100">
                         <div className="text-sm font-semibold text-agora-800">
-                          {cap.name || cap.id || 'Capability'}
+                          {cap.name || cap.id || 'Service Capability'}
                         </div>
                         {cap.description && (
                           <div className="text-xs text-agora-500 mt-0.5">{cap.description}</div>
@@ -506,7 +570,7 @@ function AppContent() {
                       </div>
                     ))
                   ) : (
-                    <div className="text-xs text-agora-400">No pricing details yet.</div>
+                    <div className="text-xs text-agora-400">No pricing info</div>
                   )}
                 </div>
               </div>

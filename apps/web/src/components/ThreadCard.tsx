@@ -74,7 +74,7 @@ function OfferRow({
 }
 
 export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardProps) {
-  const { isConnected } = useWallet()
+  const { isConnected, address, chainId } = useWallet()
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null)
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -88,7 +88,6 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
 
   const handleAcceptClick = (offer: Offer) => {
     if (!isConnected) {
-      // Show a toast or alert that wallet needs to be connected
       alert('Please connect your wallet first')
       return
     }
@@ -102,34 +101,47 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
     setIsSubmitting(true)
 
     try {
-      // Build the ACCEPT message payload
+      const senderId = address
+        ? `eip155:${chainId ?? 84532}:${address.toLowerCase()}`
+        : 'web:unknown'
+
       const acceptPayload = {
         request_id: thread.requestId,
         offer_id: selectedOffer.offerId,
-        tx_hash: txHash,
+        accepted_at: new Date().toISOString(),
+        payment_tx: txHash,
         chain: 'base',
         token: 'USDC',
+        terms: {
+          offer_id: selectedOffer.offerId,
+          provider: selectedOffer.provider,
+          amount_usdc: selectedOffer.priceUsd ?? null,
+        },
       }
 
-      // Send to relay
+      const acceptEnvelope = {
+        version: '1.0',
+        id: `acc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        ts: new Date().toISOString(),
+        type: 'ACCEPT',
+        sender: { id: senderId },
+        thread: { id: thread.requestId },
+        payload: acceptPayload,
+      }
+
       const response = await fetch(`${relayUrl}/v1/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'ACCEPT',
-          payload: acceptPayload,
-        }),
+        body: JSON.stringify({ envelope: acceptEnvelope }),
       })
 
       if (!response.ok) {
         throw new Error('Failed to submit acceptance')
       }
 
-      // Close modal and reset
       setIsPaymentModalOpen(false)
       setSelectedOffer(null)
 
-      // Notify parent to refresh
       onAcceptComplete?.()
     } catch (error) {
       console.error('Failed to submit acceptance:', error)
@@ -252,7 +264,6 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
         )}
       </div>
 
-      {/* Payment Modal */}
       <PaymentModal
         isOpen={isPaymentModalOpen}
         onClose={() => {
