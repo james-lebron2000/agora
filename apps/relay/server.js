@@ -21,6 +21,11 @@ const storage = await createStorage({ databaseUrl: process.env.DATABASE_URL });
 const paymentVerifier = createUsdcPaymentVerifier();
 const REQUIRE_ACCEPT_PAYMENT_VERIFY = ['1', 'true', 'yes', 'required']
   .includes(String(process.env.AGORA_REQUIRE_PAYMENT_VERIFY || '').toLowerCase());
+const REQUIRE_INTENT_SCHEMAS = ['1', 'true', 'yes', 'required']
+  .includes(String(process.env.AGORA_REQUIRE_INTENT_SCHEMAS || '').toLowerCase());
+
+const intentInputSchemas = new Map();
+const intentOutputSchemas = new Map();
 
 // Active subscriptions for long-polling
 const subscriptions = new Set();
@@ -98,6 +103,315 @@ function extractIntentsFromCapabilities(capabilities) {
     }
   }
   return Array.from(intents);
+}
+
+function extractPricingFromCapabilities(capabilities) {
+  if (!Array.isArray(capabilities)) return [];
+  const rows = [];
+  for (const cap of capabilities) {
+    if (!cap || typeof cap !== 'object') continue;
+    const pricing = cap.pricing && typeof cap.pricing === 'object' ? cap.pricing : null;
+    if (!pricing) continue;
+    rows.push({
+      capability_id: typeof cap.id === 'string' ? cap.id : null,
+      capability_name: typeof cap.name === 'string' ? cap.name : null,
+      model: typeof pricing.model === 'string' ? pricing.model : null,
+      currency: typeof pricing.currency === 'string' ? pricing.currency : null,
+      fixed_price: Number.isFinite(Number(pricing.fixed_price)) ? Number(pricing.fixed_price) : null,
+      metered_unit: typeof pricing.metered_unit === 'string' ? pricing.metered_unit : null,
+      metered_rate: Number.isFinite(Number(pricing.metered_rate)) ? Number(pricing.metered_rate) : null,
+    });
+  }
+  return rows;
+}
+
+function normalizeSearchValue(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function buildAgentSearchBlob(agent) {
+  const parts = [];
+  if (agent?.id) parts.push(agent.id);
+  if (agent?.name) parts.push(agent.name);
+  if (agent?.description) parts.push(agent.description);
+  if (Array.isArray(agent?.intents)) parts.push(agent.intents.join(' '));
+  if (Array.isArray(agent?.capabilities)) {
+    for (const capability of agent.capabilities) {
+      if (capability?.name) parts.push(String(capability.name));
+      if (capability?.description) parts.push(String(capability.description));
+      if (Array.isArray(capability?.intents)) {
+        const declared = capability.intents
+          .map((intent) => (typeof intent === 'string' ? intent : intent?.id))
+          .filter(Boolean);
+        parts.push(declared.join(' '));
+      }
+    }
+  }
+  return normalizeSearchValue(parts.join(' '));
+}
+
+function matchesDirectoryFilters(agent, filters) {
+  const intentFilter = normalizeSearchValue(filters.intent);
+  const queryFilter = normalizeSearchValue(filters.q);
+  const statusFilter = normalizeSearchValue(filters.status);
+
+  if (intentFilter) {
+    const intents = Array.isArray(agent?.intents) ? agent.intents.map((item) => normalizeSearchValue(item)) : [];
+    if (!intents.includes(intentFilter)) return false;
+  }
+
+  if (statusFilter) {
+    const computed = computeAgentStatus(agent).status;
+    if (normalizeSearchValue(computed) !== statusFilter) return false;
+  }
+
+  if (queryFilter) {
+    const blob = buildAgentSearchBlob(agent);
+    if (!blob.includes(queryFilter)) return false;
+  }
+
+  return true;
+}
+
+function isObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeSchema(value) {
+  return isObject(value) ? value : null;
+}
+
+function extractIntentSchemaBindings(capabilities) {
+  if (!Array.isArray(capabilities)) return [];
+  const bindings = [];
+
+  for (const capability of capabilities) {
+    if (!isObject(capability)) continue;
+    const capabilityInput = normalizeSchema(
+      capability.input_schema || capability.inputSchema || capability?.schemas?.request,
+    );
+    const capabilityOutput = normalizeSchema(
+      capability.output_schema || capability.outputSchema || capability?.schemas?.response,
+    );
+
+    const declaredIntents = Array.isArray(capability.intents)
+      ? capability.intents
+      : capability.intent
+        ? [capability.intent]
+        : [];
+
+    for (const declared of declaredIntents) {
+      if (typeof declared === 'string') {
+        bindings.push({
+          intent: declared,
+          inputSchema: capabilityInput,
+          outputSchema: capabilityOutput,
+        });
+        continue;
+      }
+
+      if (!isObject(declared) || typeof declared.id !== 'string' || !declared.id) continue;
+      bindings.push({
+        intent: declared.id,
+        inputSchema: normalizeSchema(
+          declared.input_schema || declared.inputSchema || declared?.schemas?.request || capabilityInput,
+        ),
+        outputSchema: normalizeSchema(
+          declared.output_schema || declared.outputSchema || declared?.schemas?.response || capabilityOutput,
+        ),
+      });
+    }
+  }
+
+  return bindings;
+}
+
+function registerIntentSchemas(bindings, sourceAgentId) {
+  for (const binding of bindings) {
+    const now = new Date().toISOString();
+    if (binding.inputSchema) {
+      intentInputSchemas.set(binding.intent, {
+        schema: binding.inputSchema,
+        source: sourceAgentId,
+        updated_at: now,
+      });
+    }
+    if (binding.outputSchema) {
+      intentOutputSchemas.set(binding.intent, {
+        schema: binding.outputSchema,
+        source: sourceAgentId,
+        updated_at: now,
+      });
+    }
+  }
+}
+
+function validateJsonSchema(schema, value, path = 'root') {
+  const errors = [];
+  const schemaObj = normalizeSchema(schema);
+
+  if (!schemaObj) {
+    return { ok: false, errors: [`${path}: schema must be an object`] };
+  }
+
+  if (Array.isArray(schemaObj.type)) {
+    const anyTypeMatches = schemaObj.type.some((subtype) =>
+      validateJsonSchema({ ...schemaObj, type: subtype }, value, path).ok,
+    );
+    if (!anyTypeMatches) errors.push(`${path}: value does not match any allowed type`);
+    return { ok: errors.length === 0, errors };
+  }
+
+  if (schemaObj.enum && Array.isArray(schemaObj.enum)) {
+    const enumMatch = schemaObj.enum.some((item) => JSON.stringify(item) === JSON.stringify(value));
+    if (!enumMatch) errors.push(`${path}: value is not in enum`);
+  }
+
+  const schemaType = schemaObj.type;
+  if (schemaType === 'string') {
+    if (typeof value !== 'string') errors.push(`${path}: expected string`);
+    return { ok: errors.length === 0, errors };
+  }
+  if (schemaType === 'number') {
+    if (typeof value !== 'number' || Number.isNaN(value)) errors.push(`${path}: expected number`);
+    return { ok: errors.length === 0, errors };
+  }
+  if (schemaType === 'integer') {
+    if (!Number.isInteger(value)) errors.push(`${path}: expected integer`);
+    return { ok: errors.length === 0, errors };
+  }
+  if (schemaType === 'boolean') {
+    if (typeof value !== 'boolean') errors.push(`${path}: expected boolean`);
+    return { ok: errors.length === 0, errors };
+  }
+  if (schemaType === 'array') {
+    if (!Array.isArray(value)) {
+      errors.push(`${path}: expected array`);
+      return { ok: false, errors };
+    }
+    if (schemaObj.minItems != null && value.length < schemaObj.minItems) {
+      errors.push(`${path}: expected at least ${schemaObj.minItems} items`);
+    }
+    if (schemaObj.maxItems != null && value.length > schemaObj.maxItems) {
+      errors.push(`${path}: expected at most ${schemaObj.maxItems} items`);
+    }
+    if (schemaObj.items) {
+      value.forEach((item, index) => {
+        const nested = validateJsonSchema(schemaObj.items, item, `${path}[${index}]`);
+        errors.push(...nested.errors);
+      });
+    }
+    return { ok: errors.length === 0, errors };
+  }
+  if (schemaType === 'object' || schemaObj.properties || schemaObj.required) {
+    if (!isObject(value)) {
+      errors.push(`${path}: expected object`);
+      return { ok: false, errors };
+    }
+    const required = Array.isArray(schemaObj.required) ? schemaObj.required : [];
+    for (const key of required) {
+      if (!(key in value)) {
+        errors.push(`${path}.${key}: is required`);
+      }
+    }
+    const properties = isObject(schemaObj.properties) ? schemaObj.properties : {};
+    for (const [key, subSchema] of Object.entries(properties)) {
+      if (!(key in value)) continue;
+      const nested = validateJsonSchema(subSchema, value[key], `${path}.${key}`);
+      errors.push(...nested.errors);
+    }
+    if (schemaObj.additionalProperties === false) {
+      const allowedKeys = new Set(Object.keys(properties));
+      for (const key of Object.keys(value)) {
+        if (!allowedKeys.has(key)) errors.push(`${path}.${key}: additional property is not allowed`);
+      }
+    }
+    return { ok: errors.length === 0, errors };
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+function parsePeriodToMs(period) {
+  if (!period) return 7 * 24 * 60 * 60 * 1000;
+  const text = String(period).trim().toLowerCase();
+  const match = text.match(/^(\d+)([hdw])$/);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  const unit = match[2];
+  if (unit === 'h') return amount * 60 * 60 * 1000;
+  if (unit === 'd') return amount * 24 * 60 * 60 * 1000;
+  if (unit === 'w') return amount * 7 * 24 * 60 * 60 * 1000;
+  return null;
+}
+
+function computePercentile(values, percentile) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = (sorted.length - 1) * percentile;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return sorted[lower];
+  const weight = index - lower;
+  return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+}
+
+function buildMarketRateReport({ intent, currency, periodMs, now }) {
+  const cutoff = now - periodMs;
+  const byCurrency = new Map();
+
+  for (const event of events) {
+    if (event?.type !== 'ACCEPT') continue;
+    const payload = isObject(event.payload) ? event.payload : {};
+    const requestId = payload.request_id || payload.requestId;
+    if (!requestId) continue;
+    const request = requestIndex.get(String(requestId));
+    const requestIntent = request?.intent || payload.intent;
+    if (intent && requestIntent !== intent) continue;
+
+    const ts = Date.parse(event.ts);
+    if (!Number.isFinite(ts) || ts < cutoff) continue;
+
+    const rawToken = typeof payload.token === 'string'
+      ? payload.token
+      : typeof payload.currency === 'string'
+        ? payload.currency
+        : payload.amount_usdc != null || payload.price_usd != null
+          ? 'USDC'
+          : null;
+    if (!rawToken) continue;
+    const token = rawToken.toUpperCase();
+    if (currency && token !== currency) continue;
+
+    let amount = null;
+    if (payload.amount != null) amount = Number(payload.amount);
+    if (!Number.isFinite(amount) && payload.amount_usdc != null) amount = Number(payload.amount_usdc);
+    if (!Number.isFinite(amount) && payload.price_usd != null) amount = Number(payload.price_usd);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+
+    const list = byCurrency.get(token) || [];
+    list.push(amount);
+    byCurrency.set(token, list);
+  }
+
+  const rates = Array.from(byCurrency.entries()).map(([token, list]) => {
+    const total = list.reduce((sum, value) => sum + value, 0);
+    return {
+      currency: token,
+      sample_size: list.length,
+      average: Number((total / list.length).toFixed(8)),
+      p25: Number((computePercentile(list, 0.25) || 0).toFixed(8)),
+      p50: Number((computePercentile(list, 0.5) || 0).toFixed(8)),
+      p75: Number((computePercentile(list, 0.75) || 0).toFixed(8)),
+      min: Number(Math.min(...list).toFixed(8)),
+      max: Number(Math.max(...list).toFixed(8)),
+    };
+  }).sort((a, b) => b.sample_size - a.sample_size);
+
+  return {
+    rates,
+    sample_size: rates.reduce((sum, row) => sum + row.sample_size, 0),
+  };
 }
 
 function upsertAgent(record) {
@@ -442,6 +756,67 @@ app.post('/v1/messages', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', message: 'Envelope must be a valid object' });
   }
 
+  if (evt.type === 'REQUEST') {
+    const payload = isObject(evt.payload) ? evt.payload : {};
+    const intent = payload.intent;
+    const params = payload.params;
+    if (typeof intent !== 'string' || !intent) {
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_REQUEST_INTENT',
+        message: 'REQUEST payload.intent is required',
+      });
+    }
+    if (!isObject(params)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_REQUEST_PARAMS',
+        message: 'REQUEST payload.params must be an object',
+      });
+    }
+
+    const schemaRecord = intentInputSchemas.get(intent);
+    if (REQUIRE_INTENT_SCHEMAS && !schemaRecord) {
+      return res.status(400).json({
+        ok: false,
+        error: 'SCHEMA_NOT_REGISTERED',
+        message: `No input schema registered for intent "${intent}"`,
+      });
+    }
+    if (schemaRecord) {
+      const check = validateJsonSchema(schemaRecord.schema, params, 'payload.params');
+      if (!check.ok) {
+        return res.status(400).json({
+          ok: false,
+          error: 'REQUEST_SCHEMA_VALIDATION_FAILED',
+          message: `REQUEST params failed schema validation for intent "${intent}"`,
+          details: check.errors,
+        });
+      }
+    }
+  }
+
+  if (evt.type === 'RESULT') {
+    const payload = isObject(evt.payload) ? evt.payload : {};
+    const requestId = payload.request_id || payload.requestId;
+    const intent = requestIndex.get(String(requestId || ''))?.intent || payload.intent;
+    if (typeof intent === 'string' && intent) {
+      const schemaRecord = intentOutputSchemas.get(intent);
+      if (schemaRecord) {
+        const output = payload.output != null ? payload.output : payload;
+        const check = validateJsonSchema(schemaRecord.schema, output, 'payload.output');
+        if (!check.ok) {
+          return res.status(400).json({
+            ok: false,
+            error: 'RESULT_SCHEMA_VALIDATION_FAILED',
+            message: `RESULT payload failed schema validation for intent "${intent}"`,
+            details: check.errors,
+          });
+        }
+      }
+    }
+  }
+
   if (evt.type === 'ACCEPT' && REQUIRE_ACCEPT_PAYMENT_VERIFY) {
     const payment = extractAcceptPaymentPayload(evt);
     if (!payment.txHash || !payment.payer || !payment.payee || payment.amount == null) {
@@ -497,15 +872,42 @@ app.post('/v1/agents', async (req, res) => {
         ? [body.capability]
         : [];
 
+  const schemaBindings = extractIntentSchemaBindings(caps);
+  if (REQUIRE_INTENT_SCHEMAS) {
+    const missing = schemaBindings
+      .filter((binding) => !binding.inputSchema || !binding.outputSchema)
+      .map((binding) => binding.intent);
+    if (missing.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: 'MISSING_INTENT_SCHEMAS',
+        message: 'Each declared intent must include both input_schema and output_schema',
+        details: { intents: Array.from(new Set(missing)) },
+      });
+    }
+    if (schemaBindings.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: 'NO_INTENTS_DECLARED',
+        message: 'At least one intent with input_schema/output_schema is required',
+      });
+    }
+  }
+
   const record = upsertAgent({
     id: agent.id,
     name: agent.name,
     url: agent.url,
+    description: agent.description || body.description || null,
+    portfolio_url: agent.portfolio_url || agent.portfolioUrl || body.portfolio_url || body.portfolioUrl || null,
+    metadata: isObject(agent.metadata) ? agent.metadata : isObject(body.metadata) ? body.metadata : null,
     capabilities: caps,
     intents: extractIntentsFromCapabilities(caps),
+    pricing: extractPricingFromCapabilities(caps),
     status: body.status || agent.status || 'online',
   });
   await getOrCreateReputation(record.id);
+  registerIntentSchemas(schemaBindings, record.id);
 
   res.json({ ok: true, agent: await decorateAgent(record) });
 });
@@ -537,11 +939,11 @@ app.get('/v1/agents/:did/status', (req, res) => {
 
 app.get('/v1/discover', async (req, res) => {
   const intent = String(req.query.intent || '');
+  const q = String(req.query.q || '');
+  const status = String(req.query.status || '');
   const limit = Math.min(Number(req.query.limit) || 10, 50);
   const all = Array.from(agents.values());
-  const filtered = intent
-    ? all.filter((agent) => Array.isArray(agent.intents) && agent.intents.includes(intent))
-    : all;
+  const filtered = all.filter((agent) => matchesDirectoryFilters(agent, { intent, q, status }));
   const rankedWithScores = await Promise.all(filtered.map(async (agent) => {
     const rep = await getOrCreateReputation(agent.id);
     const status = computeAgentStatus(agent);
@@ -552,7 +954,53 @@ app.get('/v1/discover', async (req, res) => {
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map((row) => row.agent);
-  res.json({ ok: true, agents: ranked });
+  res.json({
+    ok: true,
+    query: { intent: intent || null, q: q || null, status: status || null, limit },
+    agents: ranked,
+  });
+});
+
+app.get('/v1/directory', async (req, res) => {
+  const intent = String(req.query.intent || '');
+  const q = String(req.query.q || '');
+  const status = String(req.query.status || '');
+  const limit = Math.min(Number(req.query.limit) || 20, 100);
+
+  const candidates = Array.from(agents.values()).filter((agent) =>
+    matchesDirectoryFilters(agent, { intent, q, status }),
+  );
+
+  const rows = await Promise.all(candidates.map(async (agent) => {
+    const statusInfo = computeAgentStatus(agent);
+    const reputation = await getOrCreateReputation(agent.id);
+    return {
+      id: agent.id,
+      name: agent.name || null,
+      description: agent.description || null,
+      url: agent.url || null,
+      portfolio_url: agent.portfolio_url || null,
+      intents: Array.isArray(agent.intents) ? agent.intents : [],
+      pricing: Array.isArray(agent.pricing) ? agent.pricing : extractPricingFromCapabilities(agent.capabilities),
+      status: statusInfo.status,
+      last_seen: statusInfo.last_seen,
+      reputation,
+      capabilities: Array.isArray(agent.capabilities) ? agent.capabilities : [],
+    };
+  }));
+
+  rows.sort((a, b) => {
+    const scoreA = (a.reputation?.score || 0) + (a.status === 'online' ? 5 : 0);
+    const scoreB = (b.reputation?.score || 0) + (b.status === 'online' ? 5 : 0);
+    return scoreB - scoreA;
+  });
+
+  res.json({
+    ok: true,
+    query: { intent: intent || null, q: q || null, status: status || null, limit },
+    total: rows.length,
+    agents: rows.slice(0, limit),
+  });
 });
 
 app.get('/v1/agents/:did', async (req, res) => {
@@ -646,6 +1094,35 @@ app.get('/v1/recommend', async (req, res) => {
   res.json({ ok: true, agents: ranked });
 });
 
+app.get('/v1/market-rate', async (req, res) => {
+  const intent = req.query.intent ? String(req.query.intent) : null;
+  const currency = req.query.currency ? String(req.query.currency).toUpperCase() : null;
+  const period = req.query.period ? String(req.query.period) : '7d';
+  const periodMs = parsePeriodToMs(period);
+  if (!periodMs) {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_PERIOD',
+      message: 'period must be one of: 24h, 7d, 30d, 1w, etc.',
+    });
+  }
+
+  const now = Date.now();
+  const report = buildMarketRateReport({ intent, currency, periodMs, now });
+  return res.json({
+    ok: true,
+    query: {
+      intent,
+      currency,
+      period,
+      period_ms: periodMs,
+    },
+    sample_size: report.sample_size,
+    rates: report.rates,
+    generated_at: new Date(now).toISOString(),
+  });
+});
+
 app.post('/v1/payments/verify', async (req, res) => {
   const body = req.body || {};
   const txHash = body.tx_hash || body.txHash || body.payment_tx;
@@ -710,6 +1187,22 @@ app.post('/v1/escrow/hold', async (req, res) => {
     held_at: new Date().toISOString(),
   };
   await storage.saveEscrow(record);
+  addEvent({
+    version: '1.0',
+    id: `escrow_held_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    ts: new Date().toISOString(),
+    type: 'ESCROW_HELD',
+    sender: { id: 'relay:escrow' },
+    payload: {
+      request_id: record.request_id,
+      payer: record.payer,
+      payee: record.payee,
+      amount: record.amount,
+      currency: record.currency,
+      status: record.status,
+      held_at: record.held_at,
+    },
+  });
   res.json({ ok: true, escrow: record });
 });
 
@@ -741,6 +1234,24 @@ app.post('/v1/escrow/release', async (req, res) => {
 
   record.released_at = new Date().toISOString();
   await storage.saveEscrow(record);
+  addEvent({
+    version: '1.0',
+    id: `escrow_${record.status.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    ts: new Date().toISOString(),
+    type: record.status === 'RELEASED' ? 'ESCROW_RELEASED' : 'ESCROW_REFUNDED',
+    sender: { id: 'relay:escrow' },
+    payload: {
+      request_id: record.request_id,
+      payer: record.payer,
+      payee: record.payee,
+      amount: record.amount,
+      currency: record.currency,
+      fee: record.fee,
+      payout: record.payout,
+      status: record.status,
+      released_at: record.released_at,
+    },
+  });
   res.json({ ok: true, escrow: record });
 });
 

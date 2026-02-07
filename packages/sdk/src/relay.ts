@@ -19,15 +19,42 @@ export interface AgentRegistration {
     id: string;
     name?: string;
     url?: string;
+    description?: string;
+    portfolio_url?: string;
+    portfolioUrl?: string;
+    metadata?: Record<string, unknown>;
   };
   capabilities?: unknown[];
   status?: string;
 }
 
 export interface AgentRecord extends AgentRegistration {
+  id?: string;
+  name?: string;
+  url?: string;
+  description?: string;
+  portfolio_url?: string;
+  metadata?: Record<string, unknown> | null;
   intents?: string[];
+  pricing?: Array<{
+    capability_id?: string | null;
+    capability_name?: string | null;
+    model?: string | null;
+    currency?: string | null;
+    fixed_price?: number | null;
+    metered_unit?: string | null;
+    metered_rate?: number | null;
+  }>;
   last_seen?: string;
+  status?: string;
   reputation?: ReputationRecord;
+}
+
+export interface DirectoryOptions {
+  intent?: string;
+  q?: string;
+  status?: 'online' | 'offline' | string;
+  limit?: number;
 }
 
 export interface ReputationRecord {
@@ -77,6 +104,32 @@ export interface PaymentVerification {
   payee: string | null;
   block_number: number | null;
   verified_at: string;
+}
+
+export interface MarketRateRow {
+  currency: string;
+  sample_size: number;
+  average: number;
+  p25: number;
+  p50: number;
+  p75: number;
+  min: number;
+  max: number;
+}
+
+export interface MarketRateResponse {
+  ok: boolean;
+  query?: {
+    intent?: string | null;
+    currency?: string | null;
+    period?: string;
+    period_ms?: number;
+  };
+  sample_size?: number;
+  rates?: MarketRateRow[];
+  generated_at?: string;
+  error?: string;
+  message?: string;
 }
 
 export class RelayClient {
@@ -233,6 +286,20 @@ export class RelayClient {
     }
   }
 
+  async listDirectory(options: DirectoryOptions = {}): Promise<{ ok: boolean; agents?: AgentRecord[]; total?: number; error?: string }> {
+    try {
+      const params = new URLSearchParams();
+      if (options.intent) params.set('intent', options.intent);
+      if (options.q) params.set('q', options.q);
+      if (options.status) params.set('status', options.status);
+      if (options.limit) params.set('limit', String(options.limit));
+      const response = await fetch(`${this.baseUrl}/v1/directory?${params}`);
+      return await (response as any).json() as { ok: boolean; agents?: AgentRecord[]; total?: number; error?: string };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  }
+
   async getAgentStatus(did: string): Promise<{ ok: boolean; id?: string; status?: string; last_seen?: string | null; error?: string }> {
     try {
       const response = await fetch(`${this.baseUrl}/v1/agents/${encodeURIComponent(did)}/status`);
@@ -355,6 +422,19 @@ export class RelayClient {
         pending?: boolean;
         confirmations?: number | null;
       };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  }
+
+  async getMarketRate(options: { intent?: string; currency?: string; period?: string } = {}): Promise<MarketRateResponse> {
+    try {
+      const params = new URLSearchParams();
+      if (options.intent) params.set('intent', options.intent);
+      if (options.currency) params.set('currency', options.currency.toUpperCase());
+      if (options.period) params.set('period', options.period);
+      const response = await fetch(`${this.baseUrl}/v1/market-rate?${params}`);
+      return await (response as any).json() as MarketRateResponse;
     } catch (err) {
       return { ok: false, error: String(err) };
     }

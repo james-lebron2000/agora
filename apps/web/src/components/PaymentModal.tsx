@@ -1,17 +1,28 @@
-import { useState } from 'react'
-import { isAddress, parseUnits } from 'viem'
-import { useWriteContract } from 'wagmi'
+import { useEffect, useMemo, useState } from 'react'
+import { isAddress, parseEther, parseUnits } from 'viem'
+import { useBalance, useSendTransaction, useWriteContract } from 'wagmi'
 import { useWallet, truncateAddress, USDC_ABI } from '../hooks/useWallet'
-import { getChainLabel, getExplorerBaseUrl, resolveUsdcAddress } from '../lib/chain'
+import { BASE_NETWORK, PREFERRED_CHAIN, getChainLabel, getExplorerBaseUrl, resolveUsdcAddress } from '../lib/chain'
 import { ESCROW_ABI, encodeRequestId, getEscrowAddress } from '../lib/escrow'
+
+type PaymentToken = 'USDC' | 'ETH'
+
+export interface PaymentReceipt {
+  txHash: string
+  token: PaymentToken
+  amount: number
+  chain: 'base' | 'base-sepolia'
+}
 
 interface PaymentModalProps {
   isOpen: boolean
   onClose: () => void
-  onConfirm: (txHash: string) => void
+  onConfirm: (receipt: PaymentReceipt) => void
   offer: {
     offerId: string
     provider: string
+    priceAmount?: number
+    currency?: string
     priceUsd?: number
   } | null
   thread: {
@@ -24,19 +35,56 @@ type PaymentStep = 'confirm' | 'switch-chain' | 'processing' | 'success' | 'erro
 
 export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: PaymentModalProps) {
   const { address, isConnected, isBaseChain, switchToBaseChain, balance, connect, chainId } = useWallet()
+  const { sendTransactionAsync } = useSendTransaction()
   const { writeContractAsync } = useWriteContract()
   const [step, setStep] = useState<PaymentStep>('confirm')
+  const [selectedToken, setSelectedToken] = useState<PaymentToken>('USDC')
   const [error, setError] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<string | null>(null)
 
   if (!isOpen || !offer || !thread) return null
 
+  const activeChainId = chainId ?? PREFERRED_CHAIN.id
+  const defaultToken = (offer.currency || 'USDC').toUpperCase() === 'ETH' ? 'ETH' : 'USDC'
+  const amount = offer.priceAmount ?? offer.priceUsd ?? 0
   const escrowAddress = getEscrowAddress()
-  const price = offer.priceUsd ?? 0
-  const hasEnoughBalance = balance && parseFloat(balance) >= price
+  const hasEnoughUsdcFromWallet = balance && parseFloat(balance) >= amount
   const chainLabel = getChainLabel(chainId ?? undefined)
   const explorerBaseUrl = getExplorerBaseUrl(chainId ?? undefined)
   const usdcAddress = resolveUsdcAddress(chainId ?? undefined)
+  const paymentChain: 'base' | 'base-sepolia' = chainId === 8453
+    ? 'base'
+    : chainId === 84532
+      ? 'base-sepolia'
+      : BASE_NETWORK
+  const { data: usdcBalanceData } = useBalance({
+    address: address ? (address as `0x${string}`) : undefined,
+    token: usdcAddress,
+    chainId: activeChainId,
+    query: {
+      enabled: Boolean(address),
+    },
+  })
+  const { data: ethBalanceData } = useBalance({
+    address: address ? (address as `0x${string}`) : undefined,
+    chainId: activeChainId,
+    query: {
+      enabled: Boolean(address),
+    },
+  })
+  const selectedBalance = useMemo(() => {
+    if (selectedToken === 'USDC') {
+      if (!usdcBalanceData && hasEnoughUsdcFromWallet != null) return balance
+      return usdcBalanceData?.formatted ?? null
+    }
+    return ethBalanceData?.formatted ?? null
+  }, [balance, ethBalanceData, hasEnoughUsdcFromWallet, selectedToken, usdcBalanceData])
+  const hasEnoughBalance = selectedBalance ? Number(selectedBalance) >= amount : false
+
+  useEffect(() => {
+    if (!isOpen) return
+    setSelectedToken(defaultToken)
+  }, [defaultToken, isOpen])
 
   const handlePay = async () => {
     if (!isConnected) {
@@ -53,29 +101,39 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
     setError(null)
 
     try {
-      if (!escrowAddress) {
-        throw new Error('Escrow contract not configured')
-      }
+      if (amount <= 0) throw new Error('Offer amount must be greater than zero')
       if (!isAddress(offer.provider)) {
         throw new Error('Seller address is not a valid EVM address')
       }
 
-      const amountUnits = parseUnits(price.toString(), 6)
-      await writeContractAsync({
-        address: usdcAddress,
-        abi: USDC_ABI,
-        functionName: 'approve',
-        args: [escrowAddress, amountUnits],
-      })
+      if (selectedToken === 'USDC') {
+        if (!escrowAddress) {
+          throw new Error('Escrow contract not configured')
+        }
 
-      const depositTx = await writeContractAsync({
-        address: escrowAddress,
-        abi: ESCROW_ABI,
-        functionName: 'deposit',
-        args: [encodeRequestId(thread.requestId), offer.provider, amountUnits],
-      })
+        const amountUnits = parseUnits(amount.toString(), 6)
+        await writeContractAsync({
+          address: usdcAddress,
+          abi: USDC_ABI,
+          functionName: 'approve',
+          args: [escrowAddress, amountUnits],
+        })
 
-      setTxHash(depositTx)
+        const depositTx = await writeContractAsync({
+          address: escrowAddress,
+          abi: ESCROW_ABI,
+          functionName: 'deposit',
+          args: [encodeRequestId(thread.requestId), offer.provider, amountUnits],
+        })
+        setTxHash(depositTx)
+      } else {
+        const nativeTx = await sendTransactionAsync({
+          to: offer.provider as `0x${string}`,
+          value: parseEther(amount.toString()),
+        })
+        setTxHash(nativeTx)
+      }
+
       setStep('success')
     } catch (err: any) {
       setError(err.message || 'Payment failed')
@@ -92,7 +150,12 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
 
   const handleSuccessClose = () => {
     if (txHash) {
-      onConfirm(txHash)
+      onConfirm({
+        txHash,
+        token: selectedToken,
+        amount,
+        chain: paymentChain,
+      })
     }
     setStep('confirm')
     setTxHash(null)
@@ -118,7 +181,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Pay with USDC
+            Pay with {selectedToken}
           </h3>
           <p className="text-blue-100 text-sm mt-1">{chainLabel}</p>
         </div>
@@ -128,6 +191,34 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
           {step === 'confirm' && (
             <>
               {/* Transaction Summary */}
+              <div className="mb-4">
+                <p className="text-agora-500 text-sm mb-2">Payment Token</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedToken('USDC')}
+                    className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                      selectedToken === 'USDC'
+                        ? 'border-base-blue bg-base-light text-base-blue'
+                        : 'border-agora-200 text-agora-600 hover:bg-agora-50'
+                    }`}
+                  >
+                    USDC
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedToken('ETH')}
+                    className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                      selectedToken === 'ETH'
+                        ? 'border-base-blue bg-base-light text-base-blue'
+                        : 'border-agora-200 text-agora-600 hover:bg-agora-50'
+                    }`}
+                  >
+                    ETH
+                  </button>
+                </div>
+              </div>
+
               <div className="bg-agora-50 rounded-xl p-4 mb-6">
                 <div className="flex justify-between items-center mb-3">
                   <span className="text-agora-500 text-sm">Service</span>
@@ -141,8 +232,10 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                 <div className="flex justify-between items-center">
                   <span className="text-agora-600 font-medium">Total</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-2xl font-bold text-usdc">${price.toFixed(4)}</span>
-                    <span className="bg-usdc-light text-usdc text-xs font-semibold px-2 py-1 rounded-full">USDC</span>
+                    <span className="text-2xl font-bold text-usdc">
+                      {selectedToken === 'USDC' ? `$${amount.toFixed(4)}` : amount.toFixed(6)}
+                    </span>
+                    <span className="bg-usdc-light text-usdc text-xs font-semibold px-2 py-1 rounded-full">{selectedToken}</span>
                   </div>
                 </div>
               </div>
@@ -155,9 +248,13 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                     <span className="text-agora-900 font-mono text-sm">{truncateAddress(address!, 4)}</span>
                   </div>
                   <div className="flex justify-between items-center mt-2">
-                    <span className="text-agora-600 text-sm">Balance</span>
+                    <span className="text-agora-600 text-sm">{selectedToken} Balance</span>
                     <span className={`font-medium ${hasEnoughBalance ? 'text-success' : 'text-red-500'}`}>
-                      {balance ? `$${balance}` : 'Loading...'}
+                      {selectedBalance
+                        ? selectedToken === 'USDC'
+                          ? `$${Number(selectedBalance).toFixed(2)}`
+                          : `${Number(selectedBalance).toFixed(6)} ETH`
+                        : 'Loading...'}
                     </span>
                   </div>
                   {!isBaseChain && (
@@ -182,10 +279,10 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                 </button>
                 <button
                   onClick={handlePay}
-                  disabled={isConnected && !isBaseChain}
+                  disabled={isConnected && (!isBaseChain || amount <= 0)}
                   className="flex-1 px-4 py-3 rounded-xl bg-base-blue text-white font-semibold hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/25"
                 >
-                  {isConnected ? 'Pay USDC' : 'Connect Wallet'}
+                  {isConnected ? `Pay ${selectedToken}` : 'Connect Wallet'}
                 </button>
               </div>
 
@@ -244,7 +341,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                 </svg>
               </div>
               <h4 className="text-lg font-semibold text-agora-900 mb-2">Payment Successful!</h4>
-              <p className="text-agora-500 mb-4">Your transaction has been confirmed.</p>
+              <p className="text-agora-500 mb-4">Your {selectedToken} transaction has been confirmed.</p>
 
               {txHash && (
                 <div className="bg-agora-50 rounded-lg p-3 mb-6">

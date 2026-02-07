@@ -5,3 +5,4 @@ export * from './did.js';
 export * from './agent.js';
 export * from './payment.js';
 export * from './escrow.js';
+export * from './schema.js';

@@ -14,8 +14,6 @@ interface PostTaskModalProps {
 }
 
 const INTENT_OPTIONS = [
-  { value: 'translate.en_zh', label: 'EN → ZH', icon: '🌐' },
-  { value: 'translate.zh_en', label: 'ZH → EN', icon: '🌐' },
   { value: 'code.review', label: 'Code Review', icon: '💻' },
   { value: 'code.generate', label: 'Code Gen', icon: '🤖' },
   { value: 'image.generate', label: 'Image Gen', icon: '🎨' },

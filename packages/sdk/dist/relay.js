@@ -161,6 +161,24 @@ export class RelayClient {
             return { ok: false, error: String(err) };
         }
     }
+    async listDirectory(options = {}) {
+        try {
+            const params = new URLSearchParams();
+            if (options.intent)
+                params.set('intent', options.intent);
+            if (options.q)
+                params.set('q', options.q);
+            if (options.status)
+                params.set('status', options.status);
+            if (options.limit)
+                params.set('limit', String(options.limit));
+            const response = await fetch(`${this.baseUrl}/v1/directory?${params}`);
+            return await response.json();
+        }
+        catch (err) {
+            return { ok: false, error: String(err) };
+        }
+    }
     async getAgentStatus(did) {
         try {
             const response = await fetch(`${this.baseUrl}/v1/agents/${encodeURIComponent(did)}/status`);
@@ -259,6 +277,22 @@ export class RelayClient {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
+            return await response.json();
+        }
+        catch (err) {
+            return { ok: false, error: String(err) };
+        }
+    }
+    async getMarketRate(options = {}) {
+        try {
+            const params = new URLSearchParams();
+            if (options.intent)
+                params.set('intent', options.intent);
+            if (options.currency)
+                params.set('currency', options.currency.toUpperCase());
+            if (options.period)
+                params.set('period', options.period);
+            const response = await fetch(`${this.baseUrl}/v1/market-rate?${params}`);
             return await response.json();
         }
         catch (err) {

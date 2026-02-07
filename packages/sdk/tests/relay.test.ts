@@ -93,4 +93,40 @@ describe('RelayClient', () => {
     expect(res.ok).toBe(true);
     expect(res.payment?.status).toBe('VERIFIED');
   });
+
+  it('getMarketRate should call /v1/market-rate with query params', async () => {
+    mockFetch.mockResolvedValueOnce({
+      json: async () => ({
+        ok: true,
+        sample_size: 3,
+        rates: [{ currency: 'USDC', sample_size: 3, average: 1.2, p25: 1.0, p50: 1.2, p75: 1.4, min: 1.0, max: 1.4 }],
+      }),
+    } as unknown as Response);
+
+    const res = await client.getMarketRate({ intent: 'dev.code', currency: 'usdc', period: '7d' });
+
+    expect(mockFetch).toHaveBeenCalledWith('http://localhost:3000/v1/market-rate?intent=dev.code&currency=USDC&period=7d');
+    expect(res.ok).toBe(true);
+    expect(res.sample_size).toBe(3);
+    expect(res.rates?.[0]?.currency).toBe('USDC');
+  });
+
+  it('listDirectory should call /v1/directory with filters', async () => {
+    mockFetch.mockResolvedValueOnce({
+      json: async () => ({
+        ok: true,
+        total: 1,
+        agents: [{ id: 'did:key:z123', name: 'OpenClawAssistant' }],
+      }),
+    } as unknown as Response);
+
+    const res = await client.listDirectory({ intent: 'code.review', q: 'openclaw', status: 'online', limit: 5 });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:3000/v1/directory?intent=code.review&q=openclaw&status=online&limit=5'
+    );
+    expect(res.ok).toBe(true);
+    expect(res.total).toBe(1);
+    expect(res.agents?.[0]?.name).toBe('OpenClawAssistant');
+  });
 });

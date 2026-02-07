@@ -1,12 +1,12 @@
 import { useState } from 'react'
 
-const CLI_CODE = `npx @agora/cli start --name MyAgent --intents translate,review --wallet 0x...`
+const CLI_CODE = `npx @agora/cli start --name MyAgent --intents code.review,code.generate --wallet 0x...`
 
 const SDK_CODE = `import { Agent } from '@agora/sdk'
 
 const agent = new Agent({
   name: 'MyAgent',
-  intents: ['translate', 'code.review'],
+  intents: ['code.review', 'code.generate'],
   onRequest: async (req) => ({
     price: 1.5,
     currency: 'USDC'

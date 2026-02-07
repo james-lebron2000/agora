@@ -38,26 +38,28 @@ type AgentSummary = {
   }
 }
 
-const MOCK_METRICS: NetworkMetrics = {
-  totalAgents: 156,
-  totalTransactions: 2847,
-  totalVolume: 456320.5,
-  activeRequests: 23,
-  volume24h: 12450,
-}
-
 type Route = 'home' | 'analytics'
+const DAY_IN_MS = 24 * 60 * 60 * 1000
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
 
 const FALLBACK_AGENTS: AgentSummary[] = [
   {
-    id: 'demo:PolyglotPro',
-    name: 'Polyglot Pro',
-    intents: ['translation'],
+    id: 'demo:CodeBuilder',
+    name: 'CodeBuilder',
+    intents: ['code.generate'],
     capabilities: [
       {
-        id: 'cap_polyglot_translation_v1',
-        name: 'Translation',
-        pricing: { model: 'metered', currency: 'USDC', metered_unit: 'character', metered_rate: 0.001 },
+        id: 'cap_code_generate_v1',
+        name: 'Code Generation',
+        pricing: { model: 'metered', currency: 'USDC', metered_unit: 'line', metered_rate: 0.004 },
       },
     ],
   },
@@ -168,7 +170,7 @@ function NavLink({
       aria-current={active ? 'page' : undefined}
       className={`px-3 py-1.5 rounded-full border text-sm transition-colors ${
         active
-          ? 'bg-agora-900 text-white border-agora-900 hover:text-white'
+          ? 'bg-white text-agora-700 border-agora-300'
           : 'bg-white text-agora-700 border-agora-200 hover:border-base-blue/40 hover:text-base-blue'
       }`}
     >
@@ -190,7 +192,6 @@ function AppContent() {
   const [demoBusy, setDemoBusy] = useState(false)
   const [agents, setAgents] = useState<AgentSummary[]>([])
   const [recommendations, setRecommendations] = useState<AgentSummary[]>([])
-  const [metrics, setMetrics] = useState<NetworkMetrics>(MOCK_METRICS)
   const [metricsTick, setMetricsTick] = useState(0)
   const [isPostTaskModalOpen, setIsPostTaskModalOpen] = useState(false)
 
@@ -272,6 +273,86 @@ function AppContent() {
 
   const threads = aggregateThreads(events)
   const topIntent = useMemo(() => threads[0]?.intent, [threads])
+  const metrics = useMemo<NetworkMetrics>(() => {
+    const metricEvents = usingSeed ? [] : events
+    const metricThreads = usingSeed ? [] : threads
+    const agentIds = new Set<string>()
+    const usdcPaymentsByRequest = new Map<string, { amount: number; ts: number }>()
+    const now = Date.now()
+    const cutoffTs = now - DAY_IN_MS
+
+    for (const agent of agents) {
+      if (agent.id) agentIds.add(agent.id)
+    }
+
+    for (const event of metricEvents) {
+      const senderId = event.sender?.id
+      if ((event.type === 'OFFER' || event.type === 'RESULT') && senderId) {
+        agentIds.add(senderId)
+      }
+
+      if (event.type !== 'ACCEPT') continue
+      const payload = event.payload && typeof event.payload === 'object' ? event.payload : {}
+      const requestIdRaw = payload.request_id || payload.requestId
+      if (!requestIdRaw) continue
+
+      const requestId = String(requestIdRaw)
+      const token = typeof payload.token === 'string' ? payload.token.toUpperCase() : undefined
+      const amountFromAmount = toFiniteNumber(payload.amount)
+      const amountFromUsdc = toFiniteNumber(payload.amount_usdc)
+      const amountFromPriceUsd = toFiniteNumber(payload.price_usd)
+
+      let usdcAmount: number | null = null
+      if (token === 'USDC') {
+        usdcAmount = amountFromAmount ?? amountFromUsdc ?? amountFromPriceUsd
+      } else if (!token) {
+        usdcAmount = amountFromUsdc ?? amountFromPriceUsd
+      }
+
+      if (usdcAmount == null || usdcAmount <= 0) continue
+
+      const parsedTs = Date.parse(event.ts)
+      usdcPaymentsByRequest.set(requestId, {
+        amount: usdcAmount,
+        ts: Number.isFinite(parsedTs) ? parsedTs : now,
+      })
+    }
+
+    for (const thread of metricThreads) {
+      if (usdcPaymentsByRequest.has(thread.requestId)) continue
+      if (!thread.acceptedOfferId) continue
+
+      const acceptedOffer = thread.offers.find((offer) => offer.offerId === thread.acceptedOfferId)
+      if (!acceptedOffer || acceptedOffer.currency !== 'USDC') continue
+
+      const fallbackAmount = toFiniteNumber(acceptedOffer.priceAmount ?? acceptedOffer.priceUsd)
+      if (fallbackAmount == null || fallbackAmount <= 0) continue
+
+      const parsedTs = Date.parse(thread.acceptedAt || thread.lastTs)
+      usdcPaymentsByRequest.set(thread.requestId, {
+        amount: fallbackAmount,
+        ts: Number.isFinite(parsedTs) ? parsedTs : now,
+      })
+    }
+
+    let totalVolume = 0
+    let volume24h = 0
+    for (const row of usdcPaymentsByRequest.values()) {
+      totalVolume += row.amount
+      if (row.ts >= cutoffTs) volume24h += row.amount
+    }
+
+    const activeRequests = metricThreads.filter((thread) => thread.status !== 'COMPLETED').length
+    const completedDeals = metricThreads.filter((thread) => thread.status === 'COMPLETED').length
+
+    return {
+      totalAgents: agentIds.size,
+      totalTransactions: completedDeals,
+      totalVolume,
+      activeRequests,
+      volume24h,
+    }
+  }, [agents, events, threads, usingSeed])
 
   useEffect(() => {
     loadAgents().catch(() => {})
@@ -290,12 +371,8 @@ function AppContent() {
   }, [relayUrl, topIntent])
 
   useEffect(() => {
-    const t = setInterval(() => {
-      setMetrics({ ...MOCK_METRICS })
-      setMetricsTick((prev) => prev + 1)
-    }, 5000)
-    return () => clearInterval(t)
-  }, [])
+    setMetricsTick((prev) => prev + 1)
+  }, [metrics.activeRequests, metrics.totalAgents, metrics.totalTransactions, metrics.totalVolume, metrics.volume24h])
 
   const agentsForDisplay = agents.length ? agents : FALLBACK_AGENTS
 
@@ -393,7 +470,7 @@ function AppContent() {
         <div className="flex items-center gap-2">
         <button
           onClick={() => setIsPostTaskModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-success text-white rounded-xl font-medium hover:bg-emerald-600 transition-all shadow-lg shadow-success/20"
+          className="flex items-center gap-2 px-4 py-2 bg-base-blue text-white rounded-xl font-medium hover:bg-[#0047db] transition-all shadow-lg shadow-base-blue/25"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

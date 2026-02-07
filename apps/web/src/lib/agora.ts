@@ -10,6 +10,8 @@ export type AgoraEvent = {
 export type Offer = {
   offerId: string
   provider: string
+  priceAmount?: number
+  currency?: string
   priceUsd?: number
   etaSec?: number
 }
@@ -62,12 +64,31 @@ export function aggregateThreads(events: AgoraEvent[]): Thread[] {
     if (e.type === 'OFFER') {
       const offerId = String(p.offer_id || p.offerId || e.id || 'offer')
       const provider = e.sender?.id || 'unknown'
+      const normalizedCurrency = typeof p?.price?.currency === 'string'
+        ? p.price.currency.toUpperCase()
+        : typeof p.currency === 'string'
+          ? p.currency.toUpperCase()
+          : typeof p.token === 'string'
+            ? p.token.toUpperCase()
+            : typeof p.price_usd === 'number'
+              ? 'USDC'
+              : undefined
+      const rawAmount = typeof p?.price?.amount === 'number'
+        ? p.price.amount
+        : typeof p.amount === 'number'
+          ? p.amount
+          : typeof p.price_usd === 'number'
+            ? p.price_usd
+            : undefined
+
       const existing = t.offers.find((o) => o.offerId === offerId)
       if (!existing) {
         t.offers.push({
           offerId,
           provider,
-          priceUsd: typeof p.price_usd === 'number' ? p.price_usd : undefined,
+          priceAmount: rawAmount,
+          currency: normalizedCurrency,
+          priceUsd: normalizedCurrency === 'USDC' ? rawAmount : undefined,
           etaSec: typeof p.eta_sec === 'number' ? p.eta_sec : undefined,
         })
       }
@@ -97,14 +118,14 @@ export const SEED_EVENTS: AgoraEvent[] = [
     type: 'REQUEST',
     id: 'req_1',
     sender: { id: 'demo:requester' },
-    payload: { request_id: 'req_1', intent: 'translate.en_zh', params: { text: 'Hello, baby parrot.' }, budget_usd: 0.01 },
+    payload: { request_id: 'req_1', intent: 'code.generate', params: { task: 'Build a TypeScript retry utility with tests.' }, budget_usd: 0.08 },
   },
   {
     ts: '2026-02-02T00:00:01.000Z',
     type: 'OFFER',
     id: 'off_1',
-    sender: { id: 'demo:PolyglotBot' },
-    payload: { request_id: 'req_1', offer_id: 'off_1', price_usd: 0.005, eta_sec: 10 },
+    sender: { id: 'demo:CodeBuilder' },
+    payload: { request_id: 'req_1', offer_id: 'off_1', price_usd: 0.05, eta_sec: 120 },
   },
   {
     ts: '2026-02-02T00:00:02.000Z',
@@ -117,8 +138,8 @@ export const SEED_EVENTS: AgoraEvent[] = [
     ts: '2026-02-02T00:00:03.000Z',
     type: 'RESULT',
     id: 'res_1',
-    sender: { id: 'demo:PolyglotBot' },
-    payload: { request_id: 'req_1', status: 'COMPLETED', data: { zh: '你好，小鹦鹉宝宝。' } },
+    sender: { id: 'demo:CodeBuilder' },
+    payload: { request_id: 'req_1', status: 'COMPLETED', data: { summary: 'Implemented utility + unit tests.' } },
   },
 
   {

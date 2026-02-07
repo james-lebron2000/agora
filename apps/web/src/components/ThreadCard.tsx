@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import type { Thread, Offer } from '../lib/agora'
-import { PaymentModal } from './PaymentModal'
+import { PaymentModal, type PaymentReceipt } from './PaymentModal'
 import { EscrowStatus } from './EscrowStatus'
 import { useWallet } from '../hooks/useWallet'
+import { BASE_NETWORK } from '../lib/chain'
 
 interface ThreadCardProps {
   thread: Thread
@@ -53,8 +54,12 @@ function OfferRow({
 
       <div className="flex items-center gap-4">
         <div className="text-right">
-          {offer.priceUsd !== undefined ? (
-            <div className="font-semibold text-agora-900">${offer.priceUsd.toFixed(4)}</div>
+          {offer.priceAmount !== undefined ? (
+            <div className="font-semibold text-agora-900">
+              {offer.currency === 'ETH'
+                ? `${offer.priceAmount.toFixed(6)} ETH`
+                : `$${offer.priceAmount.toFixed(4)} ${offer.currency || 'USDC'}`}
+            </div>
           ) : (
             <div className="text-agora-400 text-sm">No price</div>
           )}
@@ -95,7 +100,7 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
     setIsPaymentModalOpen(true)
   }
 
-  const handlePaymentConfirm = async (txHash: string) => {
+  const handlePaymentConfirm = async (payment: PaymentReceipt) => {
     if (!selectedOffer) return
 
     setIsSubmitting(true)
@@ -104,18 +109,34 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
       const senderId = address
         ? `eip155:${chainId ?? 84532}:${address.toLowerCase()}`
         : 'web:unknown'
+      const payoutToken = payment.token
+      const payoutAmount = selectedOffer.priceAmount ?? selectedOffer.priceUsd ?? payment.amount
+      const chain = chainId === 8453
+        ? 'base'
+        : chainId === 84532
+          ? 'base-sepolia'
+          : payment.chain || BASE_NETWORK
 
       const acceptPayload = {
         request_id: thread.requestId,
         offer_id: selectedOffer.offerId,
         accepted_at: new Date().toISOString(),
-        payment_tx: txHash,
-        chain: 'base',
-        token: 'USDC',
+        payment_tx: payment.txHash,
+        chain,
+        token: payoutToken,
+        amount: payoutAmount,
+        payer: address?.toLowerCase(),
+        payee: selectedOffer.provider,
         terms: {
           offer_id: selectedOffer.offerId,
           provider: selectedOffer.provider,
-          amount_usdc: selectedOffer.priceUsd ?? null,
+          payer: address?.toLowerCase(),
+          payee: selectedOffer.provider,
+          token: payoutToken,
+          chain,
+          amount: payoutAmount,
+          amount_usdc: payoutToken === 'USDC' ? payoutAmount : null,
+          amount_eth: payoutToken === 'ETH' ? payoutAmount : null,
         },
       }
 
@@ -183,7 +204,7 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
               Offers ({thread.offers.length})
             </h4>
             {canAcceptOffers && (
-              <span className="text-xs text-base-blue font-medium">Click accept to pay with USDC</span>
+              <span className="text-xs text-base-blue font-medium">Click accept to pay with USDC or ETH</span>
             )}
           </div>
 
@@ -223,9 +244,11 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
               <div className="text-sm text-agora-700">
                 Provider: <span className="font-medium">{acceptedOffer.provider}</span>
               </div>
-              {acceptedOffer.priceUsd !== undefined && (
+              {acceptedOffer.priceAmount !== undefined && (
                 <div className="text-sm font-semibold text-agora-900">
-                  ${acceptedOffer.priceUsd.toFixed(4)}
+                  {acceptedOffer.currency === 'ETH'
+                    ? `${acceptedOffer.priceAmount.toFixed(6)} ETH`
+                    : `$${acceptedOffer.priceAmount.toFixed(4)} ${acceptedOffer.currency || 'USDC'}`}
                 </div>
               )}
             </div>
