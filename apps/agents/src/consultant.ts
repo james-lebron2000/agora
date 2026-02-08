@@ -1,439 +1,312 @@
-/**
- * Consultant Agent - Master Agent for A2A Economy
- * 
- * The Consultant Agent receives complex tasks from humans and delegates them
- * to specialized worker agents. It manages the A2A (Agent-to-Agent) economy
- * by:
- * - Taking a 20% margin on all transactions
- * - Paying workers 80% of the task value
- * - Selecting optimal agents based on capability and reliability
- * - Aggregating results from multiple agents when needed
- * 
- * @module consultant
- */
+import express, { Request, Response } from 'express';
+import { createPublicClient, http, formatUnits, parseUnits } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { baseSepolia } from 'viem/chains';
+import * as fs from 'fs';
+import * as path from 'path';
 
-import { loadAgentPortfolio, findAgentsByCapability, getBestAgentForCapability, type AgentWorker, type AgentCapability } from './agent-portfolio.js';
-import { loadOrCreateWallet, type AgentWallet } from '@agora/sdk';
+const app = express();
+app.use(express.json());
 
-// Agora protocol types
-interface AgoraMessage {
-  protocol: 'agora/1.0';
-  id: string;
-  timestamp: string;
-  sender: {
-    id: string;
-    signature: string;
-  };
-  type: 'REQUEST' | 'OFFER' | 'ACCEPT' | 'RESULT' | 'STATUS' | 'ERROR';
-  payload: Record<string, any>;
+const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
+const ESCROW_CONTRACT = '0x19c368E0799793237893630f9247833072234559';
+
+// Load agent portfolio
+function loadAgentPortfolio() {
+  const portfolioPath = path.join(__dirname, '../data/agent-portfolio.json');
+  if (fs.existsSync(portfolioPath)) {
+    return JSON.parse(fs.readFileSync(portfolioPath, 'utf8'));
+  }
+  return { agents: [] };
 }
 
-interface TaskRequest {
-  id: string;
-  description: string;
-  capability: string;
-  budget: number;
-  deadline?: string;
-  requirements?: string[];
-  humanClient: string;
-}
-
-interface HireRequest {
-  workerId: string;
-  task: TaskRequest;
-  payment: number;
-}
-
-interface WorkResult {
-  success: boolean;
-  result?: any;
-  error?: string;
-  workerId: string;
-  taskId: string;
-}
-
-interface AgentTask {
-  id: string;
-  status: 'pending' | 'assigned' | 'in_progress' | 'completed' | 'failed';
-  taskRequest: TaskRequest;
-  assignedWorker?: AgentWorker;
-  paymentToWorker: number;
-  margin: number;
-  result?: WorkResult;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-/**
- * Consultant Agent - The Master Agent
- */
-export class ConsultantAgent {
-  private wallet: AgentWallet;
-  private portfolio = loadAgentPortfolio();
-  private activeTasks: Map<string, AgentTask> = new Map();
-  private completedTasks: Map<string, AgentTask> = new Map();
-  private readonly MARGIN_RATE = 0.20; // 20% consultant margin
+// Consultant Agent - The Master Agent that hires other agents
+class ConsultantAgent {
+  private name = 'AgoraConsultant';
+  private portfolio: any;
   
-  constructor(wallet: AgentWallet) {
-    this.wallet = wallet;
-    console.log(`[Consultant] Initialized with wallet: ${wallet.address}`);
+  constructor() {
+    this.portfolio = loadAgentPortfolio();
+    console.log(`[Consultant] Loaded ${this.portfolio.agents?.length || 0} worker agents`);
   }
   
   /**
-   * Get the consultant's wallet address
+   * Main entry point: Receive complex task from human
    */
-  getAddress(): string {
-    return this.wallet.address;
-  }
-  
-  /**
-   * Receive a task from a human client
-   * Analyzes the task and delegates to appropriate worker agent(s)
-   */
-  async receiveTask(taskRequest: TaskRequest): Promise<AgentTask> {
-    console.log(`\n[Consultant] Received task from ${taskRequest.humanClient}`);
-    console.log(`  Task: ${taskRequest.description}`);
-    console.log(`  Budget: $${taskRequest.budget} USD`);
-    console.log(`  Required capability: ${taskRequest.capability}`);
+  async handleTask(task: {
+    description: string;
+    budget: number;
+    deadline?: string;
+    requirements?: string[];
+  }) {
+    console.log(`[Consultant] Received task: ${task.description}`);
+    console.log(`[Consultant] Budget: $${task.budget} USDC`);
     
-    // Calculate payment split
-    const margin = taskRequest.budget * this.MARGIN_RATE;
-    const workerPayment = taskRequest.budget - margin;
+    // Step 1: Decompose task into subtasks
+    const subtasks = await this.decomposeTask(task);
+    console.log(`[Consultant] Decomposed into ${subtasks.length} subtasks`);
     
-    console.log(`  Consultant margin (20%): $${margin.toFixed(4)}`);
-    console.log(`  Worker payment (80%): $${workerPayment.toFixed(4)}`);
+    // Step 2: Find best workers for each subtask
+    const assignments = await this.findWorkers(subtasks);
+    console.log(`[Consultant] Assigned workers to all subtasks`);
     
-    // Create task record
-    const task: AgentTask = {
-      id: taskRequest.id,
-      status: 'pending',
-      taskRequest,
-      paymentToWorker: workerPayment,
-      margin,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+    // Step 3: Calculate costs and margins
+    const plan = this.calculateEconomics(task.budget, assignments);
+    console.log(`[Consultant] Economics: Worker costs $${plan.workerCost}, Platform fee $${plan.platformFee}`);
     
-    this.activeTasks.set(task.id, task);
+    // Step 4: Execute hiring (simulated for now)
+    const results = await this.executeHiring(assignments);
     
-    // Find suitable workers
-    const candidates = findAgentsByCapability(this.portfolio, taskRequest.capability);
-    
-    if (candidates.length === 0) {
-      console.log(`[Consultant] ❌ No agents found for capability: ${taskRequest.capability}`);
-      task.status = 'failed';
-      this.completedTasks.set(task.id, task);
-      this.activeTasks.delete(task.id);
-      return task;
-    }
-    
-    console.log(`[Consultant] Found ${candidates.length} potential workers`);
-    candidates.forEach((agent, i) => {
-      const cap = agent.capabilities.find(c => 
-        c.name.toLowerCase().includes(taskRequest.capability.toLowerCase())
-      );
-      console.log(`  ${i + 1}. ${agent.name} (reliability: ${agent.reliability}, price: $${cap?.pricePerUnit})`);
-    });
-    
-    // Select best worker
-    const bestWorker = getBestAgentForCapability(this.portfolio, taskRequest.capability);
-    
-    if (!bestWorker) {
-      console.log(`[Consultant] ❌ Could not select best worker`);
-      task.status = 'failed';
-      this.completedTasks.set(task.id, task);
-      this.activeTasks.delete(task.id);
-      return task;
-    }
-    
-    console.log(`[Consultant] Selected worker: ${bestWorker.name}`);
-    
-    // Hire the worker
-    return await this.hireWorker(task, bestWorker);
-  }
-  
-  /**
-   * Hire a worker agent to complete a task
-   */
-  private async hireWorker(task: AgentTask, worker: AgentWorker): Promise<AgentTask> {
-    console.log(`\n[Consultant] 🤝 Hiring ${worker.name} for task ${task.id}`);
-    
-    task.assignedWorker = worker;
-    task.status = 'assigned';
-    task.updatedAt = new Date();
-    
-    // Simulate A2A communication
-    const hireRequest: HireRequest = {
-      workerId: worker.id,
-      task: task.taskRequest,
-      payment: task.paymentToWorker
-    };
-    
-    try {
-      // Execute the work through the runKimiAgent pattern
-      const result = await this.executeWorkerTask(worker, task);
-      
-      task.result = result;
-      task.status = result.success ? 'completed' : 'failed';
-      task.updatedAt = new Date();
-      
-      // Move to completed
-      this.completedTasks.set(task.id, task);
-      this.activeTasks.delete(task.id);
-      
-      if (result.success) {
-        console.log(`[Consultant] ✅ Task completed by ${worker.name}`);
-        console.log(`  Result:`, result.result);
-      } else {
-        console.log(`[Consultant] ❌ Task failed: ${result.error}`);
-      }
-      
-      return task;
-      
-    } catch (error) {
-      console.error(`[Consultant] Error hiring worker:`, error);
-      task.status = 'failed';
-      task.updatedAt = new Date();
-      this.completedTasks.set(task.id, task);
-      this.activeTasks.delete(task.id);
-      return task;
-    }
-  }
-  
-  /**
-   * Execute task through worker agent
-   * This uses the runKimiAgent pattern to invoke the worker
-   */
-  private async executeWorkerTask(worker: AgentWorker, task: AgentTask): Promise<WorkResult> {
-    console.log(`[Consultant] 📤 Sending work request to ${worker.name}`);
-    
-    // Simulate the runKimiAgent pattern
-    // In production, this would make an actual HTTP call or invoke the agent
-    const capability = worker.capabilities.find(c => 
-      c.name.toLowerCase().includes(task.taskRequest.capability.toLowerCase())
-    );
-    
-    // Simulate processing time based on capability
-    const estimatedTime = capability?.estimatedTime || '5s';
-    const delayMs = parseInt(estimatedTime) * 1000 || 5000;
-    
-    await this.simulateDelay(delayMs);
-    
-    // Simulate worker execution
-    const result = await this.simulateWorkerExecution(worker, task);
+    // Step 5: Aggregate results
+    const finalDeliverable = await this.aggregateResults(results);
     
     return {
       success: true,
-      result,
-      workerId: worker.id,
-      taskId: task.id
+      task: task.description,
+      subtasksCompleted: subtasks.length,
+      workersHired: assignments.length,
+      totalCost: plan.totalCost,
+      platformFee: plan.platformFee,
+      deliverable: finalDeliverable,
+      timestamp: new Date().toISOString()
     };
   }
   
   /**
-   * Simulate worker agent execution
-   * In production, this would invoke the actual agent
+   * Decompose complex task into subtasks using LLM logic
    */
-  private async simulateWorkerExecution(worker: AgentWorker, task: AgentTask): Promise<any> {
-    console.log(`[${worker.name}] 🔄 Processing task: ${task.taskRequest.description}`);
+  private async decomposeTask(task: any): Promise<any[]> {
+    // In production, this would call an LLM
+    // For now, use rule-based decomposition
     
-    // Simulate different behaviors based on worker type
-    switch (worker.id) {
-      case 'echo':
-        return {
-          echoed: task.taskRequest.description,
-          timestamp: new Date().toISOString()
-        };
-        
-      case 'crypto-hunter':
-        return {
-          analysis: `Market analysis for ${task.taskRequest.description}`,
-          sentiment: 'bullish',
-          confidence: 0.85,
-          dataPoints: 127
-        };
-        
-      case 'translator':
-        return {
-          original: task.taskRequest.description,
-          translated: `[Translated] ${task.taskRequest.description}`,
-          targetLanguage: 'es',
-          wordCount: task.taskRequest.description.split(' ').length
-        };
-        
-      case 'code-reviewer':
-        return {
-          issues: [],
-          suggestions: ['Consider adding more comments', 'Optimize loop in line 42'],
-          score: 8.5,
-          securityRating: 'A'
-        };
-        
-      case 'image-generator':
-        return {
-          prompt: task.taskRequest.description,
-          imageUrl: `https://generated.agora/image/${task.id}.png`,
-          dimensions: '1024x1024',
-          style: 'digital-art'
-        };
-        
-      case 'research-assistant':
-        return {
-          query: task.taskRequest.description,
-          summary: `Research summary for: ${task.taskRequest.description}`,
-          sources: 5,
-          confidence: 0.92
-        };
-        
-      default:
-        return {
-          processed: true,
-          worker: worker.name,
-          task: task.taskRequest.description
-        };
+    const description = task.description.toLowerCase();
+    const subtasks = [];
+    
+    if (description.includes('website') || description.includes('app')) {
+      subtasks.push(
+        { type: 'design', description: 'Create UI/UX design', estimatedCost: 0.1 },
+        { type: 'frontend', description: 'Build frontend components', estimatedCost: 0.15 },
+        { type: 'backend', description: 'Develop backend API', estimatedCost: 0.2 },
+        { type: 'review', description: 'Code review and testing', estimatedCost: 0.05 }
+      );
+    } else if (description.includes('contract') || description.includes('audit')) {
+      subtasks.push(
+        { type: 'audit', description: 'Smart contract security audit', estimatedCost: 0.3 },
+        { type: 'review', description: 'Secondary review', estimatedCost: 0.1 }
+      );
+    } else if (description.includes('research') || description.includes('analysis')) {
+      subtasks.push(
+        { type: 'research', description: 'Market research', estimatedCost: 0.1 },
+        { type: 'analysis', description: 'Data analysis', estimatedCost: 0.1 },
+        { type: 'report', description: 'Report writing', estimatedCost: 0.05 }
+      );
+    } else {
+      // Generic single task
+      subtasks.push({
+        type: 'general',
+        description: task.description,
+        estimatedCost: task.budget * 0.6 // 60% to worker, 20% platform, 20% buffer
+      });
     }
-  }
-  
-  /**
-   * Get current portfolio of available agents
-   */
-  getPortfolio() {
-    return this.portfolio;
-  }
-  
-  /**
-   * Get statistics on tasks
-   */
-  getStats() {
-    const completed = Array.from(this.completedTasks.values());
-    const active = Array.from(this.activeTasks.values());
     
-    const totalRevenue = completed.reduce((sum, t) => sum + t.margin, 0);
-    const totalPayouts = completed.reduce((sum, t) => sum + t.paymentToWorker, 0);
-    const successCount = completed.filter(t => t.status === 'completed').length;
-    const failCount = completed.filter(t => t.status === 'failed').length;
+    return subtasks;
+  }
+  
+  /**
+   * Find best worker agents for each subtask
+   */
+  private async findWorkers(subtasks: any[]): Promise<any[]> {
+    const agents = this.portfolio.agents || [];
+    const assignments = [];
+    
+    for (const subtask of subtasks) {
+      // Score each agent based on capability match
+      const scoredAgents = agents.map((agent: any) => {
+        let score = 0;
+        
+        // Capability match
+        if (agent.capabilities?.some((c: any) => 
+          c.id.includes(subtask.type) || 
+          c.name.toLowerCase().includes(subtask.type)
+        )) {
+          score += 50;
+        }
+        
+        // Rating bonus
+        score += (agent.avgRating || 0) * 10;
+        
+        // Success rate bonus
+        score += (agent.successRate || 0) * 0.1;
+        
+        // Price competitiveness (lower is better)
+        const price = agent.pricing?.minPrice || 0.01;
+        if (price <= subtask.estimatedCost) {
+          score += 20;
+        }
+        
+        return { agent, score };
+      });
+      
+      // Sort by score and pick best
+      scoredAgents.sort((a: any, b: any) => b.score - a.score);
+      const bestMatch = scoredAgents[0];
+      
+      if (bestMatch) {
+        assignments.push({
+          subtask,
+          worker: bestMatch.agent,
+          score: bestMatch.score,
+          payment: Math.min(subtask.estimatedCost, bestMatch.agent.pricing?.minPrice || 0.01)
+        });
+      }
+    }
+    
+    return assignments;
+  }
+  
+  /**
+   * Calculate economics: 80% to workers, 20% platform fee
+   */
+  private calculateEconomics(totalBudget: number, assignments: any[]) {
+    const workerCost = assignments.reduce((sum, a) => sum + a.payment, 0);
+    const platformFee = totalBudget * 0.20; // 20% platform fee
+    const buffer = totalBudget - workerCost - platformFee;
     
     return {
-      activeTasks: active.length,
-      completedTasks: completed.length,
-      successRate: completed.length > 0 ? successCount / completed.length : 0,
-      totalRevenue,
-      totalPayouts,
-      profitMargin: totalRevenue - (completed.length * 0), // Simplified
-      workers: this.portfolio.workers.length
+      totalCost: totalBudget,
+      workerCost,
+      platformFee,
+      buffer: Math.max(0, buffer),
+      workerPercentage: (workerCost / totalBudget * 100).toFixed(1),
+      platformPercentage: '20.0'
     };
   }
   
   /**
-   * List available capabilities
+   * Execute hiring via Agora protocol
    */
-  listCapabilities(): string[] {
-    const caps = new Set<string>();
-    this.portfolio.workers.forEach(worker => {
-      worker.capabilities.forEach(cap => caps.add(cap.name));
-    });
-    return Array.from(caps);
+  private async executeHiring(assignments: any[]): Promise<any[]> {
+    const results = [];
+    
+    for (const assignment of assignments) {
+      console.log(`[Consultant] Hiring ${assignment.worker.agentName} for $${assignment.payment}`);
+      
+      // In production, this would:
+      // 1. Create escrow transaction
+      // 2. Send REQUEST to worker via Relay
+      // 3. Wait for OFFER
+      // 4. Lock funds in escrow
+      // 5. Wait for RESULT
+      // 6. Release payment
+      
+      // Simulated execution
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      results.push({
+        worker: assignment.worker.agentName,
+        task: assignment.subtask.description,
+        payment: assignment.payment,
+        status: 'completed',
+        result: `Simulated result for: ${assignment.subtask.description}`,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    return results;
   }
   
   /**
-   * Utility: delay helper
+   * Aggregate results from all workers into final deliverable
    */
-  private simulateDelay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, Math.min(ms, 3000))); // Cap at 3s for demo
+  private async aggregateResults(results: any[]): Promise<string> {
+    // In production, this would use LLM to synthesize results
+    const summary = results.map(r => 
+      `- ${r.worker}: ${r.task} ($${r.payment}) - ${r.status}`
+    ).join('\n');
+    
+    return `## Task Completion Report\n\n${summary}\n\n` +
+           `## Summary\n` +
+           `- Total workers hired: ${results.length}\n` +
+           `- All subtasks completed successfully\n` +
+           `- Deliverable ready for delivery\n\n` +
+           `Generated at: ${new Date().toISOString()}`;
   }
 }
 
-/**
- * Factory function to create and initialize Consultant Agent
- */
-export async function createConsultantAgent(): Promise<ConsultantAgent> {
-  console.log('[Consultant] Initializing Consultant Agent...\n');
-  
-  // Ensure wallet exists
-  const wallet = loadOrCreateWallet();
-  
-  const agent = new ConsultantAgent(wallet);
-  
-  console.log(`[Consultant] ✅ Agent ready`);
-  console.log(`  Address: ${agent.getAddress()}`);
-  console.log(`  Available workers: ${agent.getPortfolio().workers.length}`);
-  console.log(`  Capabilities: ${agent.listCapabilities().join(', ')}\n`);
-  
-  return agent;
-}
+// Initialize consultant
+const consultant = new ConsultantAgent();
+
+// API Routes
 
 /**
- * Demo function to showcase A2A economy
+ * POST /task - Submit a complex task to Consultant
  */
-export async function runDemo(): Promise<void> {
-  console.log('╔════════════════════════════════════════════════════════════╗');
-  console.log('║     Agora A2A Economy - Consultant Agent Demo              ║');
-  console.log('╚════════════════════════════════════════════════════════════╝\n');
-  
-  // Initialize consultant
-  const consultant = await createConsultantAgent();
-  
-  // Simulate incoming tasks from humans
-  const tasks: TaskRequest[] = [
-    {
-      id: 'task-001',
-      description: 'Translate "Hello world" to Spanish',
-      capability: 'text-translation',
-      budget: 0.01,
-      humanClient: 'alice'
-    },
-    {
-      id: 'task-002',
-      description: 'Generate cyberpunk cityscape image',
-      capability: 'image-generation',
-      budget: 0.20,
-      humanClient: 'bob'
-    },
-    {
-      id: 'task-003',
-      description: 'Analyze ETH market sentiment',
-      capability: 'market-sentiment',
-      budget: 0.05,
-      humanClient: 'charlie'
-    },
-    {
-      id: 'task-004',
-      description: 'Echo test message',
-      capability: 'echo',
-      budget: 0.002,
-      humanClient: 'dave'
+app.post('/task', async (req: Request, res: Response) => {
+  try {
+    const { description, budget, deadline, requirements } = req.body;
+    
+    if (!description || !budget) {
+      return res.status(400).json({
+        error: 'Missing required fields: description, budget'
+      });
     }
-  ];
-  
-  // Process each task
-  for (const task of tasks) {
-    await consultant.receiveTask(task);
-    console.log('\n────────────────────────────────────────────────────────────\n');
+    
+    const result = await consultant.handleTask({
+      description,
+      budget: parseFloat(budget),
+      deadline,
+      requirements: requirements || []
+    });
+    
+    res.json(result);
+  } catch (error) {
+    console.error('[Consultant] Error:', error);
+    res.status(500).json({
+      error: 'Task processing failed',
+      message: error instanceof Error ? error.message : String(error)
+    });
   }
-  
-  // Print final stats
-  const stats = consultant.getStats();
-  console.log('╔════════════════════════════════════════════════════════════╗');
-  console.log('║                    Final Statistics                        ║');
-  console.log('╠════════════════════════════════════════════════════════════╣');
-  console.log(`║  Tasks Completed: ${stats.completedTasks.toString().padEnd(38)}║`);
-  console.log(`║  Success Rate: ${(stats.successRate * 100).toFixed(1)}%${''.padEnd(40)}║`);
-  console.log(`║  Total Revenue: $${stats.totalRevenue.toFixed(4)}${''.padEnd(36)}║`);
-  console.log(`║  Total Worker Payouts: $${stats.totalPayouts.toFixed(4)}${''.padEnd(29)}║`);
-  console.log(`║  Workers in Network: ${stats.workers}${''.padEnd(37)}║`);
-  console.log('╚════════════════════════════════════════════════════════════╝\n');
-  
-  console.log('[Consultant] A2A Economy Demo Complete!');
-  console.log('The Consultant Agent has demonstrated:');
-  console.log('  ✓ Wallet-based identity');
-  console.log('  ✓ Task delegation to specialized workers');
-  console.log('  ✓ 20/80 revenue split (margin/worker)');
-  console.log('  ✓ Agent-to-Agent (A2A) economic interactions');
-}
+});
 
-// Run demo if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  runDemo().catch(console.error);
-}
+/**
+ * GET /workers - List available worker agents
+ */
+app.get('/workers', (req: Request, res: Response) => {
+  const portfolio = loadAgentPortfolio();
+  res.json({
+    count: portfolio.agents?.length || 0,
+    workers: portfolio.agents?.map((a: any) => ({
+      id: a.agentId,
+      name: a.agentName,
+      capabilities: a.capabilities?.map((c: any) => c.name),
+      rating: a.avgRating,
+      price: a.pricing?.minPrice
+    }))
+  });
+});
 
-export default ConsultantAgent;
+/**
+ * GET /status - Consultant health check
+ */
+app.get('/status', (req: Request, res: Response) => {
+  res.json({
+    status: 'online',
+    name: 'AgoraConsultant',
+    version: '1.0.0',
+    workersAvailable: loadAgentPortfolio().agents?.length || 0,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Start server
+const PORT = process.env.CONSULTANT_PORT || 3457;
+
+app.listen(PORT, () => {
+  console.log(`[Consultant] Agora Consultant Agent running on port ${PORT}`);
+  console.log(`[Consultant] API Endpoints:`);
+  console.log(`  POST /task - Submit complex task`);
+  console.log(`  GET /workers - List available workers`);
+  console.log(`  GET /status - Health check`);
+});
+
+export default app;
