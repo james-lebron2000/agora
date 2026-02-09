@@ -120,6 +120,45 @@ export interface MarketRateResponse {
     error?: string;
     message?: string;
 }
+export interface SandboxExecuteJob {
+    language?: 'nodejs' | 'javascript' | 'js' | string;
+    code: string;
+    stdin?: string;
+    timeout_ms?: number;
+    max_memory_mb?: number;
+    network?: {
+        enabled?: boolean;
+    };
+    readonly_files?: Array<{
+        path: string;
+        content: string;
+    }>;
+    artifacts?: string[];
+}
+export interface SandboxExecutePayload {
+    agent_id: string;
+    request_id: string;
+    intent?: string;
+    thread_id?: string;
+    publish_result?: boolean;
+    job: SandboxExecuteJob;
+}
+export interface SandboxExecutionRecord {
+    run_id: string;
+    language: string;
+    status: 'SUCCESS' | 'FAILED' | 'TIMEOUT' | 'ERROR' | string;
+    started_at: string;
+    finished_at: string;
+    duration_ms: number;
+    exit_code: number | null;
+    signal: string | null;
+    timeout_ms: number;
+    max_memory_mb: number;
+    network_enabled: boolean;
+    stdout: string;
+    stderr: string;
+    artifacts: Array<Record<string, unknown>>;
+}
 export declare class RelayClient {
     private baseUrl;
     private defaultTimeout;
@@ -260,6 +299,17 @@ export declare class RelayClient {
         currency?: string;
         period?: string;
     }): Promise<MarketRateResponse>;
+    executeSandbox(payload: SandboxExecutePayload): Promise<{
+        ok: boolean;
+        request_id?: string;
+        agent_id?: string;
+        event_published?: boolean;
+        event_id?: string | null;
+        execution?: SandboxExecutionRecord;
+        error?: string;
+        message?: string;
+        details?: unknown;
+    }>;
     health(): Promise<{
         ok: boolean;
         version?: string;

@@ -41,7 +41,7 @@ export function QuickStart() {
           onClick={() => setActiveTab('cli')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
             activeTab === 'cli'
-              ? 'bg-base-blue text-white'
+              ? 'bg-agora-900 text-white'
               : 'bg-agora-50 text-agora-600 hover:bg-agora-100'
           }`}
         >
@@ -51,7 +51,7 @@ export function QuickStart() {
           onClick={() => setActiveTab('sdk')}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
             activeTab === 'sdk'
-              ? 'bg-base-blue text-white'
+              ? 'bg-agora-900 text-white'
               : 'bg-agora-50 text-agora-600 hover:bg-agora-100'
           }`}
         >

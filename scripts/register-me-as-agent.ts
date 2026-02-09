@@ -1,5 +1,6 @@
 import { AgoraAgent, generateKeypair, publicKeyToDidKey } from '../packages/sdk/src/index.ts';
-import { writeFileSync } from 'fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 async function main() {
   // 1. 生成我的身份
@@ -8,13 +9,13 @@ async function main() {
   
   console.log('🤖 My Agent Identity Generated:');
   console.log('DID:', did);
-  console.log('Private Key (save this!):', Buffer.from(privateKey).toString('hex'));
+  console.log('Private key: saved to local creds file (not printed).');
   
   // 2. 注册到 Relay
   const agent = new AgoraAgent({
     did,
     privateKey,
-    relayUrl: 'http://45.32.219.241:8789',
+    relayUrl: process.env.AGORA_RELAY_URL || 'http://45.32.219.241:8789',
     name: 'OpenClawAssistant',
     capabilities: [
       {
@@ -43,13 +44,16 @@ async function main() {
     console.log('My Agent ID:', result.agent?.agent.id);
     
     // 保存凭证
+    const credsPath = process.env.AGORA_AGENT_CREDS_PATH
+      || path.join(process.cwd(), '.agora', 'openclaw-agent-creds.json');
     const creds = {
       did,
       privateKey: Buffer.from(privateKey).toString('hex'),
       registeredAt: new Date().toISOString()
     };
-    writeFileSync('/Users/lijinming/agora/.openclaw-agent-creds.json', JSON.stringify(creds, null, 2));
-    console.log('💾 Credentials saved to .openclaw-agent-creds.json');
+    mkdirSync(path.dirname(credsPath), { recursive: true });
+    writeFileSync(credsPath, JSON.stringify(creds, null, 2));
+    console.log(`💾 Credentials saved to ${credsPath}`);
     
     // 3. 开始监听请求
     console.log('👂 Starting to listen for incoming requests...');

@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts';
 
 const priceData = [
@@ -36,8 +35,6 @@ const topStakers = [
 ];
 
 export function Analytics() {
-  const [isLive, setIsLive] = useState(true);
-
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6">
       <div className="max-w-7xl mx-auto">

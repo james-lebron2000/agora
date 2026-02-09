@@ -9,6 +9,7 @@ import { PostTaskModal } from './components/PostTaskModal'
 import { QuickStart } from './components/QuickStart'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
+import { resolveRelayUrl } from './lib/relayUrl'
 
 type EventsResp = { ok: boolean; events: AgoraEvent[]; lastTs: string | null }
 type AgentResp = { ok: boolean; agents: AgentSummary[] }
@@ -171,7 +172,7 @@ function NavLink({
       className={`px-3 py-1.5 rounded-full border text-sm transition-colors ${
         active
           ? 'bg-white text-agora-700 border-agora-300'
-          : 'bg-white text-agora-700 border-agora-200 hover:border-base-blue/40 hover:text-base-blue'
+          : 'bg-white text-agora-700 border-agora-200 hover:border-agora-400 hover:text-agora-900'
       }`}
     >
       {label}
@@ -181,8 +182,7 @@ function NavLink({
 
 function AppContent() {
   const relayUrl = useMemo(() => {
-    const env = (import.meta as any).env
-    return (env?.VITE_RELAY_URL as string) || 'http://45.32.219.241:8789'
+    return resolveRelayUrl()
   }, [])
   const { route, navigate } = useRoute()
 
@@ -196,7 +196,10 @@ function AppContent() {
   const [isPostTaskModalOpen, setIsPostTaskModalOpen] = useState(false)
 
   async function poll() {
-    const url = new URL(relayUrl + '/v1/messages')
+    const url = new URL(
+      `${relayUrl.replace(/\/$/, '')}/v1/messages`,
+      typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+    )
     if (lastTs) url.searchParams.set('since', lastTs)
     const res = await fetch(url)
     const json = (await res.json()) as EventsResp
@@ -230,7 +233,10 @@ function AppContent() {
 
   async function loadRecommendations(intent?: string) {
     try {
-      const url = new URL(relayUrl + '/v1/recommend')
+      const url = new URL(
+        `${relayUrl.replace(/\/$/, '')}/v1/recommend`,
+        typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+      )
       if (intent) url.searchParams.set('intent', intent)
       url.searchParams.set('limit', '5')
       const res = await fetch(url)
@@ -374,7 +380,7 @@ function AppContent() {
     setMetricsTick((prev) => prev + 1)
   }, [metrics.activeRequests, metrics.totalAgents, metrics.totalTransactions, metrics.totalVolume, metrics.volume24h])
 
-  const agentsForDisplay = agents.length ? agents : FALLBACK_AGENTS
+  const agentsForDisplay = agents.length ? agents : usingSeed ? FALLBACK_AGENTS : []
 
   const handlePostTask = async (task: {
     intent: string
@@ -428,30 +434,36 @@ function AppContent() {
         <h2 className="font-bold text-agora-900">Online Agents</h2>
       </div>
       <div className="space-y-3">
-        {agentsForDisplay.slice(0, 6).map((a) => (
-          <div key={a.id} className="p-3 bg-agora-50 rounded-xl border border-agora-100 hover:border-base-blue/30 transition-colors group">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-agora-200 to-agora-300 rounded-lg flex items-center justify-center text-xs font-bold text-agora-600">
-                {a.name?.slice(0, 2) || a.id.slice(0, 2).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-agora-900 text-sm truncate">{a.name || a.id}</div>
-                <div className="text-xs text-agora-500 truncate">
-                  {(a.intents && a.intents.length ? a.intents.slice(0, 2).join(', ') : 'No skills yet')}
+        {agentsForDisplay.length ? (
+          agentsForDisplay.slice(0, 6).map((a) => (
+            <div key={a.id} className="p-3 bg-agora-50 rounded-xl border border-agora-100 hover:border-agora-200 transition-colors group">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-gradient-to-br from-agora-200 to-agora-300 rounded-lg flex items-center justify-center text-xs font-bold text-agora-600">
+                  {a.name?.slice(0, 2) || a.id.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-agora-900 text-sm truncate">{a.name || a.id}</div>
+                  <div className="text-xs text-agora-500 truncate">
+                    {(a.intents && a.intents.length ? a.intents.slice(0, 2).join(', ') : 'No skills yet')}
+                  </div>
                 </div>
               </div>
+              {a.reputation?.score != null && (
+                <div className="mt-2 flex items-center gap-1 text-xs">
+                  <svg className="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                  <span className="text-agora-600">{a.reputation.score}</span>
+                  <span className="text-agora-400">({a.reputation.tier || 'N/A'})</span>
+                </div>
+              )}
             </div>
-            {a.reputation?.score != null && (
-              <div className="mt-2 flex items-center gap-1 text-xs">
-                <svg className="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                </svg>
-                <span className="text-agora-600">{a.reputation.score}</span>
-                <span className="text-agora-400">({a.reputation.tier || 'N/A'})</span>
-              </div>
-            )}
+          ))
+        ) : (
+          <div className="p-4 bg-agora-50 rounded-xl border border-agora-100 text-sm text-agora-600">
+            No agents registered yet.
           </div>
-        ))}
+        )}
       </div>
     </div>
   )
@@ -470,7 +482,7 @@ function AppContent() {
         <div className="flex items-center gap-2">
         <button
           onClick={() => setIsPostTaskModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-base-blue text-white rounded-xl font-medium hover:bg-[#0047db] transition-all shadow-lg shadow-base-blue/25"
+          className="flex items-center gap-2 px-4 py-2 bg-agora-900 text-white rounded-xl font-medium hover:bg-agora-800 transition-all shadow-lg shadow-agora-900/20"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -521,7 +533,7 @@ function AppContent() {
   )
 
   const right = (
-    <div className="space-y-6">
+      <div className="space-y-6">
       {/* Network Stats */}
       <div>
         <div className="flex items-center gap-2 mb-4">
@@ -534,10 +546,10 @@ function AppContent() {
         </div>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { k: 'Online Agents', v: agents.length || 3, icon: '🤖' },
-            { k: 'Active Workflows', v: threads.length, icon: '📊' },
-            { k: 'Task Posts', v: threads.length, icon: '📝' },
-            { k: 'Total Volume', v: '$' + threads.reduce((acc, t) => acc + (t.budgetUsd || 0), 0).toFixed(2), icon: '💰' },
+            { k: 'Registered Agents', v: metrics.totalAgents, icon: '🤖' },
+            { k: 'Active Requests', v: metrics.activeRequests, icon: '🔥' },
+            { k: 'Completed Deals', v: metrics.totalTransactions, icon: '✅' },
+            { k: 'USDC Settled', v: `$${metrics.totalVolume.toFixed(2)}`, icon: '💰' },
           ].map((s) => (
             <div key={s.k} className="p-3 bg-agora-50 rounded-xl border border-agora-100">
               <div className="text-xs text-agora-500 mb-1">{s.k}</div>
@@ -573,21 +585,27 @@ function AppContent() {
           <h2 className="font-bold text-agora-900">Recommended Agents</h2>
         </div>
         <div className="text-xs text-agora-500 mb-3">
-          {topIntent ? `Based on${topIntent}` : 'Top Agents'}
+          {topIntent ? `Based on ${topIntent}` : 'Top Agents'}
         </div>
         <div className="space-y-2">
-          {(recommendations.length ? recommendations : agents.slice(0, 3)).map((agent) => (
-            <div key={agent.id} className="p-3 bg-agora-50 rounded-xl border border-agora-100 hover:border-base-blue/30 transition-colors">
-              <div className="font-semibold text-agora-900 text-sm">{agent.name || agent.id}</div>
-              {agent.reputation?.score != null ? (
-                <div className="text-xs text-agora-500 mt-1">
-                  Score{agent.reputation.score} · {agent.reputation.tier || 'N/A'}
-                </div>
-              ) : (
-                <div className="text-xs text-agora-400 mt-1">No reputation yet</div>
-              )}
+          {(recommendations.length ? recommendations : agents.slice(0, 3)).length ? (
+            (recommendations.length ? recommendations : agents.slice(0, 3)).map((agent) => (
+              <div key={agent.id} className="p-3 bg-agora-50 rounded-xl border border-agora-100 hover:border-agora-200 transition-colors">
+                <div className="font-semibold text-agora-900 text-sm">{agent.name || agent.id}</div>
+                {agent.reputation?.score != null ? (
+                  <div className="text-xs text-agora-500 mt-1">
+                    Score {agent.reputation.score} · {agent.reputation.tier || 'N/A'}
+                  </div>
+                ) : (
+                  <div className="text-xs text-agora-400 mt-1">No reputation yet</div>
+                )}
+              </div>
+            ))
+          ) : (
+            <div className="p-4 bg-agora-50 rounded-xl border border-agora-100 text-sm text-agora-600">
+              No recommendations yet.
             </div>
-          ))}
+          )}
         </div>
       </div>
     </div>
@@ -608,7 +626,7 @@ function AppContent() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {agentsForDisplay.map((agent) => {
+          {agentsForDisplay.length ? agentsForDisplay.map((agent) => {
             const status = agent.status || 'unknown'
             const statusText = status === 'online' ? 'online' : status === 'offline' ? 'offline' : 'unknown'
             const statusClass =
@@ -632,8 +650,10 @@ function AppContent() {
                   Skills: {agent.intents?.length ? agent.intents.join(', ') : 'No skills yet'}
                 </div>
                 <div className="mt-3 space-y-2">
-                  {agent.capabilities?.length ? (
-                    agent.capabilities.map((cap, index) => (
+                  {agent.capabilities?.filter((cap) => cap && typeof cap === 'object').length ? (
+                    agent.capabilities
+                      ?.filter((cap) => cap && typeof cap === 'object')
+                      .map((cap, index) => (
                       <div key={cap.id || cap.name || `${agent.id}-${index}`} className="p-2 bg-agora-50 rounded-lg border border-agora-100">
                         <div className="text-sm font-semibold text-agora-800">
                           {cap.name || cap.id || 'Service Capability'}
@@ -652,7 +672,11 @@ function AppContent() {
                 </div>
               </div>
             )
-          })}
+          }) : (
+            <div className="p-4 bg-agora-50 rounded-2xl border border-agora-200 text-sm text-agora-600">
+              No agents registered yet.
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -687,7 +711,7 @@ function AppContent() {
             <div className="space-y-6">
               <Hero />
               <NetworkStats metrics={metrics} refreshKey={metricsTick} />
-              <UseCaseShowcase />
+              <UseCaseShowcase metrics={metrics} usingSeed={usingSeed} />
             </div>
           )
       }

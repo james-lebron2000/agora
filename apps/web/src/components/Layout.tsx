@@ -20,7 +20,7 @@ export function Layout({
         {/* Header */}
         <header className="flex flex-col gap-4 mb-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-base-blue to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/25">
+            <div className="w-10 h-10 bg-gradient-to-br from-agora-900 to-agora-700 rounded-xl flex items-center justify-center shadow-lg shadow-agora-900/15">
               <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
@@ -41,7 +41,7 @@ export function Layout({
             {/* Status Badge */}
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-white rounded-full border border-agora-200 shadow-sm">
               <span className="w-2 h-2 bg-success rounded-full animate-pulse" />
-              <span className="text-xs font-medium text-agora-600">workflow posts • demo</span>
+              <span className="text-xs font-medium text-agora-600">relay event stream</span>
             </div>
 
             {/* Connect Wallet Button */}

@@ -407,4 +407,69 @@ program
     console.log(JSON.stringify(json, null, 2));
   });
 
+program
+  .command('execute')
+  .option('--relay <url>', 'Relay URL', DEFAULT_RELAY)
+  .option('--agent-id <did>', 'Executor agent DID')
+  .option('--request-id <id>', 'Request ID')
+  .option('--intent <intent>', 'Intent (optional)')
+  .option('--thread-id <id>', 'Thread ID (optional)')
+  .option('--code-file <path>', 'Path to source code file')
+  .option('--code <source>', 'Inline source code')
+  .option('--timeout-ms <ms>', 'Execution timeout in ms', '5000')
+  .option('--max-memory-mb <mb>', 'Max memory in MB', '128')
+  .option('--artifact <path...>', 'Artifact file paths (relative to writable dir)')
+  .option('--readonly-files <path>', 'JSON file containing readonly_files array')
+  .option('--allow-network', 'Allow network egress in sandbox', false)
+  .option('--no-publish-result', 'Do not publish RESULT event to relay')
+  .action(async (opts) => {
+    if (!opts.agentId || !opts.requestId) {
+      console.error('Missing --agent-id or --request-id');
+      process.exit(1);
+    }
+
+    const inlineCode = typeof opts.code === 'string' ? opts.code : '';
+    const fileCode = opts.codeFile ? fs.readFileSync(path.resolve(process.cwd(), opts.codeFile), 'utf-8') : '';
+    const code = inlineCode || fileCode;
+    if (!code) {
+      console.error('Missing code: provide --code or --code-file');
+      process.exit(1);
+    }
+
+    const readonlyFiles = opts.readonlyFiles
+      ? (() => {
+          const raw = readJsonFile(opts.readonlyFiles);
+          if (!Array.isArray(raw)) {
+            console.error('--readonly-files must point to a JSON array');
+            process.exit(1);
+          }
+          return raw;
+        })()
+      : [];
+
+    const payload = {
+      agent_id: opts.agentId,
+      request_id: opts.requestId,
+      intent: opts.intent || undefined,
+      thread_id: opts.threadId || undefined,
+      publish_result: opts.publishResult,
+      job: {
+        language: 'nodejs',
+        code,
+        timeout_ms: Number(opts.timeoutMs),
+        max_memory_mb: Number(opts.maxMemoryMb),
+        network: { enabled: !!opts.allowNetwork },
+        artifacts: Array.isArray(opts.artifact) ? opts.artifact : [],
+        readonly_files: readonlyFiles,
+      },
+    };
+
+    const { json } = await fetchJson(`${opts.relay.replace(/\/$/, '')}/v1/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    console.log(JSON.stringify(json, null, 2));
+  });
+
 program.parseAsync(process.argv);

@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-
-const RELAY_URL = import.meta.env.VITE_RELAY_URL || 'http://45.32.219.241:8789';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { resolveRelayUrl } from '../lib/relayUrl';
 
 export type AgentStats = {
   name: string;
@@ -68,6 +67,7 @@ function formatDayLabel(ts: number): string {
 }
 
 export function useRealtimeMetrics(pollInterval = 5000) {
+  const relayUrl = useMemo(() => resolveRelayUrl(), [])
   const [metrics, setMetrics] = useState<NetworkMetrics>({
     activeAgents: 0,
     totalDeals: 0,
@@ -85,8 +85,8 @@ export function useRealtimeMetrics(pollInterval = 5000) {
   const fetchMetrics = async () => {
     try {
       const [agentsRes, eventsRes] = await Promise.all([
-        fetch(`${RELAY_URL}/v1/agents`),
-        fetch(`${RELAY_URL}/v1/messages`),
+        fetch(`${relayUrl}/v1/agents`),
+        fetch(`${relayUrl}/v1/messages`),
       ]);
       const agentsData = await agentsRes.json();
       const eventsData = await eventsRes.json();
@@ -112,7 +112,7 @@ export function useRealtimeMetrics(pollInterval = 5000) {
             ? Math.round((rep.success_orders / rep.total_orders) * 100)
             : 0,
           rating: rep.score || 0,
-          lastSeen: agent.last_seen || new Date().toISOString(),
+          lastSeen: agent.last_seen || '',
         };
       });
 
@@ -223,7 +223,7 @@ export function useRealtimeMetrics(pollInterval = 5000) {
         clearInterval(intervalRef.current);
       }
     };
-  }, [pollInterval]);
+  }, [pollInterval, relayUrl]);
 
   return { metrics, isLoading, error, refetch: fetchMetrics };
 }

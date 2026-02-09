@@ -23,6 +23,19 @@ const REQUIRE_ACCEPT_PAYMENT_VERIFY = ['1', 'true', 'yes', 'required']
   .includes(String(process.env.AGORA_REQUIRE_PAYMENT_VERIFY || '').toLowerCase());
 const REQUIRE_INTENT_SCHEMAS = ['1', 'true', 'yes', 'required']
   .includes(String(process.env.AGORA_REQUIRE_INTENT_SCHEMAS || '').toLowerCase());
+const ENABLE_SANDBOX_EXECUTE = !['0', 'false', 'off', 'disabled']
+  .includes(String(process.env.AGORA_ENABLE_SANDBOX_EXECUTE || '1').toLowerCase());
+const SANDBOX_RUNNER_URL = String(process.env.AGORA_SANDBOX_RUNNER_URL || 'http://127.0.0.1:8790').replace(/\/$/, '');
+const SANDBOX_EXECUTE_TIMEOUT_MS = Math.min(
+  Number(process.env.AGORA_SANDBOX_EXECUTE_TIMEOUT_MS || 45_000),
+  120_000,
+);
+const EXECUTE_AGENT_ALLOWLIST = new Set(
+  String(process.env.AGORA_SANDBOX_AGENT_ALLOWLIST || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean),
+);
 
 const intentInputSchemas = new Map();
 const intentOutputSchemas = new Map();
@@ -171,6 +184,64 @@ function matchesDirectoryFilters(agent, filters) {
   }
 
   return true;
+}
+
+function isAgentMarkedSandboxEnabled(agent) {
+  if (!agent || typeof agent !== 'object') return false;
+  if (agent?.metadata?.sandbox_enabled === true) return true;
+  if (!Array.isArray(agent?.capabilities)) return false;
+  return agent.capabilities.some((capability) => {
+    if (!capability || typeof capability !== 'object') return false;
+    if (capability.sandbox_enabled === true) return true;
+    if (capability.execution?.sandbox === true) return true;
+    if (Array.isArray(capability.intents)) {
+      return capability.intents.some((intent) => intent === 'sandbox.execute' || intent?.id === 'sandbox.execute');
+    }
+    return false;
+  });
+}
+
+function isAgentAllowedForSandboxExecution(agentId, agent) {
+  if (!agentId) return false;
+  if (EXECUTE_AGENT_ALLOWLIST.has(agentId)) return true;
+  return isAgentMarkedSandboxEnabled(agent);
+}
+
+function mapExecutionStatusToResultStatus(executionStatus) {
+  if (executionStatus === 'SUCCESS') return 'success';
+  if (executionStatus === 'TIMEOUT') return 'failed';
+  if (executionStatus === 'FAILED' || executionStatus === 'ERROR') return 'failed';
+  return 'failed';
+}
+
+async function executeInSandboxRunner(payload) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SANDBOX_EXECUTE_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${SANDBOX_RUNNER_URL}/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const json = await response.json();
+    if (!response.ok || json?.ok === false) {
+      return {
+        ok: false,
+        error: 'SANDBOX_EXECUTION_FAILED',
+        details: json,
+      };
+    }
+    return { ok: true, execution: json };
+  } catch (error) {
+    return {
+      ok: false,
+      error: 'SANDBOX_RUNNER_UNREACHABLE',
+      message: String(error),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function isObject(value) {
@@ -1123,6 +1194,129 @@ app.get('/v1/market-rate', async (req, res) => {
   });
 });
 
+app.post('/v1/execute', async (req, res) => {
+  if (!ENABLE_SANDBOX_EXECUTE) {
+    return res.status(403).json({
+      ok: false,
+      error: 'SANDBOX_EXECUTION_DISABLED',
+      message: 'Sandbox execution is disabled by relay configuration',
+    });
+  }
+
+  const body = req.body || {};
+  const agentId = body.agent_id || body.agentId;
+  const requestId = body.request_id || body.requestId;
+  const job = isObject(body.job) ? body.job : null;
+  const publishResult = body.publish_result !== false;
+  const threadId = body.thread_id || body.threadId;
+  const explicitIntent = body.intent;
+
+  if (!agentId || !requestId || !job) {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_REQUEST',
+      message: 'agent_id, request_id, and job are required',
+    });
+  }
+
+  const agent = agents.get(String(agentId));
+  if (!agent) {
+    return res.status(404).json({
+      ok: false,
+      error: 'AGENT_NOT_FOUND',
+      message: 'Agent must be registered before execution',
+    });
+  }
+
+  if (!isAgentAllowedForSandboxExecution(String(agentId), agent)) {
+    return res.status(403).json({
+      ok: false,
+      error: 'AGENT_NOT_WHITELISTED',
+      message: 'Agent is not allowed to use sandbox execution',
+      details: {
+        allowlistConfigured: EXECUTE_AGENT_ALLOWLIST.size > 0,
+      },
+    });
+  }
+
+  const requestInfo = requestIndex.get(String(requestId));
+  const intent = typeof explicitIntent === 'string' && explicitIntent
+    ? explicitIntent
+    : requestInfo?.intent;
+
+  const runnerPayload = {
+    job: {
+      language: job.language || 'nodejs',
+      code: job.code,
+      stdin: job.stdin,
+      timeout_ms: job.timeout_ms,
+      max_memory_mb: job.max_memory_mb,
+      network: job.network,
+      readonly_files: Array.isArray(job.readonly_files) ? job.readonly_files : [],
+      artifacts: Array.isArray(job.artifacts) ? job.artifacts : [],
+    },
+  };
+
+  const execution = await executeInSandboxRunner(runnerPayload);
+  if (!execution.ok) {
+    return res.status(502).json({
+      ok: false,
+      error: execution.error,
+      message: execution.message || 'Sandbox runner returned an error',
+      details: execution.details,
+    });
+  }
+
+  const resultStatus = mapExecutionStatusToResultStatus(execution.execution.status);
+  let eventId = null;
+  if (publishResult) {
+    const event = {
+      version: '1.0',
+      id: `result_exec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      ts: new Date().toISOString(),
+      type: 'RESULT',
+      sender: { id: String(agentId) },
+      thread: threadId ? { id: String(threadId) } : undefined,
+      payload: {
+        request_id: String(requestId),
+        intent: intent || undefined,
+        status: resultStatus,
+        output: {
+          status: execution.execution.status,
+          exit_code: execution.execution.exit_code,
+          signal: execution.execution.signal,
+          stdout: execution.execution.stdout,
+          stderr: execution.execution.stderr,
+        },
+        artifacts: execution.execution.artifacts || [],
+        metrics: {
+          latency_ms: execution.execution.duration_ms,
+        },
+        execution: {
+          run_id: execution.execution.run_id,
+          started_at: execution.execution.started_at,
+          finished_at: execution.execution.finished_at,
+          duration_ms: execution.execution.duration_ms,
+          timeout_ms: execution.execution.timeout_ms,
+          max_memory_mb: execution.execution.max_memory_mb,
+          network_enabled: execution.execution.network_enabled,
+        },
+      },
+    };
+    addEvent(event);
+    eventId = event.id;
+  }
+
+  return res.json({
+    ok: true,
+    request_id: String(requestId),
+    agent_id: String(agentId),
+    event_published: publishResult,
+    event_id: eventId,
+    execution: execution.execution,
+  });
+});
+
 app.post('/v1/payments/verify', async (req, res) => {
   const body = req.body || {};
   const txHash = body.tx_hash || body.txHash || body.payment_tx;
@@ -1288,6 +1482,7 @@ app.listen(port, () => {
   console.log(`Agora relay listening on http://localhost:${port}`);
   console.log(`  - POST /events  - Submit events`);
   console.log(`  - GET /events   - Subscribe (long-polling)`);
+  console.log(`  - POST /v1/execute - Run sandboxed job via runner`);
   console.log(`  - POST /seed    - Seed demo data`);
   console.log(`  - Storage mode  - ${storage.mode}`);
 });

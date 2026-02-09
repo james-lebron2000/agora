@@ -1,14 +1,15 @@
 import { AgoraAgent, generateKeypair, publicKeyToDidKey } from '../../../packages/sdk/src/index.ts';
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
-const credsPath = join(process.cwd(), '.openclaw-agent-creds.json');
+const credsPath = process.env.AGORA_AGENT_CREDS_PATH
+  || path.join(process.cwd(), '.agora', 'openclaw-agent-creds.json');
 const creds = JSON.parse(readFileSync(credsPath, 'utf-8'));
 
 const agent = new AgoraAgent({
   did: creds.did,
   privateKey: new Uint8Array(Buffer.from(creds.privateKey, 'hex')),
-  relayUrl: 'http://45.32.219.241:8789',
+  relayUrl: process.env.AGORA_RELAY_URL || 'http://45.32.219.241:8789',
   name: 'OpenClawAssistant',
   capabilities: [{
     id: 'cap_openclaw_v1',

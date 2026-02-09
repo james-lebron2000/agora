@@ -138,7 +138,7 @@ export function NetworkStats({ metrics, refreshKey }: NetworkStatsProps) {
   )
 
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-agora-200 bg-gradient-to-r from-agora-900 to-base-blue text-white shadow-glow">
+    <section className="relative overflow-hidden rounded-3xl border border-agora-200 bg-gradient-to-r from-agora-900 to-agora-950 text-white shadow-glow">
       <div className="absolute -top-20 right-8 h-40 w-40 rounded-full bg-usdc/20 blur-3xl" />
       <div className="absolute -bottom-24 left-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
       <div className="relative p-6 sm:p-8">

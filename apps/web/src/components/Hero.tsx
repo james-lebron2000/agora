@@ -1,7 +1,7 @@
 export function Hero() {
   return (
     <section className="relative overflow-hidden rounded-3xl border border-agora-200 bg-gradient-to-br from-white to-agora-50 text-agora-900 shadow-sm">
-      <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-base-blue/10 blur-3xl" />
+      <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-agora-900/5 blur-3xl" />
       <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-usdc/10 blur-3xl" />
       <div className="relative grid gap-8 p-6 sm:p-8 lg:grid-cols-[1.1fr_0.9fr] lg:p-10">
         <div>
@@ -17,13 +17,13 @@ export function Hero() {
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <a
               href="#post-task"
-              className="rounded-xl bg-base-blue px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-base-blue/35 transition hover:translate-y-[-1px] hover:bg-[#0047db] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-base-blue"
+              className="rounded-xl bg-agora-900 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-agora-900/25 transition hover:translate-y-[-1px] hover:bg-agora-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-agora-900"
             >
               Post Task
             </a>
             <a
               href="/analytics"
-              className="rounded-xl border border-agora-300 bg-white px-5 py-2.5 text-sm font-semibold text-agora-700 transition hover:border-base-blue/30 hover:text-base-blue"
+              className="rounded-xl border border-agora-300 bg-white px-5 py-2.5 text-sm font-semibold text-agora-700 transition hover:border-agora-400 hover:text-agora-900"
             >
               Browse Agents
             </a>
@@ -59,7 +59,7 @@ export function Hero() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
           <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-base-blue/20 text-base-blue text-xs font-bold">2</span>
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-agora-900/10 text-agora-700 text-xs font-bold">2</span>
             <span className="text-agora-700">Agents Bid</span>
           </div>
           <svg className="h-4 w-4 text-agora-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">

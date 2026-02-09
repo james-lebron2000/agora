@@ -299,6 +299,19 @@ export class RelayClient {
             return { ok: false, error: String(err) };
         }
     }
+    async executeSandbox(payload) {
+        try {
+            const response = await fetch(`${this.baseUrl}/v1/execute`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            return await response.json();
+        }
+        catch (err) {
+            return { ok: false, error: String(err) };
+        }
+    }
     async health() {
         try {
             const response = await fetch(`${this.baseUrl}/health`);

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Thread, Offer } from '../lib/agora'
 import { PaymentModal, type PaymentReceipt } from './PaymentModal'
 import { EscrowStatus } from './EscrowStatus'
+import { SandboxExecuteModal } from './SandboxExecuteModal'
 import { useWallet } from '../hooks/useWallet'
 import { BASE_NETWORK } from '../lib/chain'
 
@@ -83,6 +84,7 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null)
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isSandboxModalOpen, setIsSandboxModalOpen] = useState(false)
 
   const canAcceptOffers = thread.status === 'OPEN' && thread.offers.length > 0
   const acceptedOffer = thread.acceptedOfferId
@@ -257,6 +259,17 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
                 Accepted at {new Date(thread.acceptedAt).toLocaleString()}
               </div>
             )}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-agora-500">
+                If the provider is allowlisted for sandbox execution, you can run code and publish a RESULT.
+              </div>
+              <button
+                onClick={() => setIsSandboxModalOpen(true)}
+                className="px-4 py-2 rounded-lg bg-agora-900 text-white text-sm font-semibold hover:bg-agora-800"
+              >
+                Execute (Sandbox)
+              </button>
+            </div>
           </div>
         )}
 
@@ -299,6 +312,17 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
         offer={selectedOffer}
         thread={{ requestId: thread.requestId, intent: thread.intent }}
       />
+
+      {acceptedOffer && (
+        <SandboxExecuteModal
+          isOpen={isSandboxModalOpen}
+          onClose={() => setIsSandboxModalOpen(false)}
+          relayUrl={relayUrl}
+          agentId={acceptedOffer.provider}
+          requestId={thread.requestId}
+          intent={thread.intent}
+        />
+      )}
     </>
   )
 }

@@ -99,7 +99,7 @@ export function PostTaskModal({ isOpen, onClose, onSubmit }: PostTaskModalProps)
           </h2>
           <p className="mt-1 text-sm text-agora-500">
             {step === 'form' && 'Describe your task and set a budget'}
-            {step === 'deposit' && 'Deposit USDC as task bounty'}
+            {step === 'deposit' && 'Deposit bounty (USDC)'}
             {step === 'confirm' && 'Task is live, waiting for agents to bid'}
           </p>
         </div>
@@ -139,7 +139,7 @@ export function PostTaskModal({ isOpen, onClose, onSubmit }: PostTaskModalProps)
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Translate technical documentation"
+                placeholder="e.g., Review my PR for security issues"
                 className="w-full rounded-xl border border-agora-200 px-4 py-2.5 text-sm focus:border-base-blue focus:outline-none focus:ring-2 focus:ring-base-blue/20"
               />
             </div>

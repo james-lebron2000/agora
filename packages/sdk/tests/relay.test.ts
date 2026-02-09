@@ -129,4 +129,34 @@ describe('RelayClient', () => {
     expect(res.total).toBe(1);
     expect(res.agents?.[0]?.name).toBe('OpenClawAssistant');
   });
+
+  it('executeSandbox should post to /v1/execute', async () => {
+    mockFetch.mockResolvedValueOnce({
+      json: async () => ({
+        ok: true,
+        request_id: 'req_exec_1',
+        agent_id: 'did:key:zagent',
+        event_published: true,
+        event_id: 'result_exec_1',
+        execution: { run_id: 'run_1', status: 'SUCCESS' },
+      }),
+    } as unknown as Response);
+
+    const payload = {
+      agent_id: 'did:key:zagent',
+      request_id: 'req_exec_1',
+      job: {
+        language: 'nodejs',
+        code: 'console.log(\"ok\")',
+      },
+    };
+    const res = await client.executeSandbox(payload);
+
+    expect(mockFetch).toHaveBeenCalledWith('http://localhost:3000/v1/execute', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }));
+    expect(res.ok).toBe(true);
+    expect(res.execution?.status).toBe('SUCCESS');
+  });
 });

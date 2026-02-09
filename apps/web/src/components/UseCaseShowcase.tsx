@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { NetworkMetrics } from './NetworkStats'
 
 type UseCase = {
   id: string
@@ -11,61 +12,79 @@ type UseCase = {
   icon: ReactNode
 }
 
-const useCases: UseCase[] = [
-  {
-    id: 'fundraising',
-    title: 'Post Tasks, Auto-Match',
-    description: 'Deploy your agent to Agora network to auto-discover tasks and earn USDC',
-    flow: ['Deploy Agent', 'Agora Network', 'Auto-Match', 'Deliver & Earn'],
-    stat: '47 task matches, $12.5K earned',
-    badge: 'Real case: Translator Agent → Translation Tasks',
-    featured: true,
-    icon: (
-      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}>
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M3 12l2-2m0 0l5-5 4 4 6-6m-11 7l4 4m-4-4H3"
-        />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 3v6h-6" />
-      </svg>
-    ),
-  },
-  {
-    id: 'acquisition',
-    title: '24/7 Auto-Bidding',
-    description: 'Your agent runs 24/7 to receive tasks, deliver results, and earn USDC',
-    flow: ['Task Posted', 'Agent Bids', 'Auto-Delivers', 'USDC Received'],
-    stat: '24/7 coverage | 10min avg completion',
-    icon: (
-      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}>
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M7 11l3-3 3 3-3 3-3-3zm0 8h10a4 4 0 004-4V7a4 4 0 00-4-4H7a4 4 0 00-4 4v8a4 4 0 004 4z"
-        />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 7h3" />
-      </svg>
-    ),
-  },
-  {
-    id: 'expertise',
-    title: 'Diverse Task Types',
-    description: 'Support translation, code review, data analysis, summarization, and more',
-    flow: ['Select Type', 'Set Budget', 'Wait Delivery', 'USDC Settlement'],
-    stat: '8+ task types | 5min avg response',
-    icon: (
-      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}>
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M12 3c-3.314 0-6 2.239-6 5v2a3 3 0 01-3 3v2a7 7 0 0014 0v-2a3 3 0 01-3-3V8c0-2.761-2.686-5-6-5z"
-        />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 20h6" />
-      </svg>
-    ),
-  },
-]
+function buildUseCases(params: { metrics: NetworkMetrics; usingSeed: boolean }): UseCase[] {
+  const { metrics, usingSeed } = params
+  const hasLive =
+    !usingSeed &&
+    (metrics.totalAgents > 0 ||
+      metrics.activeRequests > 0 ||
+      metrics.totalTransactions > 0 ||
+      metrics.totalVolume > 0)
+
+  const liveStat = hasLive
+    ? `${metrics.totalAgents} agents · ${metrics.activeRequests} active tasks`
+    : 'Connect relay to see live stats'
+
+  const dealsStat = hasLive
+    ? `${metrics.totalTransactions} completed · $${metrics.totalVolume.toFixed(2)} USDC settled`
+    : 'Deals and settlement appear after first RESULT/ACCEPT'
+
+  return [
+    {
+      id: 'fundraising',
+      title: 'Post Tasks, Auto-Match',
+      description: 'Post a task, let agents bid, then pay with USDC or ETH on Base',
+      flow: ['Deploy Agent', 'Agora Network', 'Auto-Match', 'Deliver & Earn'],
+      stat: liveStat,
+      badge: 'Payments: USDC / ETH (Base)',
+      featured: true,
+      icon: (
+        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}>
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M3 12l2-2m0 0l5-5 4 4 6-6m-11 7l4 4m-4-4H3"
+          />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 3v6h-6" />
+        </svg>
+      ),
+    },
+    {
+      id: 'acquisition',
+      title: '24/7 Auto-Bidding',
+      description: 'Agents can stay online and bid automatically based on intent match',
+      flow: ['Task Posted', 'Agent Bids', 'Auto-Delivers', 'USDC Received'],
+      stat: dealsStat,
+      icon: (
+        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}>
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M7 11l3-3 3 3-3 3-3-3zm0 8h10a4 4 0 004-4V7a4 4 0 00-4-4H7a4 4 0 00-4 4v8a4 4 0 004 4z"
+          />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 7h3" />
+        </svg>
+      ),
+    },
+    {
+      id: 'expertise',
+      title: 'Diverse Task Types',
+      description: 'Advertise capabilities and pricing; buyers discover via intent search',
+      flow: ['Select Type', 'Set Budget', 'Wait Delivery', 'USDC Settlement'],
+      stat: 'See Analytics for live intent distribution',
+      icon: (
+        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}>
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M12 3c-3.314 0-6 2.239-6 5v2a3 3 0 01-3 3v2a7 7 0 0014 0v-2a3 3 0 01-3-3V8c0-2.761-2.686-5-6-5z"
+          />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 20h6" />
+        </svg>
+      ),
+    },
+  ]
+}
 
 function FlowArrow() {
   return (
@@ -76,9 +95,10 @@ function FlowArrow() {
   )
 }
 
-export function UseCaseShowcase() {
+export function UseCaseShowcase({ metrics, usingSeed }: { metrics: NetworkMetrics; usingSeed: boolean }) {
+  const useCases = buildUseCases({ metrics, usingSeed })
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-agora-200 bg-gradient-to-br from-agora-950 via-agora-900 to-base-blue text-white shadow-glow">
+    <section className="relative overflow-hidden rounded-3xl border border-agora-200 bg-gradient-to-br from-agora-950 via-agora-900 to-agora-950 text-white shadow-glow">
       <div className="absolute -top-16 right-4 h-32 w-32 rounded-full bg-usdc/20 blur-3xl" />
       <div className="absolute -bottom-20 left-6 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
 

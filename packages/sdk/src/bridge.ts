@@ -11,7 +11,6 @@ import {
   parseUnits,
   formatUnits,
   type Hex,
-  type PublicClient,
   type WalletClient,
   type Address
 } from 'viem';
@@ -56,7 +55,7 @@ export interface BridgeResult {
 /**
  * Create public client for chain
  */
-export function createChainPublicClient(chain: SupportedChain): PublicClient {
+export function createChainPublicClient(chain: SupportedChain) {
   return createPublicClient({
     chain: SUPPORTED_CHAINS[chain],
     transport: http(RPC_URLS[chain][0])
@@ -76,7 +75,7 @@ export async function getUSDCBalance(address: Address, chain: SupportedChain): P
       abi,
       functionName: 'balanceOf',
       args: [address]
-    });
+    }) as bigint;
     return formatUnits(balance, 6);
   } catch (error) {
     console.error(`[Bridge] Failed to get USDC balance on ${chain}:`, error);
