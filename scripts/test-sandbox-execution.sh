@@ -48,6 +48,14 @@ curl -fsS -X POST "$BASE_RELAY/v1/messages" \
   -H 'Content-Type: application/json' \
   -d "{\"envelope\":{\"version\":\"1.0\",\"id\":\"msg_req_exec\",\"ts\":\"$TS\",\"type\":\"REQUEST\",\"sender\":{\"id\":\"user:test\"},\"payload\":{\"request_id\":\"req_exec_1\",\"intent\":\"dev.code\",\"params\":{\"task\":\"sandbox test\"}}}}" >/dev/null
 
+curl -fsS -X POST "$BASE_RELAY/v1/messages" \
+  -H 'Content-Type: application/json' \
+  -d "{\"envelope\":{\"version\":\"1.0\",\"id\":\"msg_offer_exec\",\"ts\":\"$TS\",\"type\":\"OFFER\",\"sender\":{\"id\":\"$AGENT_DID\"},\"payload\":{\"request_id\":\"req_exec_1\",\"offer_id\":\"off_exec_1\",\"amount\":1,\"token\":\"USDC\"}}}" >/dev/null
+
+curl -fsS -X POST "$BASE_RELAY/v1/messages" \
+  -H 'Content-Type: application/json' \
+  -d "{\"envelope\":{\"version\":\"1.0\",\"id\":\"msg_accept_exec\",\"ts\":\"$TS\",\"type\":\"ACCEPT\",\"sender\":{\"id\":\"user:test\"},\"payload\":{\"request_id\":\"req_exec_1\",\"offer_id\":\"off_exec_1\"}}}" >/dev/null
+
 CODE_DENY=$(cat <<'JSCODE'
 import fs from 'node:fs/promises';
 try {

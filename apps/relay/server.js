@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { createHash } from 'node:crypto';
 import { createStorage } from './storage.js';
 import { createUsdcPaymentVerifier } from './paymentVerifier.js';
 
@@ -39,6 +40,30 @@ const EXECUTE_AGENT_ALLOWLIST = new Set(
 
 const intentInputSchemas = new Map();
 const intentOutputSchemas = new Map();
+
+const ORDER_STATES = {
+  CREATED: 'CREATED',
+  OFFERED: 'OFFERED',
+  ACCEPTED: 'ACCEPTED',
+  FUNDED: 'FUNDED',
+  EXECUTING: 'EXECUTING',
+  DELIVERED: 'DELIVERED',
+  RELEASED: 'RELEASED',
+  REFUNDED: 'REFUNDED',
+  CLOSED: 'CLOSED',
+};
+
+const ORDER_TRANSITIONS = {
+  [ORDER_STATES.CREATED]: new Set([ORDER_STATES.OFFERED, ORDER_STATES.ACCEPTED, ORDER_STATES.FUNDED]),
+  [ORDER_STATES.OFFERED]: new Set([ORDER_STATES.OFFERED, ORDER_STATES.ACCEPTED, ORDER_STATES.FUNDED]),
+  [ORDER_STATES.ACCEPTED]: new Set([ORDER_STATES.FUNDED, ORDER_STATES.EXECUTING, ORDER_STATES.DELIVERED, ORDER_STATES.RELEASED, ORDER_STATES.REFUNDED]),
+  [ORDER_STATES.FUNDED]: new Set([ORDER_STATES.EXECUTING, ORDER_STATES.DELIVERED, ORDER_STATES.RELEASED, ORDER_STATES.REFUNDED]),
+  [ORDER_STATES.EXECUTING]: new Set([ORDER_STATES.DELIVERED, ORDER_STATES.REFUNDED]),
+  [ORDER_STATES.DELIVERED]: new Set([ORDER_STATES.RELEASED, ORDER_STATES.REFUNDED, ORDER_STATES.CLOSED]),
+  [ORDER_STATES.RELEASED]: new Set([ORDER_STATES.CLOSED]),
+  [ORDER_STATES.REFUNDED]: new Set([ORDER_STATES.CLOSED]),
+  [ORDER_STATES.CLOSED]: new Set(),
+};
 
 // Active subscriptions for long-polling
 const subscriptions = new Set();
@@ -427,6 +452,208 @@ function computePercentile(values, percentile) {
   return sorted[lower] * (1 - weight) + sorted[upper] * weight;
 }
 
+function hashRequestPayload(value) {
+  return createHash('sha256').update(JSON.stringify(value || {})).digest('hex');
+}
+
+function readIdempotencyKey(req) {
+  const fromHeader = req.get('Idempotency-Key') || req.get('X-Idempotency-Key');
+  if (typeof fromHeader === 'string' && fromHeader.trim()) return fromHeader.trim();
+  const fromBody = req.body?.idempotency_key || req.body?.idempotencyKey;
+  if (typeof fromBody === 'string' && fromBody.trim()) return fromBody.trim();
+  return null;
+}
+
+async function loadIdempotentResponse({ idempotencyKey, requestHash }) {
+  if (!idempotencyKey) return null;
+  const record = await storage.getIdempotencyRecord(idempotencyKey);
+  if (!record) return null;
+  if (record.request_hash && record.request_hash !== requestHash) {
+    return {
+      conflict: true,
+      response: {
+        ok: false,
+        error: 'IDEMPOTENCY_KEY_REUSED',
+        message: 'Idempotency key was already used with a different payload',
+      },
+      statusCode: 409,
+    };
+  }
+  return {
+    conflict: false,
+    response: {
+      ...(record.response || { ok: true }),
+      idempotent_replay: true,
+      idempotency_key: idempotencyKey,
+    },
+    statusCode: Number(record.status_code) || 200,
+  };
+}
+
+async function persistIdempotencyResponse({ idempotencyKey, requestHash, statusCode, response }) {
+  if (!idempotencyKey) return;
+  await storage.saveIdempotencyRecord({
+    idempotency_key: idempotencyKey,
+    request_hash: requestHash,
+    status_code: statusCode,
+    response,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+function getOrderStateTimestampKey(state) {
+  if (state === ORDER_STATES.CREATED) return 'created_at';
+  if (state === ORDER_STATES.ACCEPTED) return 'accepted_at';
+  if (state === ORDER_STATES.FUNDED) return 'funded_at';
+  if (state === ORDER_STATES.EXECUTING) return 'executing_at';
+  if (state === ORDER_STATES.DELIVERED) return 'delivered_at';
+  if (state === ORDER_STATES.RELEASED) return 'released_at';
+  if (state === ORDER_STATES.REFUNDED) return 'refunded_at';
+  if (state === ORDER_STATES.CLOSED) return 'closed_at';
+  return null;
+}
+
+function pushOrderStateHistory(order, { state, eventType, eventId, ts }) {
+  if (!Array.isArray(order.state_history)) order.state_history = [];
+  order.state_history.push({
+    state,
+    event_type: eventType,
+    event_id: eventId || null,
+    ts,
+  });
+}
+
+function transitionOrderState(order, nextState, context) {
+  const current = order.state;
+  if (!current) {
+    order.state = nextState;
+    const tsKey = getOrderStateTimestampKey(nextState);
+    if (tsKey && !order[tsKey]) order[tsKey] = context.ts;
+    pushOrderStateHistory(order, { state: nextState, ...context });
+    return { ok: true };
+  }
+  if (current === nextState) return { ok: true };
+  if (
+    nextState === ORDER_STATES.FUNDED
+    && [ORDER_STATES.DELIVERED, ORDER_STATES.RELEASED, ORDER_STATES.REFUNDED, ORDER_STATES.CLOSED].includes(current)
+  ) {
+    // Late ESCROW_HELD event should not roll state back.
+    return { ok: true };
+  }
+  const allowed = ORDER_TRANSITIONS[current] || new Set();
+  if (!allowed.has(nextState)) {
+    return {
+      ok: false,
+      error: 'INVALID_ORDER_TRANSITION',
+      message: `Order cannot transition from ${current} to ${nextState}`,
+    };
+  }
+  order.state = nextState;
+  const tsKey = getOrderStateTimestampKey(nextState);
+  if (tsKey && !order[tsKey]) order[tsKey] = context.ts;
+  pushOrderStateHistory(order, { state: nextState, ...context });
+  return { ok: true };
+}
+
+function baseOrderRecord(requestId, evt, payload) {
+  const now = evt.ts || new Date().toISOString();
+  return {
+    request_id: requestId,
+    state: null,
+    intent: payload.intent || null,
+    requester: evt.sender?.id || null,
+    created_at: null,
+    accepted_at: null,
+    funded_at: null,
+    executing_at: null,
+    delivered_at: null,
+    released_at: null,
+    refunded_at: null,
+    closed_at: null,
+    updated_at: now,
+    state_history: [],
+  };
+}
+
+function buildOrderTransitionTarget(evt, payload) {
+  if (evt.type === 'REQUEST') return ORDER_STATES.CREATED;
+  if (evt.type === 'OFFER') return ORDER_STATES.OFFERED;
+  if (evt.type === 'ESCROW_HELD') return ORDER_STATES.FUNDED;
+  if (evt.type === 'RESULT') return ORDER_STATES.DELIVERED;
+  if (evt.type === 'ESCROW_RELEASED') return ORDER_STATES.RELEASED;
+  if (evt.type === 'ESCROW_REFUNDED') return ORDER_STATES.REFUNDED;
+  if (evt.type === 'ORDER_CLOSED') return ORDER_STATES.CLOSED;
+  if (evt.type === 'ACCEPT') {
+    const hasPaymentVerification = isObject(payload.payment_verification)
+      || isObject(payload.paymentVerification);
+    return hasPaymentVerification ? ORDER_STATES.FUNDED : ORDER_STATES.ACCEPTED;
+  }
+  return null;
+}
+
+function applyOrderPayloadUpdates(order, evt, payload) {
+  if (payload.intent && !order.intent) order.intent = payload.intent;
+  if (evt.type === 'REQUEST') {
+    order.requester = evt.sender?.id || order.requester || null;
+  }
+  if (evt.type === 'OFFER') {
+    order.last_offer_id = payload.offer_id || payload.offerId || evt.id || null;
+    order.last_offer_provider = evt.sender?.id || null;
+  }
+  if (evt.type === 'ACCEPT') {
+    order.accepted_offer_id = payload.offer_id || payload.offerId || order.accepted_offer_id || null;
+    order.accepted_by = evt.sender?.id || order.accepted_by || null;
+    order.payment_tx = payload.payment_tx || payload.tx_hash || payload.txHash || order.payment_tx || null;
+    order.payment_token = payload.token || order.payment_token || null;
+    order.payment_chain = payload.chain || payload.network || order.payment_chain || null;
+    order.payment_amount = payload.amount ?? payload.amount_usdc ?? order.payment_amount ?? null;
+    order.payment_payer = payload.payer || order.payment_payer || null;
+    order.payment_payee = payload.payee || payload?.terms?.provider || order.payment_payee || null;
+  }
+  if (evt.type === 'RESULT') {
+    order.result_status = payload.status || order.result_status || null;
+    order.result_sender = evt.sender?.id || order.result_sender || null;
+  }
+  if (evt.type === 'ESCROW_RELEASED' || evt.type === 'ESCROW_REFUNDED') {
+    order.settlement_resolution = evt.type === 'ESCROW_RELEASED' ? 'release' : 'refund';
+    if (payload.fee != null) order.settlement_fee = payload.fee;
+    if (payload.payout != null) order.settlement_payout = payload.payout;
+  }
+}
+
+async function applyOrderStateTransition(evt) {
+  const payload = isObject(evt.payload) ? evt.payload : {};
+  const requestIdRaw = payload.request_id || payload.requestId;
+  if (!requestIdRaw) return { ok: true, order: null };
+  const requestId = String(requestIdRaw);
+  const targetState = buildOrderTransitionTarget(evt, payload);
+  if (!targetState) return { ok: true, order: null };
+
+  let order = await storage.getOrder(requestId);
+  if (!order) {
+    if (evt.type !== 'REQUEST' && evt.type !== 'ESCROW_HELD') {
+      return {
+        ok: false,
+        error: 'ORDER_NOT_FOUND',
+        message: `Order ${requestId} does not exist yet`,
+      };
+    }
+    order = baseOrderRecord(requestId, evt, payload);
+  }
+
+  const transitioned = transitionOrderState(order, targetState, {
+    eventType: evt.type,
+    eventId: evt.id,
+    ts: evt.ts || new Date().toISOString(),
+  });
+  if (!transitioned.ok) return transitioned;
+
+  applyOrderPayloadUpdates(order, evt, payload);
+  order.updated_at = evt.ts || new Date().toISOString();
+  await storage.saveOrder(order);
+  return { ok: true, order };
+}
+
 function buildMarketRateReport({ intent, currency, periodMs, now }) {
   const cutoff = now - periodMs;
   const byCurrency = new Map();
@@ -745,10 +972,18 @@ function buildSeedEvents(baseTs) {
 app.get('/health', (_req, res) => res.json({ ok: true, version: '1.0.0' }));
 
 // Agents POST envelopes/events here (legacy)
-app.post('/events', (req, res) => {
+app.post('/events', async (req, res) => {
   const evt = normalizeEnvelope(req.body);
   if (!evt) {
     return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', message: 'Event must be a valid envelope object' });
+  }
+  const orderTransition = await applyOrderStateTransition(evt);
+  if (!orderTransition.ok) {
+    return res.status(orderTransition.error === 'ORDER_NOT_FOUND' ? 404 : 409).json({
+      ok: false,
+      error: orderTransition.error || 'ORDER_TRANSITION_FAILED',
+      message: orderTransition.message || 'Order transition failed',
+    });
   }
   addEvent(evt);
   res.json({ ok: true, id: evt.id });
@@ -826,9 +1061,32 @@ app.post('/v1/messages', async (req, res) => {
   if (!evt) {
     return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', message: 'Envelope must be a valid object' });
   }
+  const payload = isObject(evt.payload) ? evt.payload : {};
+  const requestIdFromPayload = payload.request_id || payload.requestId;
+
+  const requestHash = hashRequestPayload({
+    route: '/v1/messages',
+    type: evt.type,
+    sender: evt.sender?.id || null,
+    recipient: evt.recipient?.id || null,
+    thread: evt.thread?.id || null,
+    payload,
+  });
+  const explicitIdempotencyKey = readIdempotencyKey(req);
+  const derivedAcceptIdempotencyKey = (
+    !explicitIdempotencyKey
+    && evt.type === 'ACCEPT'
+    && requestIdFromPayload
+  )
+    ? `accept:${String(requestIdFromPayload)}:${String(payload.offer_id || payload.offerId || 'na')}:${String(payload.payment_tx || payload.tx_hash || payload.txHash || evt.id)}`
+    : null;
+  const idempotencyKey = explicitIdempotencyKey || derivedAcceptIdempotencyKey;
+  const idempotentReplay = await loadIdempotentResponse({ idempotencyKey, requestHash });
+  if (idempotentReplay) {
+    return res.status(idempotentReplay.statusCode).json(idempotentReplay.response);
+  }
 
   if (evt.type === 'REQUEST') {
-    const payload = isObject(evt.payload) ? evt.payload : {};
     const intent = payload.intent;
     const params = payload.params;
     if (typeof intent !== 'string' || !intent) {
@@ -868,8 +1126,7 @@ app.post('/v1/messages', async (req, res) => {
   }
 
   if (evt.type === 'RESULT') {
-    const payload = isObject(evt.payload) ? evt.payload : {};
-    const requestId = payload.request_id || payload.requestId;
+    const requestId = requestIdFromPayload;
     const intent = requestIndex.get(String(requestId || ''))?.intent || payload.intent;
     if (typeof intent === 'string' && intent) {
       const schemaRecord = intentOutputSchemas.get(intent);
@@ -888,41 +1145,159 @@ app.post('/v1/messages', async (req, res) => {
     }
   }
 
-  if (evt.type === 'ACCEPT' && REQUIRE_ACCEPT_PAYMENT_VERIFY) {
+  if (evt.type === 'ACCEPT') {
     const payment = extractAcceptPaymentPayload(evt);
-    if (!payment.txHash || !payment.payer || !payment.payee || payment.amount == null) {
-      return res.status(400).json({
-        ok: false,
-        error: 'INVALID_PAYMENT_METADATA',
-        message: 'ACCEPT requires payment_tx, payer, payee, and amount when AGORA_REQUIRE_PAYMENT_VERIFY is enabled',
-      });
+    const requestId = String(payment.requestId || requestIdFromPayload || '');
+    if (!requestId) {
+      return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', message: 'ACCEPT requires payload.request_id' });
     }
-    const verified = await paymentVerifier.verifyUSDCTransfer({
-      txHash: payment.txHash,
-      chain: payment.chain,
-      token: payment.token,
-      payer: payment.payer,
-      payee: payment.payee,
-      amount: payment.amount,
-      senderId: payment.senderId,
+    if (payment.txHash) {
+      const existingPayment = await storage.getPaymentRecordByTxHash(String(payment.txHash));
+      if (existingPayment) {
+        if (String(existingPayment.request_id) === requestId) {
+          const duplicateResponse = {
+            ok: true,
+            id: existingPayment.accept_event_id || evt.id,
+            duplicate: true,
+            payment: existingPayment.payment || null,
+            order_state: (await storage.getOrder(requestId))?.state || null,
+          };
+          await persistIdempotencyResponse({
+            idempotencyKey,
+            requestHash,
+            statusCode: 200,
+            response: duplicateResponse,
+          });
+          return res.status(200).json({
+            ...duplicateResponse,
+            idempotent_replay: Boolean(idempotencyKey),
+            idempotency_key: idempotencyKey || undefined,
+          });
+        }
+        return res.status(409).json({
+          ok: false,
+          error: 'PAYMENT_REPLAY_DETECTED',
+          message: 'payment_tx was already used by another request',
+          details: {
+            request_id: existingPayment.request_id,
+            tx_hash: existingPayment.tx_hash,
+          },
+        });
+      }
+    }
+
+    if (REQUIRE_ACCEPT_PAYMENT_VERIFY) {
+      if (!payment.txHash || !payment.payer || !payment.payee || payment.amount == null) {
+        return res.status(400).json({
+          ok: false,
+          error: 'INVALID_PAYMENT_METADATA',
+          message: 'ACCEPT requires payment_tx, payer, payee, and amount when AGORA_REQUIRE_PAYMENT_VERIFY is enabled',
+        });
+      }
+    }
+
+    let verifiedPayment = null;
+    if (payment.txHash) {
+      const verified = await paymentVerifier.verifyUSDCTransfer({
+        txHash: payment.txHash,
+        chain: payment.chain,
+        token: payment.token,
+        payer: payment.payer,
+        payee: payment.payee,
+        amount: payment.amount,
+        senderId: payment.senderId,
+      });
+      if (!verified.ok && REQUIRE_ACCEPT_PAYMENT_VERIFY) {
+        return res.status(402).json({
+          ok: false,
+          error: 'PAYMENT_NOT_VERIFIED',
+          message: verified.message || verified.error || 'Payment verification failed',
+          details: verified,
+        });
+      }
+      if (verified.ok) {
+        verifiedPayment = verified.payment;
+      }
+    }
+
+    if (verifiedPayment) {
+      evt.payload = {
+        ...payload,
+        payment_verification: verifiedPayment,
+      };
+    }
+
+    if (payment.txHash) {
+      const paymentRecord = {
+        request_id: requestId,
+        tx_hash: String(payment.txHash),
+        chain: payment.chain || null,
+        token: payment.token || null,
+        amount: payment.amount ?? null,
+        payer: payment.payer || null,
+        payee: payment.payee || null,
+        payment: verifiedPayment,
+        verification_status: verifiedPayment?.status || 'UNVERIFIED',
+        accept_event_id: evt.id,
+        sender_id: payment.senderId || null,
+        created_at: evt.ts || new Date().toISOString(),
+      };
+      const inserted = await storage.createPaymentRecord(paymentRecord);
+      if (!inserted.ok) {
+        const existing = inserted.existing || await storage.getPaymentRecordByTxHash(String(payment.txHash));
+        if (existing && String(existing.request_id) === requestId) {
+          const duplicateResponse = {
+            ok: true,
+            id: existing.accept_event_id || evt.id,
+            duplicate: true,
+            payment: existing.payment || null,
+            order_state: (await storage.getOrder(requestId))?.state || null,
+          };
+          await persistIdempotencyResponse({
+            idempotencyKey,
+            requestHash,
+            statusCode: 200,
+            response: duplicateResponse,
+          });
+          return res.status(200).json({
+            ...duplicateResponse,
+            idempotent_replay: Boolean(idempotencyKey),
+            idempotency_key: idempotencyKey || undefined,
+          });
+        }
+        return res.status(409).json({
+          ok: false,
+          error: 'PAYMENT_REPLAY_DETECTED',
+          message: 'payment_tx conflict detected',
+          details: existing || null,
+        });
+      }
+    }
+  }
+
+  const orderTransition = await applyOrderStateTransition(evt);
+  if (!orderTransition.ok) {
+    return res.status(orderTransition.error === 'ORDER_NOT_FOUND' ? 404 : 409).json({
+      ok: false,
+      error: orderTransition.error || 'ORDER_TRANSITION_FAILED',
+      message: orderTransition.message || 'Order transition failed',
     });
-    if (!verified.ok) {
-      return res.status(402).json({
-        ok: false,
-        error: 'PAYMENT_NOT_VERIFIED',
-        message: verified.message || verified.error || 'Payment verification failed',
-        details: verified,
-      });
-    }
-    const safePayload = evt.payload && typeof evt.payload === 'object' ? evt.payload : {};
-    evt.payload = {
-      ...safePayload,
-      payment_verification: verified.payment,
-    };
   }
 
   addEvent(evt);
-  res.json({ ok: true, id: evt.id });
+  const responseBody = {
+    ok: true,
+    id: evt.id,
+    idempotency_key: idempotencyKey || undefined,
+    order_state: orderTransition.order?.state || null,
+  };
+  await persistIdempotencyResponse({
+    idempotencyKey,
+    requestHash,
+    statusCode: 200,
+    response: responseBody,
+  });
+  res.json(responseBody);
 });
 
 app.get('/v1/messages', handleGetMessages);
@@ -1303,6 +1678,14 @@ app.post('/v1/execute', async (req, res) => {
         },
       },
     };
+    const orderTransition = await applyOrderStateTransition(event);
+    if (!orderTransition.ok) {
+      return res.status(orderTransition.error === 'ORDER_NOT_FOUND' ? 404 : 409).json({
+        ok: false,
+        error: orderTransition.error || 'ORDER_TRANSITION_FAILED',
+        message: orderTransition.message || 'Order transition failed',
+      });
+    }
     addEvent(event);
     eventId = event.id;
   }
@@ -1381,7 +1764,7 @@ app.post('/v1/escrow/hold', async (req, res) => {
     held_at: new Date().toISOString(),
   };
   await storage.saveEscrow(record);
-  addEvent({
+  const escrowHeldEvent = {
     version: '1.0',
     id: `escrow_held_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     ts: new Date().toISOString(),
@@ -1396,7 +1779,16 @@ app.post('/v1/escrow/hold', async (req, res) => {
       status: record.status,
       held_at: record.held_at,
     },
-  });
+  };
+  const orderTransition = await applyOrderStateTransition(escrowHeldEvent);
+  if (!orderTransition.ok) {
+    return res.status(orderTransition.error === 'ORDER_NOT_FOUND' ? 404 : 409).json({
+      ok: false,
+      error: orderTransition.error || 'ORDER_TRANSITION_FAILED',
+      message: orderTransition.message || 'Order transition failed',
+    });
+  }
+  addEvent(escrowHeldEvent);
   res.json({ ok: true, escrow: record });
 });
 
@@ -1428,7 +1820,7 @@ app.post('/v1/escrow/release', async (req, res) => {
 
   record.released_at = new Date().toISOString();
   await storage.saveEscrow(record);
-  addEvent({
+  const escrowEvent = {
     version: '1.0',
     id: `escrow_${record.status.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     ts: new Date().toISOString(),
@@ -1445,7 +1837,16 @@ app.post('/v1/escrow/release', async (req, res) => {
       status: record.status,
       released_at: record.released_at,
     },
-  });
+  };
+  const orderTransition = await applyOrderStateTransition(escrowEvent);
+  if (!orderTransition.ok) {
+    return res.status(orderTransition.error === 'ORDER_NOT_FOUND' ? 404 : 409).json({
+      ok: false,
+      error: orderTransition.error || 'ORDER_TRANSITION_FAILED',
+      message: orderTransition.message || 'Order transition failed',
+    });
+  }
+  addEvent(escrowEvent);
   res.json({ ok: true, escrow: record });
 });
 
@@ -1468,6 +1869,45 @@ app.get('/v1/ledger/:id', async (req, res) => {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Account not found' });
   }
   res.json({ ok: true, account });
+});
+
+app.get('/v1/orders', async (req, res) => {
+  const state = req.query.state ? String(req.query.state).toUpperCase() : null;
+  const limit = Math.min(Number(req.query.limit) || 100, 500);
+  const orders = await storage.listOrders();
+  const filtered = state
+    ? orders.filter((order) => String(order.state || '').toUpperCase() === state)
+    : orders;
+  res.json({
+    ok: true,
+    total: filtered.length,
+    orders: filtered.slice(0, limit),
+  });
+});
+
+app.get('/v1/orders/:requestId', async (req, res) => {
+  const order = await storage.getOrder(String(req.params.requestId));
+  if (!order) {
+    return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Order not found' });
+  }
+  res.json({ ok: true, order });
+});
+
+app.get('/v1/payments/records', async (req, res) => {
+  const since = req.query.since ? Date.parse(String(req.query.since)) : null;
+  const limit = Math.min(Number(req.query.limit) || 200, 1000);
+  const records = await storage.listPaymentRecords();
+  const filtered = Number.isFinite(since)
+    ? records.filter((record) => {
+      const ts = Date.parse(record.created_at || record.updated_at || '');
+      return Number.isFinite(ts) && ts >= since;
+    })
+    : records;
+  res.json({
+    ok: true,
+    total: filtered.length,
+    records: filtered.slice(0, limit),
+  });
 });
 
 // Demo seed endpoint
