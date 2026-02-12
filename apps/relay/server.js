@@ -10,12 +10,14 @@ app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => {
   const startedAt = Date.now();
   res.on('finish', () => {
+    const isLongPollRoute = req.method === 'GET' && (req.path === '/v1/messages' || req.path === '/events');
     const sample = {
       sample_id: `ops_http_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       type: 'http',
       ts: new Date().toISOString(),
       method: req.method,
       path: req.path,
+      long_poll: isLongPollRoute,
       status_code: Number(res.statusCode),
       latency_ms: Date.now() - startedAt,
     };
@@ -42,7 +44,6 @@ const requestIndex = new Map();
 const requesterHistory = new Map();
 
 const storage = await createStorage({ databaseUrl: process.env.DATABASE_URL });
-const paymentVerifier = createUsdcPaymentVerifier();
 const REQUIRE_ACCEPT_PAYMENT_VERIFY = ['1', 'true', 'yes', 'required']
   .includes(String(process.env.AGORA_REQUIRE_PAYMENT_VERIFY || '').toLowerCase());
 const REQUIRE_INTENT_SCHEMAS = ['1', 'true', 'yes', 'required']
@@ -67,6 +68,39 @@ const OPS_HTTP_WINDOW_MS = Math.max(60_000, Number(process.env.AGORA_OPS_HTTP_WI
 const OPS_ALERT_PAYMENT_SUCCESS_THRESHOLD = Number(process.env.AGORA_ALERT_PAYMENT_SUCCESS_THRESHOLD || 0.95);
 const OPS_ALERT_HTTP_5XX_THRESHOLD = Number(process.env.AGORA_ALERT_HTTP_5XX_THRESHOLD || 0.02);
 const OPS_ALERT_RECON_DIFF_THRESHOLD = Number(process.env.AGORA_ALERT_RECON_DIFF_THRESHOLD || 0);
+const OPS_ADMIN_TOKEN = String(process.env.AGORA_OPS_ADMIN_TOKEN || '').trim();
+const PAYMENT_ALLOWED_TOKENS = new Set(
+  String(process.env.AGORA_PAYMENT_ALLOWED_TOKENS || 'USDC,ETH')
+    .split(',')
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean),
+);
+const PAYMENT_ALLOWED_NETWORKS = new Set(
+  String(process.env.AGORA_PAYMENT_ALLOWED_NETWORKS || 'base,base-sepolia')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean),
+);
+const PAYMENT_RULES = {
+  USDC: {
+    min: Number(process.env.AGORA_PAYMENT_MIN_USDC || 0.01),
+    max: Number(process.env.AGORA_PAYMENT_MAX_USDC || 10000),
+    decimals: Number(process.env.AGORA_PAYMENT_USDC_DECIMALS || 6),
+  },
+  ETH: {
+    min: Number(process.env.AGORA_PAYMENT_MIN_ETH || 0.00001),
+    max: Number(process.env.AGORA_PAYMENT_MAX_ETH || 10),
+    decimals: Number(process.env.AGORA_PAYMENT_ETH_DECIMALS || 18),
+  },
+};
+const PAYMENT_CONFIRMATIONS = {
+  USDC: Math.max(1, Number(process.env.AGORA_MIN_CONFIRMATIONS_USDC || 1)),
+  ETH: Math.max(1, Number(process.env.AGORA_MIN_CONFIRMATIONS_ETH || 1)),
+};
+const paymentVerifier = createUsdcPaymentVerifier({
+  minConfirmationsUsdc: PAYMENT_CONFIRMATIONS.USDC,
+  minConfirmationsEth: PAYMENT_CONFIRMATIONS.ETH,
+});
 
 const intentInputSchemas = new Map();
 const intentOutputSchemas = new Map();
@@ -168,6 +202,132 @@ function extractAcceptPaymentPayload(evt) {
     requestId,
     senderId,
   };
+}
+
+function normalizePaymentToken(value) {
+  if (typeof value !== 'string') return null;
+  const token = value.trim().toUpperCase();
+  return token || null;
+}
+
+function normalizePaymentNetwork(value) {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim().toLowerCase();
+  if (!raw) return null;
+  if (raw === 'base-sepolia' || raw === 'base_sepolia' || raw === '84532') return 'base-sepolia';
+  if (raw === 'base' || raw === '8453') return 'base';
+  return raw;
+}
+
+function parseNumericAmount(value) {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return { ok: false, value: null, raw: null };
+    return { ok: true, value, raw: value.toString() };
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return { ok: false, value: null, raw: null };
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) return { ok: false, value: null, raw: trimmed };
+    return { ok: true, value: parsed, raw: trimmed };
+  }
+  return { ok: false, value: null, raw: null };
+}
+
+function countDecimals(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return 0;
+  if (!raw.includes('.')) return 0;
+  const fraction = raw.split('.')[1] || '';
+  return fraction.length;
+}
+
+function validatePaymentMetadata({ token, chain, amount }) {
+  const normalizedToken = normalizePaymentToken(token);
+  const normalizedChain = normalizePaymentNetwork(chain);
+  if (!normalizedToken) {
+    return { ok: false, error: 'INVALID_PAYMENT_TOKEN', message: 'Payment token is required' };
+  }
+  if (!PAYMENT_ALLOWED_TOKENS.has(normalizedToken)) {
+    return {
+      ok: false,
+      error: 'PAYMENT_TOKEN_NOT_ALLOWED',
+      message: `Unsupported payment token ${normalizedToken}. Allowed: ${Array.from(PAYMENT_ALLOWED_TOKENS).join(', ')}`,
+    };
+  }
+  if (!normalizedChain) {
+    return { ok: false, error: 'INVALID_PAYMENT_NETWORK', message: 'Payment network is required' };
+  }
+  if (!PAYMENT_ALLOWED_NETWORKS.has(normalizedChain)) {
+    return {
+      ok: false,
+      error: 'PAYMENT_NETWORK_NOT_ALLOWED',
+      message: `Unsupported payment network ${normalizedChain}. Allowed: ${Array.from(PAYMENT_ALLOWED_NETWORKS).join(', ')}`,
+    };
+  }
+
+  const rule = PAYMENT_RULES[normalizedToken];
+  if (!rule) {
+    return {
+      ok: false,
+      error: 'PAYMENT_RULE_MISSING',
+      message: `Payment rule is not configured for ${normalizedToken}`,
+    };
+  }
+
+  const parsed = parseNumericAmount(amount);
+  if (!parsed.ok || parsed.value == null || parsed.value <= 0) {
+    return { ok: false, error: 'INVALID_PAYMENT_AMOUNT', message: 'Payment amount must be a positive number' };
+  }
+  if (parsed.value < rule.min) {
+    return {
+      ok: false,
+      error: 'PAYMENT_AMOUNT_TOO_LOW',
+      message: `Payment amount is below minimum (${rule.min} ${normalizedToken})`,
+    };
+  }
+  if (parsed.value > rule.max) {
+    return {
+      ok: false,
+      error: 'PAYMENT_AMOUNT_TOO_HIGH',
+      message: `Payment amount exceeds maximum (${rule.max} ${normalizedToken})`,
+    };
+  }
+  const decimals = countDecimals(parsed.raw);
+  if (decimals > rule.decimals) {
+    return {
+      ok: false,
+      error: 'PAYMENT_AMOUNT_PRECISION_TOO_HIGH',
+      message: `Payment amount supports at most ${rule.decimals} decimals for ${normalizedToken}`,
+    };
+  }
+  return {
+    ok: true,
+    token: normalizedToken,
+    chain: normalizedChain,
+    amount: parsed.value,
+  };
+}
+
+function isOpsAuthorized(req) {
+  if (!OPS_ADMIN_TOKEN) return true;
+  const auth = req.get('Authorization') || '';
+  const bearer = auth.toLowerCase().startsWith('bearer ')
+    ? auth.slice(7).trim()
+    : '';
+  const headerToken = req.get('X-Ops-Token') || req.get('X-Admin-Token') || '';
+  const queryToken = req.query?.ops_token ? String(req.query.ops_token) : '';
+  const provided = bearer || String(headerToken || '').trim() || queryToken;
+  return provided && provided === OPS_ADMIN_TOKEN;
+}
+
+function requireOpsAuth(req, res, next) {
+  if (isOpsAuthorized(req)) return next();
+  return res.status(401).json({
+    ok: false,
+    error: 'UNAUTHORIZED',
+    message: 'Ops admin token is required',
+  });
 }
 
 function extractIntentsFromCapabilities(capabilities) {
@@ -1352,10 +1512,19 @@ async function buildOpsDashboard(windowMs) {
     const ts = Date.parse(sample.ts || '');
     return Number.isFinite(ts) && ts >= cutoffTs;
   });
-  const httpTotal = windowSamples.length;
-  const http5xx = windowSamples.filter((sample) => Number(sample.status_code) >= 500).length;
+  const appHttpSamples = windowSamples.filter((sample) => sample.long_poll !== true);
+  const longPollSamples = windowSamples.filter((sample) => sample.long_poll === true);
+  const httpTotal = appHttpSamples.length;
+  const http5xx = appHttpSamples.filter((sample) => Number(sample.status_code) >= 500).length;
   const httpP95 = (() => {
-    const latencies = windowSamples
+    const latencies = appHttpSamples
+      .map((sample) => Number(sample.latency_ms))
+      .filter((value) => Number.isFinite(value));
+    if (!latencies.length) return null;
+    return Math.round(computePercentile(latencies, 0.95) || 0);
+  })();
+  const longPollP95 = (() => {
+    const latencies = longPollSamples
       .map((sample) => Number(sample.latency_ms))
       .filter((value) => Number.isFinite(value));
     if (!latencies.length) return null;
@@ -1375,6 +1544,8 @@ async function buildOpsDashboard(windowMs) {
   const orders = await storage.listOrders();
   const settlements = await storage.listSettlements({ limit: 2000 });
   const settlementByRequest = new Map(settlements.map((item) => [String(item.request_id), item]));
+  const latestReports = await storage.listReconciliationReports({ limit: 1 });
+  const latestReconciliationReport = latestReports[0] || null;
   let reconciliationDiffCount = 0;
   let reconciliationDiffAmount = 0;
   let unsettledHeldCount = 0;
@@ -1409,6 +1580,23 @@ async function buildOpsDashboard(windowMs) {
       if (state === ORDER_STATES.RELEASED && status !== 'RELEASED') reconciliationDiffCount += 1;
       if (state === ORDER_STATES.REFUNDED && status !== 'REFUNDED') reconciliationDiffCount += 1;
     }
+  }
+
+  if (latestReconciliationReport) {
+    const reportMismatch = Number(
+      latestReconciliationReport.mismatch_count
+      ?? latestReconciliationReport?.counts?.mismatched
+      ?? latestReconciliationReport?.totals?.mismatched
+      ?? 0,
+    );
+    const reportDiffAmount = Number(
+      latestReconciliationReport.mismatch_amount
+      ?? latestReconciliationReport?.counts?.mismatch_amount
+      ?? latestReconciliationReport?.totals?.mismatch_amount
+      ?? 0,
+    );
+    if (reportMismatch > reconciliationDiffCount) reconciliationDiffCount = reportMismatch;
+    if (reportDiffAmount > reconciliationDiffAmount) reconciliationDiffAmount = reportDiffAmount;
   }
 
   const alerts = [];
@@ -1455,6 +1643,8 @@ async function buildOpsDashboard(windowMs) {
       total_5xx: http5xx,
       error_rate_5xx: http5xxRate,
       p95_latency_ms: httpP95,
+      long_poll_requests: longPollSamples.length,
+      long_poll_p95_latency_ms: longPollP95,
     },
     reconciliation: {
       payment_records: paymentRecords.length,
@@ -1469,6 +1659,25 @@ async function buildOpsDashboard(windowMs) {
       last_finished_at: compensationRuntime.last_finished_at,
       last_summary: compensationRuntime.last_summary,
     },
+    latest_reconciliation_report: latestReconciliationReport
+      ? {
+        report_id: latestReconciliationReport.report_id || null,
+        generated_at: latestReconciliationReport.generated_at || null,
+        period: latestReconciliationReport.period || null,
+        mismatch_count: Number(
+          latestReconciliationReport.mismatch_count
+          ?? latestReconciliationReport?.counts?.mismatched
+          ?? latestReconciliationReport?.totals?.mismatched
+          ?? 0,
+        ),
+        mismatch_amount: Number(
+          latestReconciliationReport.mismatch_amount
+          ?? latestReconciliationReport?.counts?.mismatch_amount
+          ?? latestReconciliationReport?.totals?.mismatch_amount
+          ?? 0,
+        ),
+      }
+      : null,
     alerts,
   };
 }
@@ -1668,6 +1877,8 @@ function buildSeedEvents(baseTs) {
     },
   ];
 }
+
+app.use('/v1/ops', requireOpsAuth);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ ok: true, version: '1.0.0' }));
@@ -1885,6 +2096,24 @@ app.post('/v1/messages', async (req, res) => {
           },
         });
       }
+    }
+
+    if (payment.txHash || REQUIRE_ACCEPT_PAYMENT_VERIFY) {
+      const paymentCheck = validatePaymentMetadata({
+        token: payment.token,
+        chain: payment.chain,
+        amount: payment.amount,
+      });
+      if (!paymentCheck.ok) {
+        return res.status(400).json({
+          ok: false,
+          error: paymentCheck.error || 'INVALID_PAYMENT_METADATA',
+          message: paymentCheck.message || 'Invalid payment metadata',
+        });
+      }
+      payment.token = paymentCheck.token;
+      payment.chain = paymentCheck.chain;
+      payment.amount = paymentCheck.amount;
     }
 
     if (REQUIRE_ACCEPT_PAYMENT_VERIFY) {
@@ -2420,21 +2649,30 @@ app.post('/v1/execute', async (req, res) => {
 app.post('/v1/payments/verify', async (req, res) => {
   const body = req.body || {};
   const txHash = body.tx_hash || body.txHash || body.payment_tx;
-  const chain = body.chain || body.network;
+  const chain = body.chain || body.network || 'base-sepolia';
   const token = body.token || 'USDC';
   const payer = body.payer || body.buyer;
   const payee = body.payee || body.seller || body.provider;
   const amount = body.amount ?? body.amount_usdc ?? body.price;
   const senderId = body.sender_id || body.senderId;
 
+  const paymentCheck = validatePaymentMetadata({ token, chain, amount });
+  if (!paymentCheck.ok) {
+    return res.status(400).json({
+      ok: false,
+      error: paymentCheck.error || 'INVALID_PAYMENT_METADATA',
+      message: paymentCheck.message || 'Invalid payment metadata',
+    });
+  }
+
   opsPaymentMetrics.attempts += 1;
   const verification = await paymentVerifier.verifyUSDCTransfer({
     txHash,
-    chain,
-    token,
+    chain: paymentCheck.chain,
+    token: paymentCheck.token,
     payer,
     payee,
-    amount,
+    amount: paymentCheck.amount,
     senderId,
   });
 
@@ -2468,18 +2706,27 @@ app.post('/v1/escrow/hold', async (req, res) => {
   const payee = body.payee;
   const amount = Number(body.amount || 0);
   const currency = body.currency || body.token || 'USDC';
+  const chain = body.chain || body.network || 'base-sepolia';
   const feeBps = Number(body.fee_bps || PLATFORM_FEE_BPS);
 
   if (!requestId || !payer || !payee || !amount) {
     return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', message: 'request_id, payer, payee, amount required' });
+  }
+  const paymentCheck = validatePaymentMetadata({ token: currency, chain, amount });
+  if (!paymentCheck.ok) {
+    return res.status(400).json({
+      ok: false,
+      error: paymentCheck.error || 'INVALID_PAYMENT_METADATA',
+      message: paymentCheck.message || 'Invalid payment metadata',
+    });
   }
 
   const held = await holdEscrowFunds({
     requestId: String(requestId),
     payer,
     payee,
-    amount,
-    currency,
+    amount: paymentCheck.amount,
+    currency: paymentCheck.token,
     feeBps,
     heldAt: nowIso(),
     source: 'escrow_hold_api',

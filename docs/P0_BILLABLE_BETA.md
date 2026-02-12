@@ -129,3 +129,37 @@ node scripts/reconcile-payments.mjs \
   --out logs/reconcile-daily \
   --publish
 ```
+
+## 7) Payment Guardrails and Ops Auth
+
+Payment guardrails are now enforced before verification and settlement:
+
+- Allowed tokens: `AGORA_PAYMENT_ALLOWED_TOKENS` (default `USDC,ETH`)
+- Allowed networks: `AGORA_PAYMENT_ALLOWED_NETWORKS` (default `base,base-sepolia`)
+- Amount range and precision:
+  - `AGORA_PAYMENT_MIN_USDC`, `AGORA_PAYMENT_MAX_USDC`, `AGORA_PAYMENT_USDC_DECIMALS`
+  - `AGORA_PAYMENT_MIN_ETH`, `AGORA_PAYMENT_MAX_ETH`, `AGORA_PAYMENT_ETH_DECIMALS`
+- Confirmation requirements:
+  - `AGORA_MIN_CONFIRMATIONS_USDC`
+  - `AGORA_MIN_CONFIRMATIONS_ETH`
+
+Ops endpoints can be protected with:
+
+- `AGORA_OPS_ADMIN_TOKEN`
+
+When set, `GET/POST /v1/ops/*` requires either:
+
+- `Authorization: Bearer <token>`
+- `X-Ops-Token: <token>`
+
+## 8) Release Standardization
+
+New scripts:
+
+- `scripts/release-smoke.sh` (single-command release smoke flow)
+- `scripts/test-payment-guardrails.sh` (token/network/amount boundary checks)
+- `scripts/install-reconcile-cron.sh` (daily reconcile automation installer)
+
+Runbook:
+
+- `docs/RELEASE_CHECKLIST.md`

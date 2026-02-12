@@ -21,6 +21,7 @@ function parseArgs(argv) {
     out: '',
     limit: 1000,
     publish: false,
+    opsToken: process.env.AGORA_OPS_ADMIN_TOKEN || '',
   };
   for (let i = 2; i < argv.length; i += 1) {
     const token = argv[i];
@@ -29,8 +30,9 @@ function parseArgs(argv) {
     else if (token === '--out') args.out = argv[++i];
     else if (token === '--limit') args.limit = Number(argv[++i] || 1000);
     else if (token === '--publish') args.publish = true;
+    else if (token === '--ops-token') args.opsToken = argv[++i] || '';
     else if (token === '--help' || token === '-h') {
-      console.log('Usage: node scripts/reconcile-payments.mjs [--relay URL] [--period 1d] [--out path] [--limit 1000] [--publish]');
+      console.log('Usage: node scripts/reconcile-payments.mjs [--relay URL] [--period 1d] [--out path] [--limit 1000] [--publish] [--ops-token TOKEN]');
       process.exit(0);
     }
   }
@@ -197,9 +199,11 @@ async function main() {
   await fs.writeFile(csvPath, `${csvLines.join('\n')}\n`, 'utf-8');
 
   if (args.publish) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (args.opsToken) headers.Authorization = `Bearer ${args.opsToken}`;
     const publishResp = await fetchJson(`${relayBase}/v1/ops/reconciliation/report`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         generated_at: report.generated_at,
         relay: relayBase,

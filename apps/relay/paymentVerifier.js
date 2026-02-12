@@ -98,7 +98,16 @@ function isLikelyTxNotFound(error) {
 }
 
 export function createUsdcPaymentVerifier(options = {}) {
-  const minConfirmations = Number(options.minConfirmations || 1);
+  const minConfirmationsByToken = {
+    USDC: Math.max(
+      1,
+      Number(options.minConfirmationsUsdc || options.minConfirmations || process.env.AGORA_MIN_CONFIRMATIONS_USDC || 1),
+    ),
+    ETH: Math.max(
+      1,
+      Number(options.minConfirmationsEth || options.minConfirmations || process.env.AGORA_MIN_CONFIRMATIONS_ETH || 1),
+    ),
+  };
   const rpcUrls = {
     base: options.baseRpcUrl || process.env.AGORA_BASE_RPC_URL || base.rpcUrls.default.http[0],
     'base-sepolia': options.baseSepoliaRpcUrl || process.env.AGORA_BASE_SEPOLIA_RPC_URL || baseSepolia.rpcUrls.default.http[0],
@@ -210,11 +219,14 @@ export function createUsdcPaymentVerifier(options = {}) {
 
     const latestBlock = await client.getBlockNumber();
     const confirmations = Number(latestBlock - receipt.blockNumber + 1n);
-    if (confirmations < minConfirmations) {
+    const requiredConfirmations = token === 'ETH'
+      ? minConfirmationsByToken.ETH
+      : minConfirmationsByToken.USDC;
+    if (confirmations < requiredConfirmations) {
       return {
         ok: false,
         error: 'TX_UNCONFIRMED',
-        message: `Waiting for confirmations (${confirmations}/${minConfirmations})`,
+        message: `Waiting for confirmations (${confirmations}/${requiredConfirmations})`,
         pending: true,
         confirmations,
       };

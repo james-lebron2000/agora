@@ -26,6 +26,15 @@ export type Thread = {
   acceptedOfferId?: string
   acceptedBy?: string
   acceptedAt?: string
+  paymentTx?: string
+  paymentToken?: string
+  paymentChain?: string
+  paymentAmount?: number
+  settlementStatus?: 'HELD' | 'RELEASED' | 'REFUNDED'
+  settlementFee?: number
+  settlementPayout?: number
+  settlementResolution?: 'release' | 'refund'
+  settlementUpdatedAt?: string
   result?: any
   lastTs: string
 }
@@ -101,6 +110,36 @@ export function aggregateThreads(events: AgoraEvent[]): Thread[] {
       if (offerId) t.acceptedOfferId = String(offerId)
       t.acceptedBy = e.sender?.id || t.acceptedBy
       t.acceptedAt = e.ts
+      if (typeof p.payment_tx === 'string' && p.payment_tx) t.paymentTx = p.payment_tx
+      if (typeof p.tx_hash === 'string' && p.tx_hash) t.paymentTx = p.tx_hash
+      if (typeof p.txHash === 'string' && p.txHash) t.paymentTx = p.txHash
+      if (typeof p.token === 'string' && p.token) t.paymentToken = p.token.toUpperCase()
+      if (typeof p.chain === 'string' && p.chain) t.paymentChain = p.chain
+      const parsedAmount = typeof p.amount === 'number'
+        ? p.amount
+        : typeof p.amount === 'string'
+          ? Number(p.amount)
+          : typeof p.amount_usdc === 'number'
+            ? p.amount_usdc
+            : null
+      if (parsedAmount != null && Number.isFinite(parsedAmount)) t.paymentAmount = parsedAmount
+    }
+
+    if (e.type === 'ESCROW_HELD') {
+      t.settlementStatus = 'HELD'
+      t.settlementUpdatedAt = e.ts
+    }
+    if (e.type === 'ESCROW_RELEASED') {
+      t.settlementStatus = 'RELEASED'
+      t.settlementResolution = 'release'
+      t.settlementUpdatedAt = e.ts
+      if (typeof p.fee === 'number') t.settlementFee = p.fee
+      if (typeof p.payout === 'number') t.settlementPayout = p.payout
+    }
+    if (e.type === 'ESCROW_REFUNDED') {
+      t.settlementStatus = 'REFUNDED'
+      t.settlementResolution = 'refund'
+      t.settlementUpdatedAt = e.ts
     }
 
     if (e.type === 'RESULT') {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Thread, Offer } from '../lib/agora'
 import { PaymentModal, type PaymentReceipt } from './PaymentModal'
 import { EscrowStatus } from './EscrowStatus'
@@ -10,6 +10,18 @@ interface ThreadCardProps {
   thread: Thread
   relayUrl: string
   onAcceptComplete?: () => void
+}
+
+type SettlementSnapshot = {
+  request_id: string
+  currency?: string
+  amount_gross?: number
+  amount_fee?: number
+  amount_seller?: number
+  status?: 'HELD' | 'RELEASED' | 'REFUNDED'
+  held_at?: string | null
+  released_at?: string | null
+  refunded_at?: string | null
 }
 
 function StatusPill({ status }: { status: Thread['status'] }) {
@@ -85,6 +97,7 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSandboxModalOpen, setIsSandboxModalOpen] = useState(false)
+  const [settlement, setSettlement] = useState<SettlementSnapshot | null>(null)
 
   const canAcceptOffers = thread.status === 'OPEN' && thread.offers.length > 0
   const acceptedOffer = thread.acceptedOfferId
@@ -92,6 +105,34 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
     : null
   const escrowBuyer = thread.requester
   const escrowSeller = acceptedOffer?.provider
+
+  useEffect(() => {
+    let active = true
+    let timer: ReturnType<typeof setInterval> | null = null
+    const fetchSettlement = async () => {
+      try {
+        const res = await fetch(`${relayUrl.replace(/\/$/, '')}/v1/settlements/${encodeURIComponent(thread.requestId)}`)
+        if (res.status === 404) {
+          if (active) setSettlement(null)
+          return
+        }
+        const json = await res.json()
+        if (res.ok && json?.ok && json?.settlement) {
+          if (active) setSettlement(json.settlement as SettlementSnapshot)
+        }
+      } catch {
+        // best-effort display only
+      }
+    }
+    fetchSettlement().catch(() => {})
+    timer = setInterval(() => {
+      fetchSettlement().catch(() => {})
+    }, 8000)
+    return () => {
+      active = false
+      if (timer) clearInterval(timer)
+    }
+  }, [relayUrl, thread.requestId, thread.acceptedAt, thread.settlementStatus])
 
   const handleAcceptClick = (offer: Offer) => {
     if (!isConnected) {
@@ -269,6 +310,36 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
               >
                 Execute (Sandbox)
               </button>
+            </div>
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              <div className="rounded-lg border border-agora-200 bg-white px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-agora-500">Payment TX</div>
+                <div className="text-xs font-mono text-agora-700 break-all">
+                  {thread.paymentTx || 'Pending'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-agora-200 bg-white px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-agora-500">Settlement Status</div>
+                <div className="text-sm font-semibold text-agora-800">
+                  {settlement?.status || thread.settlementStatus || 'PENDING'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-agora-200 bg-white px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-agora-500">Buyer Frozen</div>
+                <div className="text-sm font-semibold text-agora-900">
+                  {typeof settlement?.amount_gross === 'number'
+                    ? `${settlement.amount_gross.toFixed(6)} ${settlement.currency || thread.paymentToken || 'USDC'}`
+                    : 'Pending'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-agora-200 bg-white px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-agora-500">Seller Net / Platform Fee</div>
+                <div className="text-sm font-semibold text-agora-900">
+                  {(typeof settlement?.amount_seller === 'number' && typeof settlement?.amount_fee === 'number')
+                    ? `${settlement.amount_seller.toFixed(6)} / ${settlement.amount_fee.toFixed(6)} ${settlement.currency || thread.paymentToken || 'USDC'}`
+                    : 'Pending'}
+                </div>
+              </div>
             </div>
           </div>
         )}
