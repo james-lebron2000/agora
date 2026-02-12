@@ -3,6 +3,8 @@ import cors from 'cors';
 import { createHash } from 'node:crypto';
 import { createStorage } from './storage.js';
 import { createUsdcPaymentVerifier } from './paymentVerifier.js';
+import { createOpsAlerting } from './opsAlerting.js';
+import { buildFinanceExport, financeExportToCsv, parseFinanceExportQuery } from './financeExport.js';
 
 const app = express();
 app.use(cors());
@@ -68,6 +70,19 @@ const OPS_HTTP_WINDOW_MS = Math.max(60_000, Number(process.env.AGORA_OPS_HTTP_WI
 const OPS_ALERT_PAYMENT_SUCCESS_THRESHOLD = Number(process.env.AGORA_ALERT_PAYMENT_SUCCESS_THRESHOLD || 0.95);
 const OPS_ALERT_HTTP_5XX_THRESHOLD = Number(process.env.AGORA_ALERT_HTTP_5XX_THRESHOLD || 0.02);
 const OPS_ALERT_RECON_DIFF_THRESHOLD = Number(process.env.AGORA_ALERT_RECON_DIFF_THRESHOLD || 0);
+const OPS_ALERT_WEBHOOK_URL = String(process.env.AGORA_OPS_ALERT_WEBHOOK_URL || '').trim();
+const OPS_ALERT_WEBHOOK_AUTH = String(process.env.AGORA_OPS_ALERT_WEBHOOK_AUTH || '').trim();
+const OPS_ALERT_WEBHOOK_HEADERS_JSON = String(process.env.AGORA_OPS_ALERT_WEBHOOK_HEADERS_JSON || '').trim();
+const OPS_ALERT_SUPPRESS_WINDOW_MS = Math.max(
+  5_000,
+  Number(process.env.AGORA_OPS_ALERT_SUPPRESS_WINDOW_MS || 30 * 60_000),
+);
+const OPS_ALERT_POLL_MS = Math.max(10_000, Number(process.env.AGORA_OPS_ALERT_POLL_MS || 60_000));
+const OPS_ALERT_MIN_SEVERITY = String(process.env.AGORA_OPS_ALERT_MIN_SEVERITY || 'medium').trim();
+const OPS_ALERT_WINDOW_MS = Math.max(
+  60_000,
+  Math.min(Number(process.env.AGORA_OPS_ALERT_WINDOW_MS || 60 * 60_000), 24 * 60 * 60_000),
+);
 const OPS_ADMIN_TOKEN = String(process.env.AGORA_OPS_ADMIN_TOKEN || '').trim();
 const PAYMENT_ALLOWED_TOKENS = new Set(
   String(process.env.AGORA_PAYMENT_ALLOWED_TOKENS || 'USDC,ETH')
@@ -143,6 +158,36 @@ const compensationRuntime = {
   last_finished_at: null,
   last_summary: null,
 };
+
+function safeParseJsonObject(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+  } catch (_err) {
+    return null;
+  }
+  return null;
+}
+
+async function postJson(url, payload, { headers = {}, timeoutMs = 8000 } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    return { ok: res.ok, status: res.status };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function addEvent(evt) {
   events.push(evt);
@@ -1628,6 +1673,16 @@ async function buildOpsDashboard(windowMs) {
       threshold: OPS_ALERT_RECON_DIFF_THRESHOLD,
     });
   }
+  const compensationFailed = Number(compensationRuntime.last_summary?.failed || 0);
+  if (compensationFailed > 0) {
+    alerts.push({
+      code: 'COMPENSATION_FAILURES',
+      severity: 'medium',
+      message: 'Compensation worker reported failures',
+      value: compensationFailed,
+      threshold: 0,
+    });
+  }
 
   return {
     generated_at: nowIso(),
@@ -1681,6 +1736,20 @@ async function buildOpsDashboard(windowMs) {
     alerts,
   };
 }
+
+const opsAlerting = createOpsAlerting({
+  webhookUrl: OPS_ALERT_WEBHOOK_URL,
+  webhookHeaders: (() => {
+    const headers = safeParseJsonObject(OPS_ALERT_WEBHOOK_HEADERS_JSON) || {};
+    if (OPS_ALERT_WEBHOOK_AUTH) headers.Authorization = OPS_ALERT_WEBHOOK_AUTH;
+    return headers;
+  })(),
+  suppressWindowMs: OPS_ALERT_SUPPRESS_WINDOW_MS,
+  minSeverity: OPS_ALERT_MIN_SEVERITY,
+  timeoutMs: 8_000,
+  getDashboard: async () => buildOpsDashboard(OPS_ALERT_WINDOW_MS),
+  logger: console,
+});
 
 function computeReputation(rep) {
   const total = rep.total_orders || 0;
@@ -2970,12 +3039,53 @@ app.post('/v1/ops/reconciliation/report', async (req, res) => {
   };
   await storage.saveReconciliationReport(report);
   res.json({ ok: true, report });
+  void opsAlerting.sendNow('reconciliation_report').catch(() => {});
 });
 
 app.get('/v1/ops/reconciliation/reports', async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 50, 500);
   const reports = await storage.listReconciliationReports({ limit });
   res.json({ ok: true, total: reports.length, reports });
+});
+
+app.get('/v1/ops/finance/export', async (req, res) => {
+  const { fromTs, toTs, currency, format } = parseFinanceExportQuery(req.query);
+  const limit = Math.min(Number(req.query.limit) || 5000, 20000);
+  const settlements = await storage.listSettlements({ limit });
+  const exportPayload = buildFinanceExport({ settlements, fromTs, toTs, currency });
+
+  if (format === 'csv') {
+    const csv = financeExportToCsv(exportPayload);
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', 'attachment; filename=\"agora-finance-export.csv\"');
+    return res.send(csv);
+  }
+
+  res.json({ ok: true, export: exportPayload });
+});
+
+app.post('/v1/ops/alerts/test', async (_req, res) => {
+  if (!OPS_ALERT_WEBHOOK_URL) {
+    return res.status(400).json({ ok: false, error: 'DISABLED', message: 'AGORA_OPS_ALERT_WEBHOOK_URL is not set' });
+  }
+  const result = await postJson(
+    OPS_ALERT_WEBHOOK_URL,
+    {
+      source: 'agora-relay',
+      type: 'ops_alert_test',
+      ts: nowIso(),
+      message: 'Test alert delivery from agora-relay',
+    },
+    {
+      headers: (() => {
+        const headers = safeParseJsonObject(OPS_ALERT_WEBHOOK_HEADERS_JSON) || {};
+        if (OPS_ALERT_WEBHOOK_AUTH) headers.Authorization = OPS_ALERT_WEBHOOK_AUTH;
+        return headers;
+      })(),
+      timeoutMs: 8_000,
+    },
+  );
+  res.json({ ok: true, result });
 });
 
 app.get('/v1/ops/dashboard', async (req, res) => {
@@ -3012,4 +3122,5 @@ app.listen(port, () => {
   console.log(`  - POST /v1/execute - Run sandboxed job via runner`);
   console.log(`  - POST /seed    - Seed demo data`);
   console.log(`  - Storage mode  - ${storage.mode}`);
+  opsAlerting.start(OPS_ALERT_POLL_MS);
 });

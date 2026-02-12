@@ -4,6 +4,9 @@
 
 - `DATABASE_URL` configured and reachable.
 - `AGORA_OPS_ADMIN_TOKEN` configured.
+- Optional ops push-alerting configured (if used):
+  - `AGORA_OPS_ALERT_WEBHOOK_URL`
+  - `AGORA_OPS_ALERT_WEBHOOK_AUTH` or `AGORA_OPS_ALERT_WEBHOOK_HEADERS_JSON`
 - Payment guardrails configured:
   - `AGORA_PAYMENT_ALLOWED_TOKENS`
   - `AGORA_PAYMENT_ALLOWED_NETWORKS`

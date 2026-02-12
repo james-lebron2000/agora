@@ -119,6 +119,7 @@ New APIs:
 - `GET /v1/ops/dashboard?window_ms=<N>`
 - `POST /v1/ops/reconciliation/report`
 - `GET /v1/ops/reconciliation/reports?limit=<N>`
+- `GET /v1/ops/finance/export?format=json|csv&from=<ISO>&to=<ISO>&currency=ETH|USDC&limit=<N>`
 
 Reconcile script supports publishing report to relay:
 
@@ -129,6 +130,20 @@ node scripts/reconcile-payments.mjs \
   --out logs/reconcile-daily \
   --publish
 ```
+
+Ops alert webhook (optional) can deliver push alerts when thresholds trip:
+
+- `AGORA_OPS_ALERT_WEBHOOK_URL` (destination webhook URL; HTTP `POST` JSON)
+- `AGORA_OPS_ALERT_WEBHOOK_AUTH` (optional `Authorization` header value, e.g. `Bearer <token>`)
+- `AGORA_OPS_ALERT_WEBHOOK_HEADERS_JSON` (optional JSON object for extra headers)
+- `AGORA_OPS_ALERT_POLL_MS` (default `60000`)
+- `AGORA_OPS_ALERT_SUPPRESS_WINDOW_MS` (default `1800000`)
+- `AGORA_OPS_ALERT_MIN_SEVERITY` (default `medium`)
+- `AGORA_OPS_ALERT_WINDOW_MS` (default `3600000`)
+
+Test delivery:
+
+- `POST /v1/ops/alerts/test`
 
 ## 7) Payment Guardrails and Ops Auth
 
