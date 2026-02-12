@@ -7,3 +7,5 @@ node_modules
 .openclaw-agent-creds.json
 logs/
 memory/
+.db_pass
+.ops_admin_token
