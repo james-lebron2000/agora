@@ -61,3 +61,71 @@ Outputs:
 
 - JSON report: verdicts `MATCHED/MISMATCHED/PENDING/FAILED`
 - CSV report for finance/ops review
+
+## 4) Double-Entry Ledger and Settlement Rules
+
+Relay now records accounting entries for escrow lifecycle:
+
+- Buyer freeze on hold (`HOLD`)
+- Buyer frozen -> seller pending + platform fee pending (`RELEASE`)
+- Seller pending -> seller available (`SELLER_SETTLE`)
+- Platform fee pending -> fee revenue (`PLATFORM_FEE`)
+- Buyer refund (`REFUND`)
+
+New persistence:
+
+- `ledger_journal_entries`
+- `ledger_postings`
+- `settlements`
+
+New APIs:
+
+- `GET /v1/ledger/entries?request_id=<ID>&limit=<N>`
+- `GET /v1/ledger/entries/:entryId`
+- `GET /v1/ledger/postings?request_id=<ID>&account_id=<ACCOUNT>&limit=<N>`
+- `GET /v1/settlements?status=<HELD|RELEASED|REFUNDED>&limit=<N>`
+- `GET /v1/settlements/:requestId`
+
+## 5) Automatic Compensation / Refund Jobs
+
+Relay now runs an internal compensation worker:
+
+- Enqueues refund jobs for failed RESULT orders
+- Enqueues refund jobs for timed-out held orders
+- Retries failed jobs with backoff and max attempts
+
+Config:
+
+- `AGORA_COMPENSATION_POLL_MS` (default `30000`)
+- `AGORA_ORDER_TIMEOUT_MS` (default `1800000`)
+
+New APIs:
+
+- `GET /v1/ops/compensation/jobs?status=<PENDING|RUNNING|SUCCEEDED|FAILED>&request_id=<ID>&limit=<N>`
+- `POST /v1/ops/compensation/run`
+
+## 6) Monitoring and Alert Dashboard
+
+Relay now exposes an ops dashboard with:
+
+- Payment success rate
+- HTTP 5xx ratio and p95 latency
+- Reconciliation mismatch counts and stale held settlements
+- Compensation worker runtime summary
+- Alert list derived from configurable thresholds
+
+New APIs:
+
+- `GET /v1/ops/dashboard?window_ms=<N>`
+- `POST /v1/ops/reconciliation/report`
+- `GET /v1/ops/reconciliation/reports?limit=<N>`
+
+Reconcile script supports publishing report to relay:
+
+```bash
+node scripts/reconcile-payments.mjs \
+  --relay http://127.0.0.1:8789 \
+  --period 1d \
+  --out logs/reconcile-daily \
+  --publish
+```

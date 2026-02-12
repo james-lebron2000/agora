@@ -20,6 +20,7 @@ function parseArgs(argv) {
     period: '1d',
     out: '',
     limit: 1000,
+    publish: false,
   };
   for (let i = 2; i < argv.length; i += 1) {
     const token = argv[i];
@@ -27,8 +28,9 @@ function parseArgs(argv) {
     else if (token === '--period') args.period = argv[++i];
     else if (token === '--out') args.out = argv[++i];
     else if (token === '--limit') args.limit = Number(argv[++i] || 1000);
+    else if (token === '--publish') args.publish = true;
     else if (token === '--help' || token === '-h') {
-      console.log('Usage: node scripts/reconcile-payments.mjs [--relay URL] [--period 1d] [--out path] [--limit 1000]');
+      console.log('Usage: node scripts/reconcile-payments.mjs [--relay URL] [--period 1d] [--out path] [--limit 1000] [--publish]');
       process.exit(0);
     }
   }
@@ -81,6 +83,7 @@ async function main() {
   let pending = 0;
   let mismatched = 0;
   let failed = 0;
+  let mismatchAmount = 0;
 
   for (const record of records) {
     const verifyPayload = {
@@ -145,6 +148,7 @@ async function main() {
       row.verify_payer = payment.payer ?? '';
       row.verify_payee = payment.payee ?? '';
       mismatched += 1;
+      mismatchAmount += Number(record.amount || 0);
     }
     rows.push(row);
   }
@@ -160,6 +164,7 @@ async function main() {
       mismatched,
       pending,
       failed,
+      mismatch_amount: mismatchAmount,
     },
     rows,
   };
@@ -190,6 +195,30 @@ async function main() {
     csvLines.push(header.map((key) => `"${safe(row[key])}"`).join(','));
   }
   await fs.writeFile(csvPath, `${csvLines.join('\n')}\n`, 'utf-8');
+
+  if (args.publish) {
+    const publishResp = await fetchJson(`${relayBase}/v1/ops/reconciliation/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        generated_at: report.generated_at,
+        relay: relayBase,
+        period: args.period,
+        mismatch_count: mismatched + failed,
+        mismatch_amount: mismatchAmount,
+        counts: report.totals,
+        data: {
+          since: report.since,
+          rows: report.rows,
+        },
+      }),
+    });
+    if (!publishResp.ok || !publishResp.json?.ok) {
+      console.error('[reconcile] failed to publish report:', JSON.stringify(publishResp.json));
+    } else {
+      console.log(`[reconcile] published report_id=${publishResp.json.report?.report_id || 'unknown'}`);
+    }
+  }
 
   console.log('[reconcile] done');
   console.log(`[reconcile] records=${records.length} matched=${matched} mismatched=${mismatched} pending=${pending} failed=${failed}`);

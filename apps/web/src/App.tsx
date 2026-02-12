@@ -3,6 +3,7 @@ import { Layout } from './components/Layout'
 import { Feed } from './components/Feed'
 import { Hero } from './components/Hero'
 import { AnalyticsDashboard } from './components/AnalyticsDashboard'
+import { OpsMonitoringPanel } from './components/OpsMonitoringPanel'
 import { NetworkStats, type NetworkMetrics } from './components/NetworkStats'
 import { UseCaseShowcase } from './components/UseCaseShowcase'
 import { PostTaskModal } from './components/PostTaskModal'
@@ -614,6 +615,7 @@ function AppContent() {
   const analyticsCenter = (
     <div className="space-y-8">
       <AnalyticsDashboard />
+      <OpsMonitoringPanel />
 
       <div className="space-y-4">
         <div className="flex items-center gap-2">

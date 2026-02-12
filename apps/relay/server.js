@@ -7,6 +7,29 @@ import { createUsdcPaymentVerifier } from './paymentVerifier.js';
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    const sample = {
+      sample_id: `ops_http_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      type: 'http',
+      ts: new Date().toISOString(),
+      method: req.method,
+      path: req.path,
+      status_code: Number(res.statusCode),
+      latency_ms: Date.now() - startedAt,
+    };
+    opsHttpSamples.push(sample);
+    const cutoffTs = Date.now() - OPS_HTTP_WINDOW_MS;
+    while (opsHttpSamples.length > 0) {
+      const headTs = Date.parse(opsHttpSamples[0]?.ts || '');
+      if (!Number.isFinite(headTs) || headTs >= cutoffTs) break;
+      opsHttpSamples.shift();
+    }
+    void storage.saveOpsMetricSample(sample).catch(() => {});
+  });
+  next();
+});
 
 // In-memory ring buffer for demo purposes.
 const MAX_EVENTS = Number(process.env.MAX_EVENTS || 500);
@@ -37,6 +60,13 @@ const EXECUTE_AGENT_ALLOWLIST = new Set(
     .map((item) => item.trim())
     .filter(Boolean),
 );
+const PLATFORM_FEE_BPS = Math.max(0, Number(process.env.AGORA_PLATFORM_FEE_BPS || 1000));
+const COMPENSATION_POLL_MS = Math.max(500, Number(process.env.AGORA_COMPENSATION_POLL_MS || 30_000));
+const ORDER_TIMEOUT_MS = Math.max(1_000, Number(process.env.AGORA_ORDER_TIMEOUT_MS || 30 * 60 * 1000));
+const OPS_HTTP_WINDOW_MS = Math.max(60_000, Number(process.env.AGORA_OPS_HTTP_WINDOW_MS || 24 * 60 * 60 * 1000));
+const OPS_ALERT_PAYMENT_SUCCESS_THRESHOLD = Number(process.env.AGORA_ALERT_PAYMENT_SUCCESS_THRESHOLD || 0.95);
+const OPS_ALERT_HTTP_5XX_THRESHOLD = Number(process.env.AGORA_ALERT_HTTP_5XX_THRESHOLD || 0.02);
+const OPS_ALERT_RECON_DIFF_THRESHOLD = Number(process.env.AGORA_ALERT_RECON_DIFF_THRESHOLD || 0);
 
 const intentInputSchemas = new Map();
 const intentOutputSchemas = new Map();
@@ -67,6 +97,18 @@ const ORDER_TRANSITIONS = {
 
 // Active subscriptions for long-polling
 const subscriptions = new Set();
+const opsHttpSamples = [];
+const opsPaymentMetrics = {
+  attempts: 0,
+  verified: 0,
+  failed: 0,
+};
+const compensationRuntime = {
+  running: false,
+  last_started_at: null,
+  last_finished_at: null,
+  last_summary: null,
+};
 
 function addEvent(evt) {
   events.push(evt);
@@ -785,6 +827,652 @@ async function adjustBalance(id, amount) {
   return account;
 }
 
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function roundMoney(value) {
+  return Number(Number(value || 0).toFixed(8));
+}
+
+function normalizeCurrency(value, fallback = 'USDC') {
+  if (typeof value === 'string' && value.trim()) return value.trim().toUpperCase();
+  return fallback;
+}
+
+function buildLedgerAccountIds({ payer, payee, currency }) {
+  const cur = normalizeCurrency(currency);
+  return {
+    escrowHeld: `escrow:held:${cur}`,
+    buyerFrozen: `buyer:frozen:${payer}:${cur}`,
+    buyerAvailable: `buyer:available:${payer}:${cur}`,
+    sellerPending: `seller:pending:${payee}:${cur}`,
+    sellerAvailable: `seller:available:${payee}:${cur}`,
+    platformFeePending: `platform:fee_pending:${cur}`,
+    platformFeeRevenue: `platform:fee_revenue:${cur}`,
+  };
+}
+
+async function postLedgerEntry({
+  requestId,
+  entryType,
+  currency,
+  summary,
+  postings,
+  metadata,
+}) {
+  if (!Array.isArray(postings) || postings.length < 2) {
+    throw new Error('Ledger entry must contain at least 2 postings');
+  }
+  let totalDebit = 0;
+  let totalCredit = 0;
+  for (const posting of postings) {
+    const amount = roundMoney(posting.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error(`Invalid posting amount: ${posting.amount}`);
+    }
+    if (posting.side === 'debit') totalDebit += amount;
+    else if (posting.side === 'credit') totalCredit += amount;
+    else throw new Error(`Invalid posting side: ${posting.side}`);
+  }
+  totalDebit = roundMoney(totalDebit);
+  totalCredit = roundMoney(totalCredit);
+  if (Math.abs(totalDebit - totalCredit) > 0.0000001) {
+    throw new Error(`Unbalanced ledger entry: debit=${totalDebit} credit=${totalCredit}`);
+  }
+
+  const createdAt = nowIso();
+  const entryId = `le_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const entry = {
+    entry_id: entryId,
+    request_id: String(requestId),
+    entry_type: entryType,
+    currency: normalizeCurrency(currency),
+    total_debit: totalDebit,
+    total_credit: totalCredit,
+    summary: summary || null,
+    metadata: metadata || null,
+    created_at: createdAt,
+    updated_at: createdAt,
+  };
+  await storage.saveLedgerJournalEntry(entry);
+
+  const accountDeltas = new Map();
+  for (const posting of postings) {
+    const postingAmount = roundMoney(posting.amount);
+    const postingId = `lp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const normalized = {
+      posting_id: postingId,
+      entry_id: entryId,
+      request_id: String(requestId),
+      account_id: String(posting.account_id),
+      side: posting.side,
+      amount: postingAmount,
+      currency: normalizeCurrency(posting.currency || currency),
+      note: posting.note || null,
+      created_at: createdAt,
+      updated_at: createdAt,
+    };
+    await storage.saveLedgerPosting(normalized);
+    const existing = accountDeltas.get(normalized.account_id) || 0;
+    const delta = normalized.side === 'debit' ? postingAmount : -postingAmount;
+    accountDeltas.set(normalized.account_id, roundMoney(existing + delta));
+  }
+
+  for (const [accountId, delta] of accountDeltas.entries()) {
+    const account = await ensureLedgerAccount(accountId);
+    account.currency = normalizeCurrency(currency, account.currency || 'USDC');
+    account.balance = roundMoney(Number(account.balance || 0) + delta);
+    account.updated_at = createdAt;
+    await storage.saveLedgerAccount(account);
+  }
+  return entry;
+}
+
+function buildSettlementRecord({
+  requestId,
+  payer,
+  payee,
+  amount,
+  currency,
+  feeBps,
+  status = 'HELD',
+  heldAt,
+}) {
+  const gross = roundMoney(amount);
+  const resolvedFeeBps = Number.isFinite(Number(feeBps)) ? Number(feeBps) : PLATFORM_FEE_BPS;
+  const fee = roundMoney(gross * (resolvedFeeBps / 10_000));
+  const sellerNet = roundMoney(gross - fee);
+  const now = heldAt || nowIso();
+  return {
+    request_id: String(requestId),
+    payer: String(payer),
+    payee: String(payee),
+    currency: normalizeCurrency(currency),
+    amount_gross: gross,
+    fee_bps: resolvedFeeBps,
+    amount_fee: fee,
+    amount_seller: sellerNet,
+    status,
+    held_at: now,
+    released_at: null,
+    refunded_at: null,
+    updated_at: now,
+    last_ledger_entry_id: null,
+    reason: null,
+  };
+}
+
+async function ensureSettlementForAccept({
+  requestId,
+  payer,
+  payee,
+  amount,
+  currency,
+  heldAt,
+}) {
+  const existing = await storage.getSettlement(String(requestId));
+  if (existing) return existing;
+  if (!requestId || !payer || !payee || !Number.isFinite(Number(amount)) || Number(amount) <= 0) return null;
+  const settlement = buildSettlementRecord({
+    requestId,
+    payer,
+    payee,
+    amount: Number(amount),
+    currency,
+    heldAt,
+    feeBps: PLATFORM_FEE_BPS,
+  });
+  const accounts = buildLedgerAccountIds({
+    payer: settlement.payer,
+    payee: settlement.payee,
+    currency: settlement.currency,
+  });
+  const holdEntry = await postLedgerEntry({
+    requestId: settlement.request_id,
+    entryType: 'HOLD',
+    currency: settlement.currency,
+    summary: 'Buyer payment frozen in escrow',
+    postings: [
+      { account_id: accounts.escrowHeld, side: 'debit', amount: settlement.amount_gross },
+      { account_id: accounts.buyerFrozen, side: 'credit', amount: settlement.amount_gross },
+    ],
+    metadata: { source: 'accept', payer: settlement.payer, payee: settlement.payee },
+  });
+  settlement.last_ledger_entry_id = holdEntry.entry_id;
+  settlement.updated_at = nowIso();
+  await storage.saveSettlement(settlement);
+
+  const escrowRecord = await storage.getEscrow(settlement.request_id);
+  const nextEscrow = {
+    request_id: settlement.request_id,
+    payer: settlement.payer,
+    payee: settlement.payee,
+    amount: settlement.amount_gross,
+    currency: settlement.currency,
+    fee_bps: settlement.fee_bps,
+    status: 'HELD',
+    held_at: settlement.held_at,
+    updated_at: settlement.updated_at,
+  };
+  await storage.saveEscrow({ ...(escrowRecord || {}), ...nextEscrow });
+  return settlement;
+}
+
+async function holdEscrowFunds({
+  requestId,
+  payer,
+  payee,
+  amount,
+  currency,
+  feeBps,
+  heldAt,
+  source,
+}) {
+  const existing = await storage.getSettlement(String(requestId));
+  if (existing && existing.status === 'HELD') return { ok: true, settlement: existing, duplicate: true };
+  if (existing && existing.status !== 'HELD') {
+    return { ok: false, error: 'INVALID_STATE', message: `Cannot hold settlement in ${existing.status}` };
+  }
+  const settlement = buildSettlementRecord({
+    requestId,
+    payer,
+    payee,
+    amount,
+    currency,
+    feeBps,
+    status: 'HELD',
+    heldAt,
+  });
+  const accounts = buildLedgerAccountIds({
+    payer: settlement.payer,
+    payee: settlement.payee,
+    currency: settlement.currency,
+  });
+  const holdEntry = await postLedgerEntry({
+    requestId: settlement.request_id,
+    entryType: 'HOLD',
+    currency: settlement.currency,
+    summary: 'Buyer payment frozen in escrow',
+    postings: [
+      { account_id: accounts.escrowHeld, side: 'debit', amount: settlement.amount_gross },
+      { account_id: accounts.buyerFrozen, side: 'credit', amount: settlement.amount_gross },
+    ],
+    metadata: { source: source || 'api', payer: settlement.payer, payee: settlement.payee },
+  });
+  settlement.last_ledger_entry_id = holdEntry.entry_id;
+  settlement.updated_at = nowIso();
+  await storage.saveSettlement(settlement);
+  await storage.saveEscrow({
+    request_id: settlement.request_id,
+    payer: settlement.payer,
+    payee: settlement.payee,
+    amount: settlement.amount_gross,
+    currency: settlement.currency,
+    fee_bps: settlement.fee_bps,
+    status: 'HELD',
+    held_at: settlement.held_at,
+    updated_at: settlement.updated_at,
+  });
+  return { ok: true, settlement, duplicate: false };
+}
+
+async function releaseOrRefundEscrow({
+  requestId,
+  resolution,
+  reason,
+  actor,
+}) {
+  const settlement = await storage.getSettlement(String(requestId));
+  if (!settlement) {
+    return { ok: false, error: 'NOT_FOUND', message: 'Settlement not found' };
+  }
+  if (settlement.status !== 'HELD') {
+    return { ok: false, error: 'INVALID_STATE', message: `Settlement already ${settlement.status}` };
+  }
+
+  const accounts = buildLedgerAccountIds({
+    payer: settlement.payer,
+    payee: settlement.payee,
+    currency: settlement.currency,
+  });
+  const now = nowIso();
+  if (resolution === 'refund') {
+    const refundEntry = await postLedgerEntry({
+      requestId: settlement.request_id,
+      entryType: 'REFUND',
+      currency: settlement.currency,
+      summary: 'Escrow refunded to buyer',
+      postings: [
+        { account_id: accounts.buyerFrozen, side: 'debit', amount: settlement.amount_gross },
+        { account_id: accounts.buyerAvailable, side: 'credit', amount: settlement.amount_gross },
+      ],
+      metadata: { actor: actor || 'relay', reason: reason || 'manual_refund' },
+    });
+    settlement.status = 'REFUNDED';
+    settlement.refunded_at = now;
+    settlement.reason = reason || null;
+    settlement.last_ledger_entry_id = refundEntry.entry_id;
+    settlement.updated_at = now;
+    await storage.saveSettlement(settlement);
+
+    const escrow = await storage.getEscrow(String(requestId));
+    await storage.saveEscrow({
+      ...(escrow || {}),
+      request_id: settlement.request_id,
+      payer: settlement.payer,
+      payee: settlement.payee,
+      amount: settlement.amount_gross,
+      currency: settlement.currency,
+      fee_bps: settlement.fee_bps,
+      status: 'REFUNDED',
+      held_at: settlement.held_at,
+      released_at: now,
+      updated_at: now,
+    });
+    return { ok: true, settlement, escrowType: 'ESCROW_REFUNDED' };
+  }
+
+  const releaseEntry = await postLedgerEntry({
+    requestId: settlement.request_id,
+    entryType: 'RELEASE',
+    currency: settlement.currency,
+    summary: 'Escrow released to seller and platform fee bucketed',
+    postings: [
+      { account_id: accounts.buyerFrozen, side: 'debit', amount: settlement.amount_gross },
+      { account_id: accounts.sellerPending, side: 'credit', amount: settlement.amount_seller },
+      { account_id: accounts.platformFeePending, side: 'credit', amount: settlement.amount_fee },
+    ],
+    metadata: { actor: actor || 'relay', reason: reason || 'success' },
+  });
+  const sellerSettleEntry = await postLedgerEntry({
+    requestId: settlement.request_id,
+    entryType: 'SELLER_SETTLE',
+    currency: settlement.currency,
+    summary: 'Seller pending moved to seller available',
+    postings: [
+      { account_id: accounts.sellerPending, side: 'debit', amount: settlement.amount_seller },
+      { account_id: accounts.sellerAvailable, side: 'credit', amount: settlement.amount_seller },
+    ],
+    metadata: { actor: actor || 'relay', reason: reason || 'success' },
+  });
+  const platformFeeEntry = await postLedgerEntry({
+    requestId: settlement.request_id,
+    entryType: 'PLATFORM_FEE',
+    currency: settlement.currency,
+    summary: 'Platform fee recognized',
+    postings: [
+      { account_id: accounts.platformFeePending, side: 'debit', amount: settlement.amount_fee },
+      { account_id: accounts.platformFeeRevenue, side: 'credit', amount: settlement.amount_fee },
+    ],
+    metadata: { actor: actor || 'relay', reason: reason || 'success' },
+  });
+
+  settlement.status = 'RELEASED';
+  settlement.released_at = now;
+  settlement.reason = reason || null;
+  settlement.last_ledger_entry_id = platformFeeEntry.entry_id;
+  settlement.updated_at = now;
+  await storage.saveSettlement(settlement);
+  const escrow = await storage.getEscrow(String(requestId));
+  await storage.saveEscrow({
+    ...(escrow || {}),
+    request_id: settlement.request_id,
+    payer: settlement.payer,
+    payee: settlement.payee,
+    amount: settlement.amount_gross,
+    currency: settlement.currency,
+    fee_bps: settlement.fee_bps,
+    fee: settlement.amount_fee,
+    payout: settlement.amount_seller,
+    status: 'RELEASED',
+    held_at: settlement.held_at,
+    released_at: now,
+    updated_at: now,
+    ledger_entry_ids: [releaseEntry.entry_id, sellerSettleEntry.entry_id, platformFeeEntry.entry_id],
+  });
+  return { ok: true, settlement, escrowType: 'ESCROW_RELEASED' };
+}
+
+async function createCompensationJob({
+  requestId,
+  reason,
+  runAfter,
+  metadata,
+}) {
+  const safeReason = String(reason || 'UNSPECIFIED').toUpperCase();
+  const jobId = `comp_${String(requestId)}_${safeReason.toLowerCase()}`;
+  const existing = await storage.getCompensationJob(jobId);
+  if (existing) {
+    if (existing.status === 'SUCCEEDED') return existing;
+    existing.status = existing.status === 'RUNNING' ? 'RUNNING' : 'PENDING';
+    existing.run_after = runAfter || existing.run_after || nowIso();
+    existing.updated_at = nowIso();
+    existing.metadata = { ...(existing.metadata || {}), ...(metadata || {}) };
+    await storage.saveCompensationJob(existing);
+    return existing;
+  }
+  const now = nowIso();
+  const job = {
+    job_id: jobId,
+    request_id: String(requestId),
+    reason: safeReason,
+    status: 'PENDING',
+    attempts: 0,
+    max_attempts: 5,
+    run_after: runAfter || now,
+    created_at: now,
+    updated_at: now,
+    completed_at: null,
+    last_error: null,
+    metadata: metadata || null,
+  };
+  await storage.saveCompensationJob(job);
+  return job;
+}
+
+function isOrderFailed(order) {
+  const status = String(order?.result_status || '').toLowerCase();
+  return ['failed', 'error', 'timeout', 'cancelled', 'canceled'].includes(status);
+}
+
+async function enqueueCompensationCandidates() {
+  const settlements = await storage.listSettlements({ limit: 1000 });
+  const now = Date.now();
+  let enqueued = 0;
+  for (const settlement of settlements) {
+    if (String(settlement.status || '').toUpperCase() !== 'HELD') continue;
+    const requestId = String(settlement.request_id);
+    const order = await storage.getOrder(requestId);
+    if (!order) continue;
+    if (isOrderFailed(order)) {
+      await createCompensationJob({
+        requestId,
+        reason: 'FAILED_ORDER',
+        runAfter: nowIso(),
+        metadata: { order_state: order.state, result_status: order.result_status },
+      });
+      enqueued += 1;
+      continue;
+    }
+    const fundedTs = Date.parse(order.funded_at || settlement.held_at || '');
+    if (Number.isFinite(fundedTs) && (now - fundedTs) >= ORDER_TIMEOUT_MS) {
+      const state = String(order.state || '').toUpperCase();
+      if ([ORDER_STATES.FUNDED, ORDER_STATES.EXECUTING, ORDER_STATES.DELIVERED].includes(state)) {
+        await createCompensationJob({
+          requestId,
+          reason: 'ORDER_TIMEOUT',
+          runAfter: nowIso(),
+          metadata: { order_state: order.state, funded_at: order.funded_at || settlement.held_at },
+        });
+        enqueued += 1;
+      }
+    }
+  }
+  return { enqueued };
+}
+
+async function runCompensationJobsOnce(trigger = 'manual') {
+  if (compensationRuntime.running) {
+    return { ok: true, skipped: true, reason: 'already_running' };
+  }
+  compensationRuntime.running = true;
+  compensationRuntime.last_started_at = nowIso();
+  let processed = 0;
+  let succeeded = 0;
+  let failed = 0;
+  let enqueued = 0;
+  try {
+    const queueInfo = await enqueueCompensationCandidates();
+    enqueued = queueInfo.enqueued;
+    const dueJobs = await storage.listCompensationJobs({
+      status: 'PENDING',
+      dueBefore: nowIso(),
+      limit: 100,
+    });
+    for (const job of dueJobs) {
+      processed += 1;
+      job.status = 'RUNNING';
+      job.attempts = Number(job.attempts || 0) + 1;
+      job.updated_at = nowIso();
+      await storage.saveCompensationJob(job);
+      try {
+        const result = await releaseOrRefundEscrow({
+          requestId: job.request_id,
+          resolution: 'refund',
+          reason: job.reason,
+          actor: 'compensation_worker',
+        });
+        if (!result.ok && result.error !== 'INVALID_STATE') {
+          throw new Error(result.message || result.error || 'COMPENSATION_REFUND_FAILED');
+        }
+        job.status = 'SUCCEEDED';
+        job.completed_at = nowIso();
+        job.updated_at = nowIso();
+        job.last_error = null;
+        await storage.saveCompensationJob(job);
+        succeeded += 1;
+      } catch (error) {
+        job.last_error = String(error?.message || error);
+        job.updated_at = nowIso();
+        if (Number(job.attempts || 0) >= Number(job.max_attempts || 5)) {
+          job.status = 'FAILED';
+          job.completed_at = nowIso();
+        } else {
+          job.status = 'PENDING';
+          const retryAt = new Date(Date.now() + Math.min(5 * 60_000, Number(job.attempts || 1) * 30_000));
+          job.run_after = retryAt.toISOString();
+        }
+        await storage.saveCompensationJob(job);
+        failed += 1;
+      }
+    }
+    const summary = {
+      ok: true,
+      trigger,
+      enqueued,
+      processed,
+      succeeded,
+      failed,
+      started_at: compensationRuntime.last_started_at,
+      finished_at: nowIso(),
+    };
+    compensationRuntime.last_summary = summary;
+    compensationRuntime.last_finished_at = summary.finished_at;
+    return summary;
+  } finally {
+    compensationRuntime.running = false;
+  }
+}
+
+async function buildOpsDashboard(windowMs) {
+  const now = Date.now();
+  const cutoffTs = now - windowMs;
+  const windowSamples = opsHttpSamples.filter((sample) => {
+    const ts = Date.parse(sample.ts || '');
+    return Number.isFinite(ts) && ts >= cutoffTs;
+  });
+  const httpTotal = windowSamples.length;
+  const http5xx = windowSamples.filter((sample) => Number(sample.status_code) >= 500).length;
+  const httpP95 = (() => {
+    const latencies = windowSamples
+      .map((sample) => Number(sample.latency_ms))
+      .filter((value) => Number.isFinite(value));
+    if (!latencies.length) return null;
+    return Math.round(computePercentile(latencies, 0.95) || 0);
+  })();
+
+  const paymentRecords = await storage.listPaymentRecords();
+  const verifiedRecords = paymentRecords.filter((record) => {
+    const status = String(record.verification_status || '').toUpperCase();
+    return status === 'VERIFIED' || status === 'VERIFIED_SYNTHETIC';
+  }).length;
+  const paymentAttempts = Math.max(opsPaymentMetrics.attempts, paymentRecords.length);
+  const paymentVerified = Math.max(opsPaymentMetrics.verified, verifiedRecords);
+  const paymentFailed = Math.max(0, opsPaymentMetrics.failed);
+  const paymentSuccessRate = paymentAttempts > 0 ? paymentVerified / paymentAttempts : null;
+
+  const orders = await storage.listOrders();
+  const settlements = await storage.listSettlements({ limit: 2000 });
+  const settlementByRequest = new Map(settlements.map((item) => [String(item.request_id), item]));
+  let reconciliationDiffCount = 0;
+  let reconciliationDiffAmount = 0;
+  let unsettledHeldCount = 0;
+
+  for (const payment of paymentRecords) {
+    const requestId = String(payment.request_id || '');
+    const settlement = settlementByRequest.get(requestId);
+    if (!settlement) {
+      reconciliationDiffCount += 1;
+      reconciliationDiffAmount += Number(payment.amount || 0);
+      continue;
+    }
+    const status = String(settlement.status || '').toUpperCase();
+    if (!['RELEASED', 'REFUNDED', 'HELD'].includes(status)) {
+      reconciliationDiffCount += 1;
+      reconciliationDiffAmount += Number(payment.amount || 0);
+    }
+  }
+
+  for (const settlement of settlements) {
+    const status = String(settlement.status || '').toUpperCase();
+    if (status !== 'HELD') continue;
+    const heldTs = Date.parse(settlement.held_at || settlement.updated_at || '');
+    if (Number.isFinite(heldTs) && (now - heldTs) >= ORDER_TIMEOUT_MS) {
+      unsettledHeldCount += 1;
+      reconciliationDiffCount += 1;
+      reconciliationDiffAmount += Number(settlement.amount_gross || 0);
+    }
+    const order = orders.find((item) => String(item.request_id) === String(settlement.request_id));
+    if (order) {
+      const state = String(order.state || '').toUpperCase();
+      if (state === ORDER_STATES.RELEASED && status !== 'RELEASED') reconciliationDiffCount += 1;
+      if (state === ORDER_STATES.REFUNDED && status !== 'REFUNDED') reconciliationDiffCount += 1;
+    }
+  }
+
+  const alerts = [];
+  if (paymentSuccessRate != null && paymentSuccessRate < OPS_ALERT_PAYMENT_SUCCESS_THRESHOLD) {
+    alerts.push({
+      code: 'LOW_PAYMENT_SUCCESS_RATE',
+      severity: 'high',
+      message: 'Payment success rate below threshold',
+      value: paymentSuccessRate,
+      threshold: OPS_ALERT_PAYMENT_SUCCESS_THRESHOLD,
+    });
+  }
+  const http5xxRate = httpTotal > 0 ? http5xx / httpTotal : 0;
+  if (http5xxRate > OPS_ALERT_HTTP_5XX_THRESHOLD) {
+    alerts.push({
+      code: 'HIGH_HTTP_5XX_RATE',
+      severity: 'high',
+      message: 'HTTP 5xx ratio above threshold',
+      value: http5xxRate,
+      threshold: OPS_ALERT_HTTP_5XX_THRESHOLD,
+    });
+  }
+  if (reconciliationDiffCount > OPS_ALERT_RECON_DIFF_THRESHOLD) {
+    alerts.push({
+      code: 'RECONCILIATION_DIFF',
+      severity: 'medium',
+      message: 'Payment and settlement reconciliation has mismatches',
+      value: reconciliationDiffCount,
+      threshold: OPS_ALERT_RECON_DIFF_THRESHOLD,
+    });
+  }
+
+  return {
+    generated_at: nowIso(),
+    window_ms: windowMs,
+    payments: {
+      attempts: paymentAttempts,
+      verified: paymentVerified,
+      failed: paymentFailed,
+      success_rate: paymentSuccessRate,
+    },
+    http: {
+      total_requests: httpTotal,
+      total_5xx: http5xx,
+      error_rate_5xx: http5xxRate,
+      p95_latency_ms: httpP95,
+    },
+    reconciliation: {
+      payment_records: paymentRecords.length,
+      settlements: settlements.length,
+      diff_count: reconciliationDiffCount,
+      diff_amount: roundMoney(reconciliationDiffAmount),
+      stale_held_count: unsettledHeldCount,
+    },
+    compensation: {
+      running: compensationRuntime.running,
+      last_started_at: compensationRuntime.last_started_at,
+      last_finished_at: compensationRuntime.last_finished_at,
+      last_summary: compensationRuntime.last_summary,
+    },
+    alerts,
+  };
+}
+
 function computeReputation(rep) {
   const total = rep.total_orders || 0;
   const successRate = total ? rep.success_orders / total : 0;
@@ -849,6 +1537,19 @@ async function trackEvent(evt) {
       }
       computeReputation(rep);
       await storage.saveReputation(rep);
+    }
+
+    const status = String(payload.status || '').toLowerCase();
+    if (['failed', 'error', 'timeout', 'cancelled', 'canceled'].includes(status)) {
+      await createCompensationJob({
+        requestId: String(requestId),
+        reason: 'FAILED_ORDER',
+        runAfter: nowIso(),
+        metadata: {
+          result_status: status,
+          event_id: evt.id || null,
+        },
+      });
     }
   }
 }
@@ -1198,6 +1899,7 @@ app.post('/v1/messages', async (req, res) => {
 
     let verifiedPayment = null;
     if (payment.txHash) {
+      opsPaymentMetrics.attempts += 1;
       const verified = await paymentVerifier.verifyUSDCTransfer({
         txHash: payment.txHash,
         chain: payment.chain,
@@ -1208,6 +1910,7 @@ app.post('/v1/messages', async (req, res) => {
         senderId: payment.senderId,
       });
       if (!verified.ok && REQUIRE_ACCEPT_PAYMENT_VERIFY) {
+        opsPaymentMetrics.failed += 1;
         return res.status(402).json({
           ok: false,
           error: 'PAYMENT_NOT_VERIFIED',
@@ -1217,6 +1920,9 @@ app.post('/v1/messages', async (req, res) => {
       }
       if (verified.ok) {
         verifiedPayment = verified.payment;
+        opsPaymentMetrics.verified += 1;
+      } else {
+        opsPaymentMetrics.failed += 1;
       }
     }
 
@@ -1272,6 +1978,17 @@ app.post('/v1/messages', async (req, res) => {
           details: existing || null,
         });
       }
+    }
+
+    if (payment.txHash) {
+      await ensureSettlementForAccept({
+        requestId,
+        payer: payment.payer,
+        payee: payment.payee,
+        amount: payment.amount,
+        currency: payment.token || 'USDC',
+        heldAt: evt.ts || nowIso(),
+      });
     }
   }
 
@@ -1710,6 +2427,7 @@ app.post('/v1/payments/verify', async (req, res) => {
   const amount = body.amount ?? body.amount_usdc ?? body.price;
   const senderId = body.sender_id || body.senderId;
 
+  opsPaymentMetrics.attempts += 1;
   const verification = await paymentVerifier.verifyUSDCTransfer({
     txHash,
     chain,
@@ -1721,6 +2439,7 @@ app.post('/v1/payments/verify', async (req, res) => {
   });
 
   if (!verification.ok) {
+    opsPaymentMetrics.failed += 1;
     const statusCode = verification.error === 'TX_NOT_FOUND' || verification.error === 'TX_UNCONFIRMED'
       ? 409
       : 400;
@@ -1732,6 +2451,8 @@ app.post('/v1/payments/verify', async (req, res) => {
       confirmations: verification.confirmations ?? null,
     });
   }
+
+  opsPaymentMetrics.verified += 1;
 
   return res.json({
     ok: true,
@@ -1746,24 +2467,31 @@ app.post('/v1/escrow/hold', async (req, res) => {
   const payer = body.payer;
   const payee = body.payee;
   const amount = Number(body.amount || 0);
-  const currency = body.currency || 'USDC';
-  const feeBps = Number(body.fee_bps || 1000);
+  const currency = body.currency || body.token || 'USDC';
+  const feeBps = Number(body.fee_bps || PLATFORM_FEE_BPS);
 
   if (!requestId || !payer || !payee || !amount) {
     return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', message: 'request_id, payer, payee, amount required' });
   }
 
-  const record = {
-    request_id: String(requestId),
+  const held = await holdEscrowFunds({
+    requestId: String(requestId),
     payer,
     payee,
     amount,
     currency,
-    fee_bps: feeBps,
-    status: 'HELD',
-    held_at: new Date().toISOString(),
-  };
-  await storage.saveEscrow(record);
+    feeBps,
+    heldAt: nowIso(),
+    source: 'escrow_hold_api',
+  });
+  if (!held.ok) {
+    return res.status(409).json({
+      ok: false,
+      error: held.error || 'ESCROW_HOLD_FAILED',
+      message: held.message || 'Failed to hold escrow funds',
+    });
+  }
+  const record = await storage.getEscrow(String(requestId));
   const escrowHeldEvent = {
     version: '1.0',
     id: `escrow_held_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -1789,42 +2517,35 @@ app.post('/v1/escrow/hold', async (req, res) => {
     });
   }
   addEvent(escrowHeldEvent);
-  res.json({ ok: true, escrow: record });
+  const settlement = await storage.getSettlement(String(requestId));
+  res.json({ ok: true, escrow: record, settlement, duplicate: held.duplicate === true });
 });
 
 app.post('/v1/escrow/release', async (req, res) => {
   const body = req.body || {};
   const requestId = body.request_id || body.requestId;
   const resolution = body.resolution || 'success';
+  const settled = await releaseOrRefundEscrow({
+    requestId: String(requestId),
+    resolution: resolution === 'refund' ? 'refund' : 'success',
+    reason: body.reason || null,
+    actor: 'escrow_release_api',
+  });
+  if (!settled.ok) {
+    const statusCode = settled.error === 'NOT_FOUND' ? 404 : 409;
+    return res.status(statusCode).json({
+      ok: false,
+      error: settled.error || 'ESCROW_RELEASE_FAILED',
+      message: settled.message || 'Failed to settle escrow',
+    });
+  }
   const record = await storage.getEscrow(String(requestId));
-  if (!record) {
-    return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Escrow not found' });
-  }
-
-  if (record.status !== 'HELD') {
-    return res.status(400).json({ ok: false, error: 'INVALID_STATE', message: 'Escrow already released' });
-  }
-
-  if (resolution === 'refund') {
-    await adjustBalance(record.payer, record.amount);
-    record.status = 'REFUNDED';
-  } else {
-    const fee = Number((record.amount * (record.fee_bps / 10000)).toFixed(6));
-    const payout = Number((record.amount - fee).toFixed(6));
-    await adjustBalance(record.payee, payout);
-    await adjustBalance('platform', fee);
-    record.status = 'RELEASED';
-    record.fee = fee;
-    record.payout = payout;
-  }
-
-  record.released_at = new Date().toISOString();
-  await storage.saveEscrow(record);
+  const settlement = await storage.getSettlement(String(requestId));
   const escrowEvent = {
     version: '1.0',
-    id: `escrow_${record.status.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: `escrow_${String(record.status || '').toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     ts: new Date().toISOString(),
-    type: record.status === 'RELEASED' ? 'ESCROW_RELEASED' : 'ESCROW_REFUNDED',
+    type: settled.escrowType,
     sender: { id: 'relay:escrow' },
     payload: {
       request_id: record.request_id,
@@ -1847,7 +2568,7 @@ app.post('/v1/escrow/release', async (req, res) => {
     });
   }
   addEvent(escrowEvent);
-  res.json({ ok: true, escrow: record });
+  res.json({ ok: true, escrow: record, settlement });
 });
 
 app.get('/v1/escrow/:requestId', async (req, res) => {
@@ -1863,12 +2584,63 @@ app.get('/v1/ledger', async (_req, res) => {
   res.json({ ok: true, accounts });
 });
 
+app.get('/v1/ledger/entries', async (req, res) => {
+  const requestId = req.query.request_id || req.query.requestId;
+  const limit = Math.min(Number(req.query.limit) || 200, 1000);
+  const entries = await storage.listLedgerJournalEntries({
+    request_id: requestId ? String(requestId) : null,
+    limit,
+  });
+  res.json({ ok: true, total: entries.length, entries });
+});
+
+app.get('/v1/ledger/entries/:entryId', async (req, res) => {
+  const entry = await storage.getLedgerJournalEntry(String(req.params.entryId));
+  if (!entry) {
+    return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Ledger entry not found' });
+  }
+  const postings = await storage.listLedgerPostings({
+    entry_id: String(req.params.entryId),
+    limit: 2000,
+  });
+  res.json({ ok: true, entry, postings });
+});
+
+app.get('/v1/ledger/postings', async (req, res) => {
+  const requestId = req.query.request_id || req.query.requestId;
+  const entryId = req.query.entry_id || req.query.entryId;
+  const accountId = req.query.account_id || req.query.accountId;
+  const limit = Math.min(Number(req.query.limit) || 500, 2000);
+  const postings = await storage.listLedgerPostings({
+    request_id: requestId ? String(requestId) : null,
+    entry_id: entryId ? String(entryId) : null,
+    account_id: accountId ? String(accountId) : null,
+    limit,
+  });
+  res.json({ ok: true, total: postings.length, postings });
+});
+
 app.get('/v1/ledger/:id', async (req, res) => {
   const account = await storage.getLedgerAccount(req.params.id);
   if (!account) {
     return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Account not found' });
   }
   res.json({ ok: true, account });
+});
+
+app.get('/v1/settlements', async (req, res) => {
+  const status = req.query.status ? String(req.query.status).toUpperCase() : null;
+  const limit = Math.min(Number(req.query.limit) || 500, 2000);
+  const settlements = await storage.listSettlements({ status, limit });
+  res.json({ ok: true, total: settlements.length, settlements });
+});
+
+app.get('/v1/settlements/:requestId', async (req, res) => {
+  const settlement = await storage.getSettlement(String(req.params.requestId));
+  if (!settlement) {
+    return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: 'Settlement not found' });
+  }
+  res.json({ ok: true, settlement });
 });
 
 app.get('/v1/orders', async (req, res) => {
@@ -1910,12 +2682,80 @@ app.get('/v1/payments/records', async (req, res) => {
   });
 });
 
+app.get('/v1/ops/compensation/jobs', async (req, res) => {
+  const status = req.query.status ? String(req.query.status).toUpperCase() : null;
+  const requestId = req.query.request_id || req.query.requestId;
+  const limit = Math.min(Number(req.query.limit) || 200, 1000);
+  const jobs = await storage.listCompensationJobs({
+    status,
+    request_id: requestId ? String(requestId) : null,
+    limit,
+  });
+  res.json({
+    ok: true,
+    total: jobs.length,
+    jobs,
+    runtime: compensationRuntime,
+  });
+});
+
+app.post('/v1/ops/compensation/run', async (req, res) => {
+  const trigger = req.body?.trigger ? String(req.body.trigger) : 'manual_api';
+  const result = await runCompensationJobsOnce(trigger);
+  res.json({
+    ok: true,
+    ...result,
+  });
+});
+
+app.post('/v1/ops/reconciliation/report', async (req, res) => {
+  const body = req.body || {};
+  const report = {
+    report_id: body.report_id || `recon_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    generated_at: body.generated_at || nowIso(),
+    relay: body.relay || null,
+    period: body.period || null,
+    counts: isObject(body.counts) ? body.counts : null,
+    mismatch_count: Number(body.mismatch_count || 0),
+    mismatch_amount: Number(body.mismatch_amount || 0),
+    data: body.data && isObject(body.data) ? body.data : null,
+    updated_at: nowIso(),
+  };
+  await storage.saveReconciliationReport(report);
+  res.json({ ok: true, report });
+});
+
+app.get('/v1/ops/reconciliation/reports', async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 50, 500);
+  const reports = await storage.listReconciliationReports({ limit });
+  res.json({ ok: true, total: reports.length, reports });
+});
+
+app.get('/v1/ops/dashboard', async (req, res) => {
+  const windowRaw = req.query.window_ms || req.query.windowMs;
+  const windowMs = Math.max(
+    60_000,
+    Math.min(Number(windowRaw || OPS_HTTP_WINDOW_MS), 7 * 24 * 60 * 60 * 1000),
+  );
+  const dashboard = await buildOpsDashboard(windowMs);
+  res.json({
+    ok: true,
+    dashboard,
+  });
+});
+
 // Demo seed endpoint
 app.post('/seed', (_req, res) => {
   const seedEvents = buildSeedEvents(new Date().toISOString());
   seedEvents.forEach(addEvent);
   res.json({ ok: true, count: seedEvents.length });
 });
+
+setInterval(() => {
+  runCompensationJobsOnce('interval').catch((error) => {
+    console.error('[compensation] run failed:', error?.message || error);
+  });
+}, COMPENSATION_POLL_MS);
 
 const port = Number(process.env.PORT || 8789);
 app.listen(port, () => {
