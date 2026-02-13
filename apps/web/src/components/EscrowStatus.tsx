@@ -4,6 +4,7 @@ import { useWriteContract } from 'wagmi'
 import { useWallet, truncateAddress } from '../hooks/useWallet'
 import { getChainLabel, getExplorerBaseUrl, PREFERRED_CHAIN, resolveRpcUrl } from '../lib/chain'
 import { ESCROW_ABI, ESCROW_TIMEOUT_SEC, encodeRequestId, getEscrowAddress } from '../lib/escrow'
+import { resolveRelayUrl } from '../lib/relayUrl'
 
 const STATUS_CONFIG = {
   PENDING: { label: 'Pending', bg: 'bg-agora-100', text: 'text-agora-600', border: 'border-agora-200' },
@@ -74,9 +75,12 @@ export function EscrowStatus({ requestId, buyer, seller, className }: EscrowStat
   const [actionBusy, setActionBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [lastTx, setLastTx] = useState<string | null>(null)
+  const [relaySyncStatus, setRelaySyncStatus] = useState<'idle' | 'syncing' | 'pending' | 'synced' | 'failed'>('idle')
+  const [relaySyncError, setRelaySyncError] = useState<string | null>(null)
 
   const escrowAddress = getEscrowAddress()
   const requestIdHash = useMemo(() => encodeRequestId(requestId), [requestId])
+  const relayUrl = useMemo(() => resolveRelayUrl(), [])
 
   const publicClient = useMemo(() => {
     const rpcUrl = resolveRpcUrl(PREFERRED_CHAIN.id)
@@ -204,6 +208,7 @@ export function EscrowStatus({ requestId, buyer, seller, className }: EscrowStat
         args: [requestIdHash],
       })
       setLastTx(txHash)
+      void syncRelayResolution({ txHash, resolution: 'release' })
     } catch (err: any) {
       setActionError(err?.shortMessage || err?.message || 'Release failed')
     } finally {
@@ -224,12 +229,59 @@ export function EscrowStatus({ requestId, buyer, seller, className }: EscrowStat
         args: [requestIdHash],
       })
       setLastTx(txHash)
+      void syncRelayResolution({ txHash, resolution: 'refund' })
     } catch (err: any) {
       setActionError(err?.shortMessage || err?.message || 'Refund failed')
     } finally {
       setActionBusy(false)
     }
   }
+
+  const syncRelayResolution = useCallback(async ({ txHash, resolution }: { txHash: string; resolution: 'release' | 'refund' }) => {
+    setRelaySyncStatus('syncing')
+    setRelaySyncError(null)
+
+    const url = `${relayUrl.replace(/\/$/, '')}/v1/escrow/verify-resolution`
+    const payload = {
+      request_id: requestId,
+      tx_hash: txHash,
+      resolution,
+    }
+
+    // The relay enforces min-confirmations; treat 202 as "pending" and retry briefly.
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+
+        if (res.status === 202) {
+          setRelaySyncStatus('pending')
+          await new Promise((resolve) => setTimeout(resolve, 3000))
+          continue
+        }
+
+        const json = await res.json().catch(() => ({} as any))
+        if (!res.ok || !json?.ok) {
+          throw new Error(json?.message || `Relay sync failed (${res.status})`)
+        }
+
+        setRelaySyncStatus('synced')
+        setRelaySyncError(null)
+        return
+      } catch (err: any) {
+        const message = err?.message || 'Relay sync failed'
+        setRelaySyncError(message)
+        setRelaySyncStatus('failed')
+        return
+      }
+    }
+
+    setRelaySyncStatus('failed')
+    setRelaySyncError('Relay sync timed out waiting for confirmations')
+  }, [relayUrl, requestId])
 
   const explorerBaseUrl = getExplorerBaseUrl(PREFERRED_CHAIN.id)
   const chainLabel = getChainLabel(PREFERRED_CHAIN.id)
@@ -352,6 +404,22 @@ export function EscrowStatus({ requestId, buyer, seller, className }: EscrowStat
                 <span className="text-xs text-red-600">{actionError}</span>
               )}
             </div>
+
+            {lastTx && (
+              <div className="mt-3 text-xs text-agora-600">
+                Relay sync:{' '}
+                <span className="font-semibold text-agora-900">
+                  {relaySyncStatus === 'idle' ? 'idle'
+                    : relaySyncStatus === 'syncing' ? 'syncing'
+                      : relaySyncStatus === 'pending' ? 'waiting confirmations'
+                        : relaySyncStatus === 'synced' ? 'synced'
+                          : 'failed'}
+                </span>
+                {relaySyncError ? (
+                  <span className="ml-2 text-red-600">{relaySyncError}</span>
+                ) : null}
+              </div>
+            )}
           </div>
         </details>
       </div>

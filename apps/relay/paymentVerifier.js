@@ -35,6 +35,29 @@ const ESCROW_ABI = [
     ],
     anonymous: false,
   },
+  {
+    type: 'event',
+    name: 'Released',
+    inputs: [
+      { name: 'requestId', type: 'bytes32', indexed: true },
+      { name: 'seller', type: 'address', indexed: true },
+      { name: 'token', type: 'address', indexed: false },
+      { name: 'amount', type: 'uint256', indexed: false },
+      { name: 'fee', type: 'uint256', indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'Refunded',
+    inputs: [
+      { name: 'requestId', type: 'bytes32', indexed: true },
+      { name: 'buyer', type: 'address', indexed: true },
+      { name: 'token', type: 'address', indexed: false },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+    anonymous: false,
+  },
 ];
 
 function parseDidAddress(value) {
@@ -517,9 +540,186 @@ export function createUsdcPaymentVerifier(options = {}) {
     };
   }
 
+  async function verifyEscrowResolution(input) {
+    const txHash = typeof input?.txHash === 'string'
+      ? input.txHash.trim()
+      : typeof input?.payment_tx === 'string'
+        ? input.payment_tx.trim()
+        : '';
+
+    if (!txHash) {
+      return { ok: false, error: 'INVALID_REQUEST', message: 'tx_hash is required' };
+    }
+
+    if (!isHex(txHash, { strict: false }) || txHash.length !== 66) {
+      return { ok: false, error: 'INVALID_TX_HASH', message: 'tx_hash must be a 0x-prefixed 32-byte hash' };
+    }
+
+    const network = normalizeNetwork(input?.chain) || 'base-sepolia';
+    if (!network) {
+      return { ok: false, error: 'UNSUPPORTED_CHAIN', message: 'Only base and base-sepolia are supported' };
+    }
+
+    const escrowAddress = resolveEscrowAddress(network);
+    if (!escrowAddress) {
+      return { ok: false, error: 'ESCROW_NOT_CONFIGURED', message: `Escrow contract address not configured for ${network}` };
+    }
+
+    const requestIdRaw = input?.requestId || input?.request_id;
+    const requestIdHash = encodeRequestId(String(requestIdRaw || ''));
+    if (!requestIdHash) {
+      return { ok: false, error: 'INVALID_REQUEST_ID', message: 'request_id is required for escrow verification' };
+    }
+
+    const expectedResolution = typeof input?.resolution === 'string' ? input.resolution.trim().toLowerCase() : '';
+    if (!['release', 'refund'].includes(expectedResolution)) {
+      return { ok: false, error: 'INVALID_RESOLUTION', message: 'resolution must be release or refund' };
+    }
+
+    const token = normalizeToken(input?.token);
+    if (token !== 'USDC' && token !== 'ETH') {
+      return { ok: false, error: 'UNSUPPORTED_TOKEN', message: 'Only USDC and ETH are supported' };
+    }
+
+    const usdcAddress = normalizeAddress(usdcAddresses[network]);
+    const expectedTokenAddress = token === 'USDC'
+      ? usdcAddress
+      : '0x0000000000000000000000000000000000000000';
+    if (token === 'USDC' && !expectedTokenAddress) {
+      return { ok: false, error: 'MISCONFIGURED_USDC', message: `Invalid USDC address for ${network}` };
+    }
+
+    const expectedBuyer = normalizeAddress(input?.buyer) || normalizeAddress(input?.payer) || parseDidAddress(input?.senderId);
+    const expectedSeller = normalizeAddress(input?.seller) || normalizeAddress(input?.payee);
+
+    const client = getClient(network);
+    let receipt;
+    try {
+      receipt = await client.getTransactionReceipt({ hash: txHash });
+    } catch (error) {
+      if (isLikelyTxNotFound(error)) {
+        return { ok: false, error: 'TX_NOT_FOUND', message: 'Transaction is not indexed yet', pending: true };
+      }
+      return { ok: false, error: 'RPC_ERROR', message: String(error) };
+    }
+
+    if (receipt.status !== 'success') {
+      return { ok: false, error: 'TX_REVERTED', message: 'Transaction reverted' };
+    }
+
+    const latestBlock = await client.getBlockNumber();
+    const confirmations = Number(latestBlock - receipt.blockNumber + 1n);
+    const requiredConfirmations = token === 'ETH'
+      ? minConfirmationsByToken.ETH
+      : minConfirmationsByToken.USDC;
+    if (confirmations < requiredConfirmations) {
+      return {
+        ok: false,
+        error: 'TX_UNCONFIRMED',
+        message: `Waiting for confirmations (${confirmations}/${requiredConfirmations})`,
+        pending: true,
+        confirmations,
+      };
+    }
+
+    let decoded = null;
+    for (const log of receipt.logs || []) {
+      const logAddress = normalizeAddress(log.address);
+      if (!logAddress || logAddress !== escrowAddress) continue;
+      try {
+        const candidate = decodeEventLog({ abi: ESCROW_ABI, data: log.data, topics: log.topics });
+        if (!candidate?.eventName) continue;
+        if (expectedResolution === 'release' && candidate.eventName !== 'Released') continue;
+        if (expectedResolution === 'refund' && candidate.eventName !== 'Refunded') continue;
+        decoded = candidate;
+        break;
+      } catch {
+        continue;
+      }
+    }
+
+    if (!decoded) {
+      return {
+        ok: false,
+        error: 'ESCROW_EVENT_NOT_FOUND',
+        message: `No ${expectedResolution === 'release' ? 'Released' : 'Refunded'} event found for escrow contract`,
+      };
+    }
+
+    const args = decoded.args || {};
+    const actualRequestId = String(args.requestId || '').toLowerCase();
+    if (actualRequestId !== requestIdHash) {
+      return { ok: false, error: 'REQUEST_ID_MISMATCH', message: 'Escrow requestId mismatch' };
+    }
+
+    const tokenAddr = normalizeAddress(args.token) || '0x0000000000000000000000000000000000000000';
+    if (tokenAddr.toLowerCase() !== expectedTokenAddress.toLowerCase()) {
+      return { ok: false, error: 'TOKEN_MISMATCH', message: 'Escrow token mismatch' };
+    }
+
+    if (expectedResolution === 'release') {
+      const seller = normalizeAddress(args.seller);
+      const payoutUnits = typeof args.amount === 'bigint' ? args.amount : null;
+      const feeUnits = typeof args.fee === 'bigint' ? args.fee : null;
+      if (expectedSeller && seller && seller !== expectedSeller) {
+        return { ok: false, error: 'PAYEE_MISMATCH', message: 'Escrow seller mismatch' };
+      }
+      if (payoutUnits == null || feeUnits == null) {
+        return { ok: false, error: 'INVALID_EVENT', message: 'Released event missing amount/fee' };
+      }
+      const grossUnits = payoutUnits + feeUnits;
+      return {
+        ok: true,
+        resolution: {
+          tx_hash: txHash,
+          chain: network,
+          token,
+          request_id_hash: requestIdHash,
+          seller: seller || expectedSeller || null,
+          payout_units: payoutUnits.toString(),
+          fee_units: feeUnits.toString(),
+          gross_units: grossUnits.toString(),
+          payout: formatUnits(payoutUnits, token === 'ETH' ? 18 : 6),
+          fee: formatUnits(feeUnits, token === 'ETH' ? 18 : 6),
+          gross: formatUnits(grossUnits, token === 'ETH' ? 18 : 6),
+          block_number: Number(receipt.blockNumber),
+          confirmations,
+          verified_at: new Date().toISOString(),
+          escrow_contract: escrowAddress,
+        },
+      };
+    }
+
+    const buyer = normalizeAddress(args.buyer);
+    const amountUnits = typeof args.amount === 'bigint' ? args.amount : null;
+    if (expectedBuyer && buyer && buyer !== expectedBuyer) {
+      return { ok: false, error: 'PAYER_MISMATCH', message: 'Escrow buyer mismatch' };
+    }
+    if (amountUnits == null) {
+      return { ok: false, error: 'INVALID_EVENT', message: 'Refunded event missing amount' };
+    }
+    return {
+      ok: true,
+      resolution: {
+        tx_hash: txHash,
+        chain: network,
+        token,
+        request_id_hash: requestIdHash,
+        buyer: buyer || expectedBuyer || null,
+        gross_units: amountUnits.toString(),
+        gross: formatUnits(amountUnits, token === 'ETH' ? 18 : 6),
+        block_number: Number(receipt.blockNumber),
+        confirmations,
+        verified_at: new Date().toISOString(),
+        escrow_contract: escrowAddress,
+      },
+    };
+  }
+
   return {
     verifyUSDCTransfer,
     verifyEscrowDeposit,
+    verifyEscrowResolution,
     parseDidAddress,
     normalizeAddress,
     normalizeNetwork,

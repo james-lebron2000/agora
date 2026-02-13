@@ -1,6 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import { createHash } from 'node:crypto';
+import { createWalletClient, http, isHex, keccak256, toBytes } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { base, baseSepolia } from 'viem/chains';
 import { createStorage } from './storage.js';
 import { createUsdcPaymentVerifier } from './paymentVerifier.js';
 import { createOpsAlerting } from './opsAlerting.js';
@@ -116,6 +119,33 @@ const paymentVerifier = createUsdcPaymentVerifier({
   minConfirmationsUsdc: PAYMENT_CONFIRMATIONS.USDC,
   minConfirmationsEth: PAYMENT_CONFIRMATIONS.ETH,
 });
+
+const CHAIN_BY_NETWORK = {
+  base,
+  'base-sepolia': baseSepolia,
+};
+
+const RPC_URL_BY_NETWORK = {
+  base: String(process.env.AGORA_BASE_RPC_URL || base.rpcUrls.default.http[0] || ''),
+  'base-sepolia': String(process.env.AGORA_BASE_SEPOLIA_RPC_URL || baseSepolia.rpcUrls.default.http[0] || ''),
+};
+
+const ESCROW_WRITE_ABI = [
+  {
+    type: 'function',
+    name: 'release',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'requestId', type: 'bytes32' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'refund',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'requestId', type: 'bytes32' }],
+    outputs: [],
+  },
+];
 
 const intentInputSchemas = new Map();
 const intentOutputSchemas = new Map();
@@ -1040,6 +1070,57 @@ function roundMoney(value) {
   return Number(Number(value || 0).toFixed(8));
 }
 
+function encodeEscrowRequestId(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const trimmed = value.trim();
+  if (isHex(trimmed, { strict: false }) && trimmed.length === 66) return trimmed.toLowerCase();
+  return keccak256(toBytes(trimmed)).toLowerCase();
+}
+
+function resolveEscrowContractAddress(network) {
+  const normalized = paymentVerifier.normalizeNetwork(network);
+  if (!normalized) return null;
+  const raw = normalized === 'base'
+    ? process.env.AGORA_ESCROW_CONTRACT_ADDRESS_BASE
+    : process.env.AGORA_ESCROW_CONTRACT_ADDRESS_BASE_SEPOLIA;
+  return paymentVerifier.normalizeAddress(String(raw || ''));
+}
+
+function resolveRpcUrlForNetwork(network) {
+  const normalized = paymentVerifier.normalizeNetwork(network);
+  if (!normalized) return null;
+  const candidate = RPC_URL_BY_NETWORK[normalized];
+  return candidate ? String(candidate) : null;
+}
+
+function pow10BigInt(exp) {
+  let value = 1n;
+  for (let i = 0; i < exp; i += 1) value *= 10n;
+  return value;
+}
+
+function unitsToRoundedMoney(units, decimals, maxDp) {
+  if (units == null) return null;
+  const safeDecimals = Math.max(0, Number(decimals) || 0);
+  const precision = Math.max(0, Math.min(Number(maxDp) || 0, safeDecimals));
+  let value;
+  try {
+    value = BigInt(String(units));
+  } catch {
+    return null;
+  }
+  const base = pow10BigInt(safeDecimals);
+  const integerPart = value / base;
+  const remainder = value % base;
+
+  if (precision === 0) return Number(integerPart);
+
+  const divisor = pow10BigInt(safeDecimals - precision);
+  const fractional = remainder / divisor; // truncated
+  const scaled = (Number(integerPart) * Math.pow(10, precision)) + Number(fractional);
+  return roundMoney(scaled / Math.pow(10, precision));
+}
+
 function normalizeCurrency(value, fallback = 'USDC') {
   if (typeof value === 'string' && value.trim()) return value.trim().toUpperCase();
   return fallback;
@@ -1287,6 +1368,7 @@ async function releaseOrRefundEscrow({
   resolution,
   reason,
   actor,
+  overrideAmounts,
 }) {
   const settlement = await storage.getSettlement(String(requestId));
   if (!settlement) {
@@ -1294,6 +1376,23 @@ async function releaseOrRefundEscrow({
   }
   if (settlement.status !== 'HELD') {
     return { ok: false, error: 'INVALID_STATE', message: `Settlement already ${settlement.status}` };
+  }
+
+  if (overrideAmounts && typeof overrideAmounts === 'object') {
+    const gross = Number(overrideAmounts.gross);
+    const fee = Number(overrideAmounts.fee);
+    const payout = Number(overrideAmounts.payout);
+    if ([gross, fee, payout].some((v) => !Number.isFinite(v) || v < 0)) {
+      return { ok: false, error: 'INVALID_OVERRIDE', message: 'overrideAmounts must be finite numbers' };
+    }
+    if (Math.abs((fee + payout) - gross) > 0.0000001) {
+      return { ok: false, error: 'INVALID_OVERRIDE', message: 'overrideAmounts must satisfy fee+payout=gross' };
+    }
+    settlement.amount_gross = roundMoney(gross);
+    settlement.amount_fee = roundMoney(fee);
+    settlement.amount_seller = roundMoney(payout);
+    settlement.updated_at = nowIso();
+    await storage.saveSettlement(settlement);
   }
 
   const accounts = buildLedgerAccountIds({
@@ -1399,6 +1498,176 @@ async function releaseOrRefundEscrow({
   return { ok: true, settlement, escrowType: 'ESCROW_RELEASED' };
 }
 
+async function verifyAndSettleEscrowResolution({
+  requestId,
+  txHash,
+  resolution,
+  chain,
+  token,
+  actor,
+  reason,
+}) {
+  const settlement = await storage.getSettlement(String(requestId));
+  if (!settlement) {
+    return { ok: false, error: 'NOT_FOUND', message: 'Settlement not found' };
+  }
+
+  const currentStatus = String(settlement.status || '').toUpperCase();
+  if (currentStatus === 'RELEASED' || currentStatus === 'REFUNDED') {
+    return { ok: true, duplicate: true, settlement };
+  }
+
+  const normalizedToken = normalizeCurrency(token || settlement.currency || 'USDC');
+  const order = await storage.getOrder(String(requestId));
+  const inferredChain = chain || order?.payment_chain || 'base-sepolia';
+  const normalizedChain = paymentVerifier.normalizeNetwork(inferredChain);
+  if (!normalizedChain) {
+    return { ok: false, error: 'UNSUPPORTED_CHAIN', message: 'Unsupported chain for escrow resolution' };
+  }
+
+  const verification = await paymentVerifier.verifyEscrowResolution({
+    txHash,
+    requestId,
+    chain: normalizedChain,
+    token: normalizedToken,
+    buyer: settlement.payer,
+    seller: settlement.payee,
+    resolution,
+  });
+
+  if (!verification.ok) {
+    return {
+      ok: false,
+      pending: Boolean(verification.pending),
+      error: verification.error || 'ESCROW_RESOLUTION_NOT_VERIFIED',
+      message: verification.message || 'Resolution verification failed',
+      details: verification,
+    };
+  }
+
+  const resolved = verification.resolution || {};
+  const decimals = normalizedToken === 'ETH' ? 18 : 6;
+  const maxDp = normalizedToken === 'ETH' ? 8 : 6;
+  const gross = unitsToRoundedMoney(resolved.gross_units, decimals, maxDp) ?? Number(resolved.gross || 0);
+  const fee = unitsToRoundedMoney(resolved.fee_units, decimals, maxDp) ?? Number(resolved.fee || 0);
+  const payout = unitsToRoundedMoney(resolved.payout_units, decimals, maxDp) ?? Number(resolved.payout || 0);
+
+  const overrideAmounts = resolution === 'release'
+    ? { gross, fee, payout }
+    : null;
+
+  const settled = await releaseOrRefundEscrow({
+    requestId: String(requestId),
+    resolution: resolution === 'refund' ? 'refund' : 'success',
+    reason: reason || 'onchain_resolution_verified',
+    actor: actor || 'escrow_chain_verifier',
+    overrideAmounts,
+  });
+  if (!settled.ok) return settled;
+
+  // Record tx hash + raw units for audit, without disturbing the core escrow record fields.
+  const escrowRecord = await storage.getEscrow(String(requestId));
+  const nextEscrow = {
+    ...(escrowRecord || {}),
+    request_id: String(requestId),
+    settlement_tx_hash: String(txHash),
+    settlement_verified_at: resolved.verified_at || nowIso(),
+    settlement_resolution: resolution,
+    settlement_chain: normalizedChain,
+    settlement_token: normalizedToken,
+    settlement_gross_units: resolved.gross_units || null,
+    settlement_fee_units: resolved.fee_units || null,
+    settlement_payout_units: resolved.payout_units || null,
+  };
+  await storage.saveEscrow(nextEscrow);
+
+  const updatedSettlement = await storage.getSettlement(String(requestId));
+  const record = await storage.getEscrow(String(requestId));
+  const escrowEvent = {
+    version: '1.0',
+    id: `escrow_${resolution}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    ts: new Date().toISOString(),
+    type: resolution === 'refund' ? 'ESCROW_REFUNDED' : 'ESCROW_RELEASED',
+    sender: { id: 'relay:escrow' },
+    payload: {
+      request_id: String(requestId),
+      payer: settlement.payer,
+      payee: settlement.payee,
+      currency: normalizedToken,
+      tx_hash: String(txHash),
+      chain: normalizedChain,
+      gross: resolution === 'refund' ? gross : gross,
+      payout: resolution === 'release' ? payout : null,
+      fee: resolution === 'release' ? fee : null,
+      verified_at: resolved.verified_at || null,
+    },
+  };
+  const orderTransition = await applyOrderStateTransition(escrowEvent);
+  if (orderTransition.ok) addEvent(escrowEvent);
+
+  return {
+    ok: true,
+    verified: true,
+    escrow: record,
+    settlement: updatedSettlement,
+    resolution: resolved,
+  };
+}
+
+const ESCROW_TREASURY_PRIVATE_KEY = String(process.env.AGORA_ESCROW_TREASURY_PRIVATE_KEY || '').trim();
+let escrowTreasuryAccount = null;
+
+function getEscrowTreasuryAccount() {
+  if (!ESCROW_TREASURY_PRIVATE_KEY) return null;
+  if (escrowTreasuryAccount) return escrowTreasuryAccount;
+  const trimmed = ESCROW_TREASURY_PRIVATE_KEY.trim();
+  if (!isHex(trimmed, { strict: false }) || trimmed.length !== 66) return null;
+  escrowTreasuryAccount = privateKeyToAccount(trimmed);
+  return escrowTreasuryAccount;
+}
+
+async function submitEscrowTreasuryTx({ requestId, network, functionName }) {
+  const normalizedNetwork = paymentVerifier.normalizeNetwork(network);
+  if (!normalizedNetwork) return { ok: false, error: 'UNSUPPORTED_CHAIN', message: 'Unsupported chain for escrow tx' };
+  const chain = CHAIN_BY_NETWORK[normalizedNetwork];
+  if (!chain) return { ok: false, error: 'UNSUPPORTED_CHAIN', message: 'Unsupported chain for escrow tx' };
+
+  const rpcUrl = resolveRpcUrlForNetwork(normalizedNetwork);
+  if (!rpcUrl) return { ok: false, error: 'MISCONFIGURED_RPC', message: `RPC URL not configured for ${normalizedNetwork}` };
+
+  const escrowAddress = resolveEscrowContractAddress(normalizedNetwork);
+  if (!escrowAddress) {
+    return { ok: false, error: 'ESCROW_NOT_CONFIGURED', message: `Escrow contract address not configured for ${normalizedNetwork}` };
+  }
+
+  const account = getEscrowTreasuryAccount();
+  if (!account) {
+    return { ok: false, error: 'MISSING_TREASURY_KEY', message: 'AGORA_ESCROW_TREASURY_PRIVATE_KEY not configured' };
+  }
+
+  const requestIdHash = encodeEscrowRequestId(String(requestId || ''));
+  if (!requestIdHash) {
+    return { ok: false, error: 'INVALID_REQUEST_ID', message: 'Invalid request_id for escrow tx' };
+  }
+
+  try {
+    const client = createWalletClient({
+      chain,
+      account,
+      transport: http(rpcUrl),
+    });
+    const txHash = await client.writeContract({
+      address: escrowAddress,
+      abi: ESCROW_WRITE_ABI,
+      functionName,
+      args: [requestIdHash],
+    });
+    return { ok: true, txHash: String(txHash) };
+  } catch (error) {
+    return { ok: false, error: 'TX_SUBMIT_FAILED', message: String(error?.message || error) };
+  }
+}
+
 async function createCompensationJob({
   requestId,
   reason,
@@ -1502,15 +1771,80 @@ async function runCompensationJobsOnce(trigger = 'manual') {
       job.updated_at = nowIso();
       await storage.saveCompensationJob(job);
       try {
-        const result = await releaseOrRefundEscrow({
-          requestId: job.request_id,
-          resolution: 'refund',
-          reason: job.reason,
-          actor: 'compensation_worker',
-        });
-        if (!result.ok && result.error !== 'INVALID_STATE') {
-          throw new Error(result.message || result.error || 'COMPENSATION_REFUND_FAILED');
+        const requestId = String(job.request_id);
+        const settlement = await storage.getSettlement(requestId);
+        if (!settlement) {
+          throw new Error('Settlement not found');
         }
+
+        const order = await storage.getOrder(requestId);
+        const paymentTx = String(order?.payment_tx || '');
+        if (paymentTx.startsWith('relay:')) {
+          const result = await releaseOrRefundEscrow({
+            requestId,
+            resolution: 'refund',
+            reason: job.reason,
+            actor: 'compensation_worker',
+          });
+          if (!result.ok && result.error !== 'INVALID_STATE') {
+            throw new Error(result.message || result.error || 'COMPENSATION_REFUND_FAILED');
+          }
+          job.status = 'SUCCEEDED';
+          job.completed_at = nowIso();
+          job.updated_at = nowIso();
+          job.last_error = null;
+          await storage.saveCompensationJob(job);
+          succeeded += 1;
+          continue;
+        }
+
+        const network = paymentVerifier.normalizeNetwork(order?.payment_chain || 'base-sepolia') || 'base-sepolia';
+        const token = normalizeCurrency(settlement.currency || order?.payment_token || 'USDC');
+
+        job.metadata = job.metadata && typeof job.metadata === 'object' ? job.metadata : {};
+        let txHash = job.metadata.tx_hash || job.metadata.txHash || null;
+
+        if (!txHash) {
+          const submitted = await submitEscrowTreasuryTx({
+            requestId,
+            network,
+            functionName: 'refund',
+          });
+          if (!submitted.ok) {
+            throw new Error(submitted.message || submitted.error || 'Failed to submit escrow refund tx');
+          }
+          txHash = submitted.txHash;
+          job.metadata.tx_hash = txHash;
+          job.metadata.chain = network;
+          job.metadata.token = token;
+          job.metadata.sent_at = nowIso();
+          job.updated_at = nowIso();
+          await storage.saveCompensationJob(job);
+        }
+
+        const settled = await verifyAndSettleEscrowResolution({
+          requestId,
+          txHash,
+          resolution: 'refund',
+          chain: network,
+          token,
+          actor: 'compensation_worker',
+          reason: job.reason,
+        });
+
+        if (!settled.ok && settled.pending) {
+          job.status = 'PENDING';
+          job.last_error = settled.message || 'Waiting for confirmations';
+          job.updated_at = nowIso();
+          job.run_after = new Date(Date.now() + 10_000).toISOString();
+          await storage.saveCompensationJob(job);
+          continue;
+        }
+
+        if (!settled.ok) {
+          throw new Error(settled.message || settled.error || 'COMPENSATION_REFUND_FAILED');
+        }
+
         job.status = 'SUCCEEDED';
         job.completed_at = nowIso();
         job.updated_at = nowIso();
@@ -2886,6 +3220,47 @@ app.post('/v1/escrow/release', async (req, res) => {
   }
   addEvent(escrowEvent);
   res.json({ ok: true, escrow: record, settlement });
+});
+
+app.post('/v1/escrow/verify-resolution', async (req, res) => {
+  const body = req.body || {};
+  const requestId = String(body.request_id || body.requestId || '');
+  const txHash = String(body.tx_hash || body.txHash || body.payment_tx || '').trim();
+  const chain = body.chain || body.network || null;
+  const resolution = String(body.resolution || '').trim().toLowerCase();
+
+  if (!requestId || !txHash) {
+    return res.status(400).json({ ok: false, error: 'INVALID_REQUEST', message: 'request_id and tx_hash are required' });
+  }
+  if (!['release', 'refund'].includes(resolution)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_RESOLUTION', message: 'resolution must be release or refund' });
+  }
+
+  const settlement = await storage.getSettlement(requestId);
+  const token = normalizeCurrency(body.token || body.currency || settlement?.currency || 'USDC');
+
+  const result = await verifyAndSettleEscrowResolution({
+    requestId,
+    txHash,
+    resolution,
+    chain,
+    token,
+    actor: 'escrow_chain_verifier',
+    reason: 'onchain_resolution_verified',
+  });
+
+  if (!result.ok) {
+    if (result.error === 'NOT_FOUND') return res.status(404).json({ ok: false, error: 'NOT_FOUND', message: result.message });
+    const statusCode = result.pending ? 202 : 402;
+    return res.status(statusCode).json({
+      ok: false,
+      error: 'ESCROW_RESOLUTION_NOT_VERIFIED',
+      message: result.message || result.error || 'Resolution verification failed',
+      details: result.details || null,
+    });
+  }
+
+  res.json(result);
 });
 
 app.get('/v1/escrow/:requestId', async (req, res) => {
