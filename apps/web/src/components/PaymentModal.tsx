@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { isAddress, parseEther, parseUnits } from 'viem'
-import { useBalance, useSendTransaction, useWriteContract } from 'wagmi'
+import { useBalance, useWriteContract } from 'wagmi'
 import { useWallet, truncateAddress, USDC_ABI } from '../hooks/useWallet'
 import { BASE_NETWORK, PREFERRED_CHAIN, getChainLabel, getExplorerBaseUrl, resolveUsdcAddress } from '../lib/chain'
 import { ESCROW_ABI, encodeRequestId, getEscrowAddress } from '../lib/escrow'
@@ -10,7 +10,7 @@ type PaymentToken = 'USDC' | 'ETH'
 export interface PaymentReceipt {
   txHash: string
   token: PaymentToken
-  amount: number
+  amount: string
   chain: 'base' | 'base-sepolia'
 }
 
@@ -35,7 +35,6 @@ type PaymentStep = 'confirm' | 'switch-chain' | 'processing' | 'success' | 'erro
 
 export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: PaymentModalProps) {
   const { address, isConnected, isBaseChain, switchToBaseChain, balance, connect, chainId } = useWallet()
-  const { sendTransactionAsync } = useSendTransaction()
   const { writeContractAsync } = useWriteContract()
   const [step, setStep] = useState<PaymentStep>('confirm')
   const [selectedToken, setSelectedToken] = useState<PaymentToken>('USDC')
@@ -47,6 +46,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
   const activeChainId = chainId ?? PREFERRED_CHAIN.id
   const defaultToken = (offer.currency || 'USDC').toUpperCase() === 'ETH' ? 'ETH' : 'USDC'
   const amount = offer.priceAmount ?? offer.priceUsd ?? 0
+  const amountString = amount.toString()
   const escrowAddress = getEscrowAddress()
   const hasEnoughUsdcFromWallet = balance && parseFloat(balance) >= amount
   const chainLabel = getChainLabel(chainId ?? undefined)
@@ -111,7 +111,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
           throw new Error('Escrow contract not configured')
         }
 
-        const amountUnits = parseUnits(amount.toString(), 6)
+        const amountUnits = parseUnits(amountString, 6)
         await writeContractAsync({
           address: usdcAddress,
           abi: USDC_ABI,
@@ -127,11 +127,17 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
         })
         setTxHash(depositTx)
       } else {
-        const nativeTx = await sendTransactionAsync({
-          to: offer.provider as `0x${string}`,
-          value: parseEther(amount.toString()),
-        })
-        setTxHash(nativeTx)
+        if (!escrowAddress) {
+          throw new Error('Escrow contract not configured')
+        }
+        const ethTx = await writeContractAsync({
+          address: escrowAddress,
+          abi: ESCROW_ABI,
+          functionName: 'depositETH',
+          args: [encodeRequestId(thread.requestId), offer.provider],
+          value: parseEther(amountString),
+        } as any)
+        setTxHash(ethTx)
       }
 
       setStep('success')
@@ -153,7 +159,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
       onConfirm({
         txHash,
         token: selectedToken,
-        amount,
+        amount: amountString,
         chain: paymentChain,
       })
     }

@@ -3,9 +3,12 @@ import { createRoot } from 'react-dom/client'
 import '@rainbow-me/rainbowkit/styles.css'
 import './index.css'
 import App from './App.tsx'
+import { WalletProvider } from './hooks/useWallet'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <WalletProvider>
+      <App />
+    </WalletProvider>
   </StrictMode>,
 )

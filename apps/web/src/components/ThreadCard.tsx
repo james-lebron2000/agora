@@ -153,7 +153,6 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
         ? `eip155:${chainId ?? 84532}:${address.toLowerCase()}`
         : 'web:unknown'
       const payoutToken = payment.token
-      const payoutAmount = selectedOffer.priceAmount ?? selectedOffer.priceUsd ?? payment.amount
       const chain = chainId === 8453
         ? 'base'
         : chainId === 84532
@@ -167,7 +166,7 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
         payment_tx: payment.txHash,
         chain,
         token: payoutToken,
-        amount: payoutAmount,
+        amount: payment.amount,
         payer: address?.toLowerCase(),
         payee: selectedOffer.provider,
         terms: {
@@ -177,9 +176,9 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
           payee: selectedOffer.provider,
           token: payoutToken,
           chain,
-          amount: payoutAmount,
-          amount_usdc: payoutToken === 'USDC' ? payoutAmount : null,
-          amount_eth: payoutToken === 'ETH' ? payoutAmount : null,
+          amount: payment.amount,
+          amount_usdc: payoutToken === 'USDC' ? payment.amount : null,
+          amount_eth: payoutToken === 'ETH' ? payment.amount : null,
         },
       }
 

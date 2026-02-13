@@ -17,6 +17,16 @@ export const ESCROW_ABI = [
   },
   {
     type: 'function',
+    name: 'depositETH',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'requestId', type: 'bytes32' },
+      { name: 'seller', type: 'address' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
     name: 'release',
     stateMutability: 'nonpayable',
     inputs: [{ name: 'requestId', type: 'bytes32' }],
@@ -37,6 +47,7 @@ export const ESCROW_ABI = [
     outputs: [
       { name: 'buyer', type: 'address' },
       { name: 'seller', type: 'address' },
+      { name: 'token', type: 'address' },
       { name: 'amount', type: 'uint256' },
       { name: 'createdAt', type: 'uint64' },
       { name: 'status', type: 'uint8' },
@@ -49,6 +60,7 @@ export const ESCROW_ABI = [
       { name: 'requestId', type: 'bytes32', indexed: true },
       { name: 'buyer', type: 'address', indexed: true },
       { name: 'seller', type: 'address', indexed: true },
+      { name: 'token', type: 'address', indexed: false },
       { name: 'amount', type: 'uint256', indexed: false },
     ],
     anonymous: false,
@@ -59,6 +71,7 @@ export const ESCROW_ABI = [
     inputs: [
       { name: 'requestId', type: 'bytes32', indexed: true },
       { name: 'seller', type: 'address', indexed: true },
+      { name: 'token', type: 'address', indexed: false },
       { name: 'amount', type: 'uint256', indexed: false },
       { name: 'fee', type: 'uint256', indexed: false },
     ],
@@ -70,6 +83,7 @@ export const ESCROW_ABI = [
     inputs: [
       { name: 'requestId', type: 'bytes32', indexed: true },
       { name: 'buyer', type: 'address', indexed: true },
+      { name: 'token', type: 'address', indexed: false },
       { name: 'amount', type: 'uint256', indexed: false },
     ],
     anonymous: false,

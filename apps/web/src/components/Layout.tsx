@@ -7,12 +7,14 @@ export function Layout({
   right,
   hero,
   nav,
+  children,
 }: {
   left: ReactNode
   center: ReactNode
   right: ReactNode
   hero?: ReactNode
   nav?: ReactNode
+  children?: ReactNode
 }) {
   return (
     <div className="min-h-screen bg-agora-50">
@@ -74,6 +76,8 @@ export function Layout({
             </div>
           </aside>
         </div>
+
+        {children}
       </div>
     </div>
   )

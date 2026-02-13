@@ -17,6 +17,7 @@ type EscrowUiStatus = keyof typeof STATUS_CONFIG
 type EscrowData = {
   buyer: Address
   seller: Address
+  token: Address
   amount: bigint
   createdAt: bigint
   status: EscrowUiStatus
@@ -96,7 +97,8 @@ export function EscrowStatus({ requestId, buyer, seller, className }: EscrowStat
         functionName: 'escrows',
         args: [requestIdHash],
       })
-      const [buyerAddr, sellerAddr, amount, createdAt, status] = result as [
+      const [buyerAddr, sellerAddr, tokenAddr, amount, createdAt, status] = result as [
+        Address,
         Address,
         Address,
         bigint,
@@ -107,6 +109,7 @@ export function EscrowStatus({ requestId, buyer, seller, className }: EscrowStat
       setEscrow({
         buyer: buyerAddr,
         seller: sellerAddr,
+        token: tokenAddr,
         amount,
         createdAt,
         status: statusFromValue(Number(status)),
@@ -164,7 +167,10 @@ export function EscrowStatus({ requestId, buyer, seller, className }: EscrowStat
   }, [escrow?.status])
 
   const hasEscrow = escrow?.status && escrow.status !== 'PENDING'
-  const amountUsd = escrow ? Number(formatUnits(escrow.amount, 6)) : 0
+  const isNativeEth = escrow ? escrow.token.toLowerCase() === '0x0000000000000000000000000000000000000000' : false
+  const amountDisplay = escrow
+    ? Number(formatUnits(escrow.amount, isNativeEth ? 18 : 6))
+    : 0
   const createdAtMs = escrow ? Number(escrow.createdAt) * 1000 : 0
   const expiresAtMs = createdAtMs + ESCROW_TIMEOUT_SEC * 1000
   const timeLeftMs = escrow?.status === 'DEPOSITED' ? expiresAtMs - now : 0
@@ -250,10 +256,12 @@ export function EscrowStatus({ requestId, buyer, seller, className }: EscrowStat
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="text-right">
-                <div className="text-xs text-agora-500">Amount</div>
-                <div className="text-sm font-semibold text-agora-900">${amountUsd.toFixed(4)}</div>
-              </div>
+	              <div className="text-right">
+	                <div className="text-xs text-agora-500">Amount</div>
+	                <div className="text-sm font-semibold text-agora-900">
+	                  {isNativeEth ? `${amountDisplay.toFixed(6)} ETH` : `$${amountDisplay.toFixed(4)}`}
+	                </div>
+	              </div>
               <svg className="w-5 h-5 text-agora-400 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>

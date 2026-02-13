@@ -2198,8 +2198,9 @@ app.post('/v1/messages', async (req, res) => {
     let verifiedPayment = null;
     if (payment.txHash) {
       opsPaymentMetrics.attempts += 1;
-      const verified = await paymentVerifier.verifyUSDCTransfer({
+      const verified = await paymentVerifier.verifyEscrowDeposit({
         txHash: payment.txHash,
+        requestId,
         chain: payment.chain,
         token: payment.token,
         payer: payment.payer,
