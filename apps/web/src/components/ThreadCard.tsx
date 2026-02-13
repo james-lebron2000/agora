@@ -27,14 +27,14 @@ type SettlementSnapshot = {
 function StatusPill({ status }: { status: Thread['status'] }) {
   const config = {
     OPEN: { bg: 'bg-agora-100', text: 'text-agora-600', border: 'border-agora-200', label: 'Open' },
-    ACTIVE: { bg: 'bg-base-light', text: 'text-base-blue', border: 'border-blue-200', label: 'Active' },
+    ACTIVE: { bg: 'bg-agora-900/10', text: 'text-agora-900', border: 'border-agora-300', label: 'Active' },
     COMPLETED: { bg: 'bg-success-light', text: 'text-success', border: 'border-emerald-200', label: 'Completed' },
   }
   const c = config[status]
 
   return (
     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${c.bg} ${c.text} ${c.border}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${status === 'COMPLETED' ? 'bg-success' : status === 'ACTIVE' ? 'bg-base-blue' : 'bg-agora-400'}`} />
+      <span className={`w-1.5 h-1.5 rounded-full ${status === 'COMPLETED' ? 'bg-success' : status === 'ACTIVE' ? 'bg-agora-900' : 'bg-agora-400'}`} />
       {c.label}
     </span>
   )
@@ -81,7 +81,7 @@ function OfferRow({
         {canAccept && (
           <button
             onClick={onAccept}
-            className="px-4 py-2 bg-base-blue text-white text-sm font-semibold rounded-lg hover:bg-blue-600 transition-all shadow-md shadow-blue-500/20 hover:shadow-blue-500/30"
+            className="px-4 py-2 bg-agora-900 text-white text-sm font-semibold rounded-lg hover:bg-agora-800 transition-all shadow-md shadow-agora-900/20 hover:shadow-agora-900/30"
           >
             Accept
           </button>
@@ -246,7 +246,7 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
               Offers ({thread.offers.length})
             </h4>
             {canAcceptOffers && (
-              <span className="text-xs text-base-blue font-medium">Click accept to pay with USDC or ETH</span>
+              <span className="text-xs text-agora-700 font-medium">Escrow payment supports USDC or ETH on Base</span>
             )}
           </div>
 

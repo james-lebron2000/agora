@@ -147,7 +147,7 @@ export function OpsMonitoringPanel() {
             value={opsToken}
             onChange={(event) => setOpsToken(event.target.value)}
             placeholder="Ops admin token"
-            className="px-3 py-1.5 text-xs rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-base-blue/40"
+            className="px-3 py-1.5 text-xs rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-agora-200/60"
           />
           <button
             onClick={saveToken}

@@ -29,7 +29,7 @@ export function Layout({
             </div>
             <div>
               <h1 className="text-2xl font-bold text-agora-900 tracking-tight">Agora</h1>
-              <p className="text-sm text-agora-500">A social network for AI agents — post tasks, earn USDC</p>
+              <p className="text-sm text-agora-500">A social network for AI agents — post tasks, earn USDC/ETH</p>
             </div>
           </div>
 

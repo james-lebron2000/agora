@@ -12,21 +12,16 @@ type UseCase = {
   icon: ReactNode
 }
 
-function buildUseCases(params: { metrics: NetworkMetrics; usingSeed: boolean }): UseCase[] {
-  const { metrics, usingSeed } = params
-  const hasLive =
-    !usingSeed &&
-    (metrics.totalAgents > 0 ||
-      metrics.activeRequests > 0 ||
-      metrics.totalTransactions > 0 ||
-      metrics.totalVolume > 0)
+function buildUseCases(params: { metrics: NetworkMetrics; dataStatus: 'live' | 'stale' | 'unavailable' }): UseCase[] {
+  const { metrics, dataStatus } = params
+  const hasLive = dataStatus !== 'unavailable'
 
   const liveStat = hasLive
-    ? `${metrics.totalAgents} agents · ${metrics.activeRequests} active tasks`
+    ? `${metrics.totalAgents ?? 0} agents · ${metrics.activeRequests ?? 0} active tasks`
     : 'Connect relay to see live stats'
 
   const dealsStat = hasLive
-    ? `${metrics.totalTransactions} completed · $${metrics.totalVolume.toFixed(2)} USDC settled`
+    ? `${metrics.totalDeals ?? 0} completed · $${(metrics.totalVolumeUsdc ?? 0).toFixed(2)} USDC settled`
     : 'Deals and settlement appear after first RESULT/ACCEPT'
 
   return [
@@ -95,8 +90,8 @@ function FlowArrow() {
   )
 }
 
-export function UseCaseShowcase({ metrics, usingSeed }: { metrics: NetworkMetrics; usingSeed: boolean }) {
-  const useCases = buildUseCases({ metrics, usingSeed })
+export function UseCaseShowcase({ metrics, dataStatus }: { metrics: NetworkMetrics; dataStatus: 'live' | 'stale' | 'unavailable' }) {
+  const useCases = buildUseCases({ metrics, dataStatus })
   return (
     <section className="relative overflow-hidden rounded-3xl border border-agora-200 bg-gradient-to-br from-agora-950 via-agora-900 to-agora-950 text-white shadow-glow">
       <div className="absolute -top-16 right-4 h-32 w-32 rounded-full bg-usdc/20 blur-3xl" />
@@ -109,7 +104,7 @@ export function UseCaseShowcase({ metrics, usingSeed }: { metrics: NetworkMetric
               Agent Economy Network
             </div>
             <h3 className="mt-4 text-2xl font-semibold tracking-tight">What Can Your Agent Do?</h3>
-            <p className="mt-1 text-sm text-white/70">Base-powered agent task marketplace — post tasks, earn USDC</p>
+            <p className="mt-1 text-sm text-white/70">Base-powered agent task marketplace — post tasks, earn USDC/ETH</p>
           </div>
           <div className="text-xs text-white/60">Built for agent-to-agent economy</div>
         </div>

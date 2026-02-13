@@ -44,8 +44,11 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
   if (!isOpen || !offer || !thread) return null
 
   const activeChainId = chainId ?? PREFERRED_CHAIN.id
-  const defaultToken = (offer.currency || 'USDC').toUpperCase() === 'ETH' ? 'ETH' : 'USDC'
-  const amount = offer.priceAmount ?? offer.priceUsd ?? 0
+  const offerToken: PaymentToken = (offer.currency || 'USDC').toUpperCase() === 'ETH' ? 'ETH' : 'USDC'
+  const tokenLocked = Boolean(offer.currency)
+  const defaultToken = offerToken
+  const isSelectedTokenAllowed = !tokenLocked || selectedToken === offerToken
+  const amount = isSelectedTokenAllowed ? (offer.priceAmount ?? offer.priceUsd ?? 0) : 0
   const amountString = amount.toString()
   const escrowAddress = getEscrowAddress()
   const hasEnoughUsdcFromWallet = balance && parseFloat(balance) >= amount
@@ -182,14 +185,14 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
       {/* Modal */}
       <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
         {/* Header */}
-        <div className="bg-gradient-to-r from-base-blue to-blue-600 px-6 py-4">
+        <div className="bg-gradient-to-r from-agora-900 to-agora-800 px-6 py-4">
           <h3 className="text-lg font-semibold text-white flex items-center gap-2">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             Pay with {selectedToken}
           </h3>
-          <p className="text-blue-100 text-sm mt-1">{chainLabel}</p>
+          <p className="text-white/75 text-sm mt-1">{chainLabel}</p>
         </div>
 
         {/* Content */}
@@ -203,10 +206,11 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                   <button
                     type="button"
                     onClick={() => setSelectedToken('USDC')}
+                    disabled={tokenLocked && offerToken !== 'USDC'}
                     className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
                       selectedToken === 'USDC'
-                        ? 'border-base-blue bg-base-light text-base-blue'
-                        : 'border-agora-200 text-agora-600 hover:bg-agora-50'
+                        ? 'border-agora-900 bg-agora-900 text-white'
+                        : 'border-agora-200 text-agora-700 hover:bg-agora-50'
                     }`}
                   >
                     USDC
@@ -214,15 +218,21 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                   <button
                     type="button"
                     onClick={() => setSelectedToken('ETH')}
+                    disabled={tokenLocked && offerToken !== 'ETH'}
                     className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
                       selectedToken === 'ETH'
-                        ? 'border-base-blue bg-base-light text-base-blue'
-                        : 'border-agora-200 text-agora-600 hover:bg-agora-50'
+                        ? 'border-agora-900 bg-agora-900 text-white'
+                        : 'border-agora-200 text-agora-700 hover:bg-agora-50'
                     }`}
                   >
                     ETH
                   </button>
                 </div>
+                {tokenLocked ? (
+                  <div className="mt-2 text-xs text-agora-500">
+                    This offer is priced in {offerToken}. Dual-currency support means you can accept offers priced in USDC or ETH.
+                  </div>
+                ) : null}
               </div>
 
               <div className="bg-agora-50 rounded-xl p-4 mb-6">
@@ -238,17 +248,17 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                 <div className="flex justify-between items-center">
                   <span className="text-agora-600 font-medium">Total</span>
                   <div className="flex items-center gap-2">
-                    <span className="text-2xl font-bold text-usdc">
+                    <span className="text-2xl font-bold text-agora-900">
                       {selectedToken === 'USDC' ? `$${amount.toFixed(4)}` : amount.toFixed(6)}
                     </span>
-                    <span className="bg-usdc-light text-usdc text-xs font-semibold px-2 py-1 rounded-full">{selectedToken}</span>
+                    <span className="bg-agora-100 text-agora-700 text-xs font-semibold px-2 py-1 rounded-full">{selectedToken}</span>
                   </div>
                 </div>
               </div>
 
               {/* Wallet Info */}
               {isConnected ? (
-                <div className="mb-6 p-3 bg-base-light rounded-lg">
+                <div className="mb-6 p-3 bg-agora-50 rounded-lg border border-agora-200">
                   <div className="flex justify-between items-center">
                     <span className="text-agora-600 text-sm">Connected</span>
                     <span className="text-agora-900 font-mono text-sm">{truncateAddress(address!, 4)}</span>
@@ -285,12 +295,18 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                 </button>
                 <button
                   onClick={handlePay}
-                  disabled={isConnected && (!isBaseChain || amount <= 0)}
-                  className="flex-1 px-4 py-3 rounded-xl bg-base-blue text-white font-semibold hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/25"
+                  disabled={isConnected && (!isBaseChain || amount <= 0 || !isSelectedTokenAllowed)}
+                  className="flex-1 px-4 py-3 rounded-xl bg-agora-900 text-white font-semibold hover:bg-agora-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-agora-900/25"
                 >
                   {isConnected ? `Pay ${selectedToken}` : 'Connect Wallet'}
                 </button>
               </div>
+
+              {!isSelectedTokenAllowed ? (
+                <p className="text-center text-xs text-warning mt-3">
+                  This offer is priced in {offerToken}. Switch token to continue.
+                </p>
+              ) : null}
 
               {isConnected && !isBaseChain && (
                 <p className="text-center text-xs text-agora-500 mt-3">
@@ -302,8 +318,8 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
 
           {step === 'switch-chain' && (
             <div className="text-center py-8">
-              <div className="w-16 h-16 bg-base-light rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-base-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="w-16 h-16 bg-agora-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-agora-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                 </svg>
               </div>
@@ -318,7 +334,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                 </button>
                 <button
                   onClick={handleSwitchChain}
-                  className="flex-1 px-4 py-3 rounded-xl bg-base-blue text-white font-semibold hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/25"
+                  className="flex-1 px-4 py-3 rounded-xl bg-agora-900 text-white font-semibold hover:bg-agora-800 transition-all shadow-lg shadow-agora-900/25"
                 >
                   Switch to {chainLabel}
                 </button>
@@ -328,8 +344,8 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
 
           {step === 'processing' && (
             <div className="text-center py-8">
-              <div className="w-16 h-16 bg-base-light rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                <svg className="w-8 h-8 text-base-blue animate-spin" fill="none" viewBox="0 0 24 24">
+              <div className="w-16 h-16 bg-agora-100 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                <svg className="w-8 h-8 text-agora-900 animate-spin" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
@@ -356,7 +372,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                     href={`${explorerBaseUrl}/tx/${txHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs font-mono text-base-blue hover:underline break-all"
+                    className="text-xs font-mono text-agora-900 hover:underline break-all"
                   >
                     {txHash}
                   </a>
@@ -391,7 +407,7 @@ export function PaymentModal({ isOpen, onClose, onConfirm, offer, thread }: Paym
                 </button>
                 <button
                   onClick={handleRetry}
-                  className="flex-1 px-4 py-3 rounded-xl bg-base-blue text-white font-semibold hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/25"
+                  className="flex-1 px-4 py-3 rounded-xl bg-agora-900 text-white font-semibold hover:bg-agora-800 transition-all shadow-lg shadow-agora-900/25"
                 >
                   Try Again
                 </button>

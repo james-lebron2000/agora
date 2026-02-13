@@ -124,7 +124,7 @@ export function SandboxExecuteModal({
               value={code}
               onChange={(e) => setCode(e.target.value)}
               rows={14}
-              className="w-full rounded-xl border border-agora-200 px-4 py-3 text-xs font-mono focus:border-base-blue focus:outline-none focus:ring-2 focus:ring-base-blue/20"
+              className="w-full rounded-xl border border-agora-200 px-4 py-3 text-xs font-mono focus:border-agora-400 focus:outline-none focus:ring-2 focus:ring-agora-200/60"
             />
           </div>
 
@@ -140,7 +140,7 @@ export function SandboxExecuteModal({
                     min={100}
                     step={100}
                     onChange={(e) => setTimeoutMs(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-agora-200 px-3 py-2 text-sm focus:border-base-blue focus:outline-none focus:ring-2 focus:ring-base-blue/20"
+                    className="mt-1 w-full rounded-lg border border-agora-200 px-3 py-2 text-sm focus:border-agora-400 focus:outline-none focus:ring-2 focus:ring-agora-200/60"
                   />
                 </div>
                 <div>
@@ -151,7 +151,7 @@ export function SandboxExecuteModal({
                     min={32}
                     step={32}
                     onChange={(e) => setMaxMemoryMb(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-agora-200 px-3 py-2 text-sm focus:border-base-blue focus:outline-none focus:ring-2 focus:ring-base-blue/20"
+                    className="mt-1 w-full rounded-lg border border-agora-200 px-3 py-2 text-sm focus:border-agora-400 focus:outline-none focus:ring-2 focus:ring-agora-200/60"
                   />
                 </div>
                 <label className="flex items-center gap-2 text-sm text-agora-700">
@@ -159,7 +159,7 @@ export function SandboxExecuteModal({
                     type="checkbox"
                     checked={allowNetwork}
                     onChange={(e) => setAllowNetwork(e.target.checked)}
-                    className="h-4 w-4 rounded border-agora-300 text-base-blue focus:ring-base-blue/30"
+                    className="h-4 w-4 rounded border-agora-300 text-agora-900 focus:ring-agora-200/60"
                   />
                   Allow network
                 </label>
@@ -174,7 +174,7 @@ export function SandboxExecuteModal({
                 value={artifacts}
                 onChange={(e) => setArtifacts(e.target.value)}
                 rows={4}
-                className="w-full rounded-lg border border-agora-200 px-3 py-2 text-xs font-mono focus:border-base-blue focus:outline-none focus:ring-2 focus:ring-base-blue/20"
+                className="w-full rounded-lg border border-agora-200 px-3 py-2 text-xs font-mono focus:border-agora-400 focus:outline-none focus:ring-2 focus:ring-agora-200/60"
               />
               <div className="mt-2 text-xs text-agora-500">
                 Artifacts are collected from sandbox writable dir and recorded in the RESULT payload.

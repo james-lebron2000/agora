@@ -6,7 +6,8 @@ import { QuickStart } from './components/QuickStart'
 import { Feed } from './components/Feed'
 import { OpsMonitoringPanel } from './components/OpsMonitoringPanel'
 import { NetworkStats, type NetworkMetrics } from './components/NetworkStats'
-import { aggregateThreads, type AgoraEvent, SEED_EVENTS } from './lib/agora'
+import { AgentDirectory } from './components/AgentDirectory'
+import { aggregateThreads, type AgoraEvent } from './lib/agora'
 import { resolveRelayUrl } from './lib/relayUrl'
 
 type RelayMessagesResponse = {
@@ -16,26 +17,55 @@ type RelayMessagesResponse = {
   message?: string
 }
 
+type RelayAgentsResponse = {
+  ok: boolean
+  agents?: any[]
+  error?: string
+  message?: string
+}
+
 function clampNumber(value: number, fallback = 0) {
   if (!Number.isFinite(value)) return fallback
   return value
 }
 
-function buildNetworkStatsFromThreads(events: AgoraEvent[], threads: ReturnType<typeof aggregateThreads>): NetworkMetrics {
-  const totalAgents = 0
-  const completed = threads.filter((t) => t.status === 'COMPLETED').length
+function buildNetworkStatsFromThreads(params: {
+  events: AgoraEvent[]
+  threads: ReturnType<typeof aggregateThreads>
+  agentCount: number | null
+  dataStatus: 'live' | 'stale' | 'unavailable'
+}): NetworkMetrics {
+  const { events, threads, agentCount, dataStatus } = params
+  if (dataStatus === 'unavailable') {
+    return {
+      totalAgents: null,
+      totalDeals: null,
+      totalVolumeUsdc: null,
+      totalVolumeEth: null,
+      activeRequests: null,
+      volume24hUsdc: null,
+      volume24hEth: null,
+    }
+  }
+
+  const totalDeals = threads.filter((t) => t.status === 'COMPLETED').length
   const activeRequests = threads.filter((t) => t.status !== 'COMPLETED').length
 
-  // Volume is derived from ACCEPT events. This is best-effort; canonical accounting is in relay ops/finance export.
-  const volume = threads.reduce((sum, t) => {
+  const totalVolumeUsdc = threads.reduce((sum, t) => {
     const token = String(t.paymentToken || '').toUpperCase()
     if (token !== 'USDC') return sum
     return sum + clampNumber(Number(t.paymentAmount || 0), 0)
   }, 0)
 
+  const totalVolumeEth = threads.reduce((sum, t) => {
+    const token = String(t.paymentToken || '').toUpperCase()
+    if (token !== 'ETH') return sum
+    return sum + clampNumber(Number(t.paymentAmount || 0), 0)
+  }, 0)
+
   const now = Date.now()
   const dayAgo = now - 24 * 60 * 60 * 1000
-  const volume24h = events.reduce((sum, e) => {
+  const volume24hUsdc = events.reduce((sum, e) => {
     if (String(e.type || '').toUpperCase() !== 'ACCEPT') return sum
     const ts = Date.parse(e.ts || '')
     if (!Number.isFinite(ts) || ts < dayAgo) return sum
@@ -45,22 +75,35 @@ function buildNetworkStatsFromThreads(events: AgoraEvent[], threads: ReturnType<
     return sum + (Number.isFinite(amount) ? amount : 0)
   }, 0)
 
+  const volume24hEth = events.reduce((sum, e) => {
+    if (String(e.type || '').toUpperCase() !== 'ACCEPT') return sum
+    const ts = Date.parse(e.ts || '')
+    if (!Number.isFinite(ts) || ts < dayAgo) return sum
+    const token = String(e.payload?.token || '').toUpperCase()
+    if (token !== 'ETH') return sum
+    const amount = Number(e.payload?.amount ?? e.payload?.amount_eth ?? 0)
+    return sum + (Number.isFinite(amount) ? amount : 0)
+  }, 0)
+
   return {
-    totalAgents,
-    totalTransactions: completed,
-    totalVolume: Math.round(volume * 100) / 100,
+    totalAgents: agentCount,
+    totalDeals,
+    totalVolumeUsdc: Math.round(totalVolumeUsdc * 100) / 100,
+    totalVolumeEth: Math.round(totalVolumeEth * 1e6) / 1e6,
     activeRequests,
-    volume24h: Math.round(volume24h * 100) / 100,
+    volume24hUsdc: Math.round(volume24hUsdc * 100) / 100,
+    volume24hEth: Math.round(volume24hEth * 1e6) / 1e6,
   }
 }
 
 export default function App() {
   const relayUrl = useMemo(() => resolveRelayUrl(), [])
-  const [usingSeed, setUsingSeed] = useState(false)
   const [events, setEvents] = useState<AgoraEvent[]>([])
+  const [agentCount, setAgentCount] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [dataStatus, setDataStatus] = useState<'live' | 'stale' | 'unavailable'>('unavailable')
 
   useEffect(() => {
     let active = true
@@ -68,21 +111,28 @@ export default function App() {
 
     const load = async () => {
       try {
-        const res = await fetch(`${relayUrl}/v1/messages`)
-        const json = (await res.json()) as RelayMessagesResponse
-        if (!res.ok || !json.ok) {
-          throw new Error(json.message || json.error || `Failed to fetch relay events (${res.status})`)
+        const [eventsRes, agentsRes] = await Promise.all([
+          fetch(`${relayUrl.replace(/\/$/, '')}/v1/messages`),
+          fetch(`${relayUrl.replace(/\/$/, '')}/v1/agents`),
+        ])
+        const eventsJson = (await eventsRes.json()) as RelayMessagesResponse
+        const agentsJson = (await agentsRes.json()) as RelayAgentsResponse
+
+        if (!eventsRes.ok || !eventsJson.ok) {
+          throw new Error(eventsJson.message || eventsJson.error || `Failed to fetch relay events (${eventsRes.status})`)
         }
-        const incoming = Array.isArray(json.events) ? json.events : []
+
+        const incoming = Array.isArray(eventsJson.events) ? eventsJson.events : []
+        const agents = agentsRes.ok && agentsJson.ok && Array.isArray(agentsJson.agents) ? agentsJson.agents : null
         if (!active) return
         setEvents(incoming)
-        setUsingSeed(false)
+        setAgentCount(agents ? agents.length : null)
         setError(null)
+        setDataStatus('live')
       } catch (err) {
         if (!active) return
-        setUsingSeed(true)
-        setEvents(SEED_EVENTS)
         setError(err instanceof Error ? err.message : 'Failed to fetch relay events')
+        setDataStatus((prev) => (prev === 'unavailable' ? 'unavailable' : 'stale'))
       } finally {
         if (active) setLoading(false)
       }
@@ -101,7 +151,10 @@ export default function App() {
   }, [relayUrl])
 
   const threads = useMemo(() => aggregateThreads(events), [events])
-  const networkStats = useMemo(() => buildNetworkStatsFromThreads(events, threads), [events, threads])
+  const networkStats = useMemo(
+    () => buildNetworkStatsFromThreads({ events, threads, agentCount, dataStatus }),
+    [agentCount, dataStatus, events, threads],
+  )
 
   return (
     <Layout
@@ -113,8 +166,8 @@ export default function App() {
       }
       center={
         <div className="space-y-6">
-          <UseCaseShowcase metrics={networkStats} usingSeed={usingSeed} />
-          <NetworkStats metrics={networkStats} refreshKey={refreshKey} />
+          <UseCaseShowcase metrics={networkStats} dataStatus={dataStatus} />
+          <NetworkStats metrics={networkStats} refreshKey={refreshKey} dataStatus={dataStatus} />
 
           {loading ? (
             <div className="rounded-2xl border border-agora-200 bg-white p-5 text-sm text-agora-600">
@@ -124,7 +177,7 @@ export default function App() {
 
           {error ? (
             <div className="rounded-2xl border border-warning/40 bg-warning-light/30 p-5 text-sm text-agora-700">
-              Relay unavailable, using seed data: {error}
+              Relay unavailable: {error}
             </div>
           ) : null}
 
@@ -137,11 +190,14 @@ export default function App() {
         <div className="space-y-6">
           <OpsMonitoringPanel />
           <div className="rounded-2xl border border-agora-200 bg-white p-5 text-xs text-agora-500">
-            Data source: {usingSeed ? 'seed events (fallback)' : 'relay /v1/messages'}.
+            Data source: {dataStatus === 'unavailable' ? 'relay unreachable' : dataStatus === 'stale' ? 'relay (stale snapshot)' : 'relay (live snapshot)'}.
           </div>
         </div>
       }
     >
+      <div className="mt-6 space-y-6">
+        <AgentDirectory relayUrl={relayUrl} />
+      </div>
     </Layout>
   )
 }

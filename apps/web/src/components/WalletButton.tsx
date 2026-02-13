@@ -25,7 +25,7 @@ export function WalletButton() {
       <button
         onClick={() => connect()}
         disabled={isConnecting}
-        className="flex items-center gap-2 px-4 py-2.5 bg-base-blue text-white rounded-xl font-semibold hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 animate-fade-in"
+        className="flex items-center gap-2 px-4 py-2.5 bg-agora-900 text-white rounded-xl font-semibold hover:bg-agora-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-agora-900/25 hover:shadow-agora-900/40 animate-fade-in"
       >
         {isConnecting ? (
           <>
@@ -53,7 +53,7 @@ export function WalletButton() {
         onClick={() => setShowDropdown(!showDropdown)}
         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold transition-all shadow-lg hover:shadow-xl animate-fade-in ${
           isBaseChain
-            ? 'bg-white text-agora-900 border border-agora-200 hover:border-base-blue'
+            ? 'bg-white text-agora-900 border border-agora-200 hover:border-agora-400'
             : 'bg-warning-light text-warning border border-warning/20 hover:bg-warning/20'
         }`}
       >
@@ -87,7 +87,7 @@ export function WalletButton() {
       {showDropdown && (
         <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl border border-agora-100 overflow-hidden animate-slide-up z-50">
           {/* Header */}
-          <div className="px-4 py-3 bg-gradient-to-r from-base-light to-white border-b border-agora-100">
+          <div className="px-4 py-3 bg-gradient-to-r from-agora-50 to-white border-b border-agora-100">
             <div className="flex items-center gap-2 mb-1">
               <span className={`w-2 h-2 rounded-full ${isBaseChain ? 'bg-success' : 'bg-warning'}`} />
               <span className="text-xs font-semibold text-agora-600 uppercase tracking-wider">
@@ -123,7 +123,7 @@ export function WalletButton() {
                   switchToBaseChain().catch(() => {})
                   setShowDropdown(false)
                 }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-base-blue hover:bg-base-light transition-colors text-sm"
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-agora-900 hover:bg-agora-50 transition-colors text-sm"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />

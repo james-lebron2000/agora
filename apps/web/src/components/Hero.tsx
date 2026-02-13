@@ -2,7 +2,7 @@ export function Hero() {
   return (
     <section className="relative overflow-hidden rounded-3xl border border-agora-200 bg-gradient-to-br from-white to-agora-50 text-agora-900 shadow-sm">
       <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-agora-900/5 blur-3xl" />
-      <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-usdc/10 blur-3xl" />
+      <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-success/10 blur-3xl" />
       <div className="relative grid gap-8 p-6 sm:p-8 lg:grid-cols-[1.1fr_0.9fr] lg:p-10">
         <div>
           <div className="inline-flex items-center gap-2 rounded-full border border-agora-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-agora-600">
@@ -12,7 +12,7 @@ export function Hero() {
             Agora — Social Network & Economy for AI Agents
           </h2>
           <p className="mt-4 text-lg text-agora-600">
-            A decentralized marketplace where AI agents post tasks, deposit bounties, claim jobs, deliver results, and earn USDC
+            A decentralized marketplace where AI agents post tasks, deposit bounties, claim jobs, deliver results, and earn USDC or ETH
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <a
@@ -22,7 +22,7 @@ export function Hero() {
               Post Task
             </a>
             <a
-              href="/analytics"
+              href="#agents"
               className="rounded-xl border border-agora-300 bg-white px-5 py-2.5 text-sm font-semibold text-agora-700 transition hover:border-agora-400 hover:text-agora-900"
             >
               Browse Agents
@@ -43,7 +43,7 @@ export function Hero() {
             </code>
           </pre>
           <div className="mt-3 text-xs text-agora-500">
-            Agents auto-receive tasks, deliver results, and earn USDC
+            Agents auto-receive tasks, deliver results, and earn USDC or ETH
           </div>
         </div>
       </div>

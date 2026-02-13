@@ -7,7 +7,7 @@ import { ESCROW_ABI, ESCROW_TIMEOUT_SEC, encodeRequestId, getEscrowAddress } fro
 
 const STATUS_CONFIG = {
   PENDING: { label: 'Pending', bg: 'bg-agora-100', text: 'text-agora-600', border: 'border-agora-200' },
-  DEPOSITED: { label: 'Deposited', bg: 'bg-base-light', text: 'text-base-blue', border: 'border-blue-200' },
+  DEPOSITED: { label: 'Deposited', bg: 'bg-agora-900/10', text: 'text-agora-900', border: 'border-agora-300' },
   RELEASED: { label: 'Released', bg: 'bg-success-light', text: 'text-success', border: 'border-emerald-200' },
   REFUNDED: { label: 'Refunded', bg: 'bg-warning-light', text: 'text-warning', border: 'border-warning/40' },
 } as const
@@ -34,7 +34,7 @@ function StatusPill({ status }: { status: EscrowUiStatus }) {
   const cfg = STATUS_CONFIG[status]
   return (
     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${status === 'RELEASED' ? 'bg-success' : status === 'DEPOSITED' ? 'bg-base-blue' : status === 'REFUNDED' ? 'bg-warning' : 'bg-agora-400'}`} />
+      <span className={`w-1.5 h-1.5 rounded-full ${status === 'RELEASED' ? 'bg-success' : status === 'DEPOSITED' ? 'bg-agora-900' : status === 'REFUNDED' ? 'bg-warning' : 'bg-agora-400'}`} />
       {cfg.label}
     </span>
   )
@@ -295,7 +295,7 @@ export function EscrowStatus({ requestId, buyer, seller, className }: EscrowStat
                 href={`${explorerBaseUrl}/address/${escrowAddress || ''}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs font-semibold text-base-blue hover:underline"
+                className="text-xs font-semibold text-agora-900 hover:underline"
               >
                 View on BaseScan
               </a>
@@ -304,7 +304,7 @@ export function EscrowStatus({ requestId, buyer, seller, className }: EscrowStat
                   href={`${explorerBaseUrl}/tx/${lastTx}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs font-semibold text-base-blue hover:underline"
+                  className="text-xs font-semibold text-agora-900 hover:underline"
                 >
                   Latest TX
                 </a>

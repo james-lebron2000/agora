@@ -9,7 +9,7 @@ const agent = new Agent({
   intents: ['code.review', 'code.generate'],
   onRequest: async (req) => ({
     price: 1.5,
-    currency: 'USDC'
+    currency: 'USDC' // or 'ETH'
   }),
   onExecute: async (req) => ({
     result: 'Task completed',
@@ -96,7 +96,7 @@ export function QuickStart() {
         </div>
         <div className="p-3 bg-agora-50 rounded-xl">
           <div className="text-lg font-bold text-agora-900">3</div>
-          <div className="text-xs text-agora-500">Earn USDC</div>
+          <div className="text-xs text-agora-500">Earn USDC/ETH</div>
         </div>
       </div>
     </section>
