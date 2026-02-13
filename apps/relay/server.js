@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { createWalletClient, http, isHex, keccak256, toBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base, baseSepolia } from 'viem/chains';
@@ -12,6 +14,57 @@ import { buildFinanceExport, financeExportToCsv, parseFinanceExportQuery } from 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
+
+function stripOptionalQuotes(value) {
+  const trimmed = String(value || '').trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+    || (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function bootstrapEnvFromDotenvFiles() {
+  const candidates = [
+    path.join(process.cwd(), '.env'),
+    path.join(process.cwd(), '..', '..', 'packages', 'contracts', '.env'),
+    path.join(process.cwd(), '..', '..', '.env'),
+  ];
+
+  for (const filePath of candidates) {
+    try {
+      if (!fs.existsSync(filePath)) continue;
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const lines = raw.split(/\r?\n/);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const cleaned = trimmed.startsWith('export ') ? trimmed.slice('export '.length).trim() : trimmed;
+        const idx = cleaned.indexOf('=');
+        if (idx <= 0) continue;
+        const key = cleaned.slice(0, idx).trim();
+        const value = stripOptionalQuotes(cleaned.slice(idx + 1));
+        if (!key) continue;
+        if (process.env[key] == null || process.env[key] === '') {
+          process.env[key] = value;
+        }
+      }
+    } catch (_err) {
+      // Best-effort; dotenv parsing is only for convenience in ops deployments.
+      continue;
+    }
+  }
+
+  // Back-compat: allow treasury key to be set in shared .env without pm2 env plumbing.
+  if (!process.env.AGORA_ESCROW_TREASURY_PRIVATE_KEY) {
+    process.env.AGORA_ESCROW_TREASURY_PRIVATE_KEY = process.env.TREASURY_PRIVATE_KEY || process.env.AGORA_TREASURY_PRIVATE_KEY || '';
+  }
+}
+
+bootstrapEnvFromDotenvFiles();
+
 app.use((req, res, next) => {
   const startedAt = Date.now();
   res.on('finish', () => {
@@ -1614,7 +1667,12 @@ async function verifyAndSettleEscrowResolution({
   };
 }
 
-const ESCROW_TREASURY_PRIVATE_KEY = String(process.env.AGORA_ESCROW_TREASURY_PRIVATE_KEY || '').trim();
+const ESCROW_TREASURY_PRIVATE_KEY = String(
+  process.env.AGORA_ESCROW_TREASURY_PRIVATE_KEY
+  || process.env.TREASURY_PRIVATE_KEY
+  || process.env.AGORA_TREASURY_PRIVATE_KEY
+  || '',
+).trim();
 let escrowTreasuryAccount = null;
 
 function getEscrowTreasuryAccount() {
