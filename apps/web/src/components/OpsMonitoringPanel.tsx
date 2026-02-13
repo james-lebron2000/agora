@@ -11,6 +11,9 @@ type AlertItem = {
 
 type OpsDashboardPayload = {
   generated_at: string
+  escrow?: {
+    treasury_key_configured?: boolean
+  }
   payments: {
     attempts: number
     verified: number
@@ -60,6 +63,34 @@ type OpsResponse = {
   message?: string
 }
 
+type CompensationJob = {
+  job_id: string
+  request_id: string
+  reason: string
+  status: string
+  attempts: number
+  max_attempts: number
+  run_after: string
+  updated_at: string
+  completed_at: string | null
+  last_error: string | null
+  metadata?: any
+}
+
+type CompensationJobsResponse = {
+  ok: boolean
+  total?: number
+  jobs?: CompensationJob[]
+  error?: string
+  message?: string
+}
+
+type OpsActionResponse = {
+  ok: boolean
+  error?: string
+  message?: string
+}
+
 const percent = new Intl.NumberFormat('en-US', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const money = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })
 const TOKEN_STORAGE_KEY = 'agora_ops_admin_token'
@@ -82,6 +113,10 @@ export function OpsMonitoringPanel() {
   const [loading, setLoading] = useState(true)
   const [opsToken, setOpsToken] = useState('')
   const [tokenTouched, setTokenTouched] = useState(false)
+  const [jobs, setJobs] = useState<CompensationJob[]>([])
+  const [jobsError, setJobsError] = useState<string | null>(null)
+  const [actionStatus, setActionStatus] = useState<string | null>(null)
+  const [actionBusy, setActionBusy] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -93,12 +128,13 @@ export function OpsMonitoringPanel() {
     let active = true
     let timer: ReturnType<typeof setInterval> | null = null
 
+    const headers: Record<string, string> = {}
+    if (opsToken.trim()) {
+      headers.Authorization = `Bearer ${opsToken.trim()}`
+    }
+
     const fetchDashboard = async () => {
       try {
-        const headers: Record<string, string> = {}
-        if (opsToken.trim()) {
-          headers.Authorization = `Bearer ${opsToken.trim()}`
-        }
         const res = await fetch(`${relayUrl}/v1/ops/dashboard`, { headers })
         const json = (await res.json()) as OpsResponse
         if (!res.ok || !json.ok || !json.dashboard) {
@@ -115,9 +151,28 @@ export function OpsMonitoringPanel() {
       }
     }
 
+    const fetchJobs = async () => {
+      try {
+        const res = await fetch(`${relayUrl}/v1/ops/compensation/jobs?limit=20`, { headers })
+        const json = (await res.json()) as CompensationJobsResponse
+        if (!res.ok || !json.ok) {
+          throw new Error(json.message || json.error || `Failed to load compensation jobs (${res.status})`)
+        }
+        if (!active) return
+        setJobs(Array.isArray(json.jobs) ? json.jobs : [])
+        setJobsError(null)
+      } catch (err) {
+        if (!active) return
+        setJobs([])
+        setJobsError(err instanceof Error ? err.message : 'Failed to load compensation jobs')
+      }
+    }
+
     fetchDashboard().catch(() => {})
+    fetchJobs().catch(() => {})
     timer = setInterval(() => {
       fetchDashboard().catch(() => {})
+      fetchJobs().catch(() => {})
     }, 8000)
 
     return () => {
@@ -125,6 +180,48 @@ export function OpsMonitoringPanel() {
       if (timer) clearInterval(timer)
     }
   }, [opsToken, relayUrl])
+
+  const runCompensation = async () => {
+    setActionBusy(true)
+    setActionStatus(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (opsToken.trim()) headers.Authorization = `Bearer ${opsToken.trim()}`
+      const res = await fetch(`${relayUrl}/v1/ops/compensation/run`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ trigger: 'web_ops' }),
+      })
+      const json = (await res.json()) as OpsActionResponse
+      if (!res.ok || !json.ok) throw new Error(json.message || json.error || `Failed (${res.status})`)
+      setActionStatus('Compensation worker triggered.')
+    } catch (err) {
+      setActionStatus(err instanceof Error ? err.message : 'Compensation trigger failed')
+    } finally {
+      setActionBusy(false)
+    }
+  }
+
+  const generateReconciliationReport = async () => {
+    setActionBusy(true)
+    setActionStatus(null)
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (opsToken.trim()) headers.Authorization = `Bearer ${opsToken.trim()}`
+      const res = await fetch(`${relayUrl}/v1/ops/reconciliation/report`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ period: '24h' }),
+      })
+      const json = (await res.json()) as OpsActionResponse
+      if (!res.ok || !json.ok) throw new Error(json.message || json.error || `Failed (${res.status})`)
+      setActionStatus('Reconciliation report generated.')
+    } catch (err) {
+      setActionStatus(err instanceof Error ? err.message : 'Reconciliation report failed')
+    } finally {
+      setActionBusy(false)
+    }
+  }
 
   const saveToken = () => {
     if (typeof window === 'undefined') return
@@ -177,6 +274,31 @@ export function OpsMonitoringPanel() {
         <>
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-500">Updated {new Date(dashboard.generated_at).toLocaleTimeString()}</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              disabled={actionBusy}
+              onClick={() => runCompensation().catch(() => {})}
+              className="px-3 py-1.5 text-xs font-semibold rounded-md border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Run Compensation
+            </button>
+            <button
+              disabled={actionBusy}
+              onClick={() => generateReconciliationReport().catch(() => {})}
+              className="px-3 py-1.5 text-xs font-semibold rounded-md border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Generate Reconciliation
+            </button>
+            {typeof dashboard.escrow?.treasury_key_configured === 'boolean' ? (
+              <span className={`px-3 py-1.5 text-xs rounded-md border ${dashboard.escrow.treasury_key_configured ? 'bg-green-50 border-green-200 text-green-700' : 'bg-yellow-50 border-yellow-200 text-yellow-700'}`}>
+                treasury key: {dashboard.escrow.treasury_key_configured ? 'configured' : 'missing'}
+              </span>
+            ) : null}
+            {actionStatus ? (
+              <span className="text-xs text-gray-600">{actionStatus}</span>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
@@ -253,6 +375,51 @@ export function OpsMonitoringPanel() {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="p-4 bg-white rounded-xl border border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-gray-500">Recent Compensation Jobs</div>
+              <div className="text-[11px] text-gray-400">/v1/ops/compensation/jobs</div>
+            </div>
+            {jobsError ? (
+              <div className="mt-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                Failed to load jobs: {jobsError}
+              </div>
+            ) : null}
+            {jobs.length === 0 && !jobsError ? (
+              <div className="mt-2 text-sm text-gray-500">No jobs yet</div>
+            ) : null}
+            {jobs.length > 0 ? (
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-gray-500">
+                      <th className="py-2 pr-3">status</th>
+                      <th className="py-2 pr-3">reason</th>
+                      <th className="py-2 pr-3">request</th>
+                      <th className="py-2 pr-3">attempts</th>
+                      <th className="py-2 pr-3">run_after</th>
+                      <th className="py-2 pr-3">tx</th>
+                      <th className="py-2 pr-3">error</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-gray-800">
+                    {jobs.map((job) => (
+                      <tr key={job.job_id} className="border-t border-gray-100">
+                        <td className="py-2 pr-3 font-semibold">{job.status}</td>
+                        <td className="py-2 pr-3">{job.reason}</td>
+                        <td className="py-2 pr-3 font-mono">{job.request_id}</td>
+                        <td className="py-2 pr-3">{job.attempts}/{job.max_attempts}</td>
+                        <td className="py-2 pr-3">{job.run_after ? new Date(job.run_after).toLocaleString() : 'N/A'}</td>
+                        <td className="py-2 pr-3 font-mono">{job.metadata?.tx_hash ? String(job.metadata.tx_hash).slice(0, 10) + '…' : ''}</td>
+                        <td className="py-2 pr-3 text-gray-500">{job.last_error || ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </div>
         </>
       )}

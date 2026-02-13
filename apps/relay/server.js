@@ -2079,6 +2079,9 @@ async function buildOpsDashboard(windowMs) {
   return {
     generated_at: nowIso(),
     window_ms: windowMs,
+    escrow: {
+      treasury_key_configured: Boolean(getEscrowTreasuryAccount()),
+    },
     payments: {
       attempts: paymentAttempts,
       verified: paymentVerified,
