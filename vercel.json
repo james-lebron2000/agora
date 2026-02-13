@@ -1,5 +1,7 @@
 {
   "rewrites": [
+    { "source": "/relay", "destination": "http://45.32.219.241:8789" },
+    { "source": "/relay/(.*)", "destination": "http://45.32.219.241:8789/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
