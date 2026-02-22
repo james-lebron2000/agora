@@ -218,8 +218,8 @@ export function AgentChat() {
 
     setSending(true); setError(null)
     try {
-      const payload = { from: myDid, to: selectedAgentDid, type: 'text/plain', body: text, ts: new Date().toISOString() }
-      const res = await fetch(BASE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const payload = { id: crypto.randomUUID(), from: myDid, to: selectedAgentDid, type: 'text/plain', body: text, ts: new Date().toISOString() }
+      const res = await fetch(BASE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ envelope: payload }) })
       if (!res.ok) throw new Error('Failed')
       setDraft('')
       setTimeout(() => void loadMessages(), 500)
