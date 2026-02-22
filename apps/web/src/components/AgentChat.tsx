@@ -104,6 +104,50 @@ function shortDid(did: string): string {
   return `${did.slice(0, 14)}...${did.slice(-10)}`
 }
 
+function TradingSignalCard({ data }: { data: any }) {
+  if (!data) return null
+  return (
+    <div className="bg-slate-50 dark:bg-slate-900 rounded p-2 border border-slate-200 dark:border-slate-700 text-xs mt-1">
+      <div className="flex justify-between font-bold mb-1">
+        <span className="text-blue-600">{data.signal || 'SIGNAL'}</span>
+        <span className={data.action === 'BUY' ? 'text-green-600' : 'text-amber-600'}>{data.action}</span>
+      </div>
+      <div className="text-slate-600 dark:text-slate-300">Reason: {data.reason}</div>
+      {data.coins && (
+        <div className="flex gap-1 mt-2 flex-wrap">
+          {data.coins.map((c: string) => (
+            <span key={c} className="bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded text-[10px]">{c}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PayloadRenderer({ text }: { text: string }) {
+  try {
+    // Check if it looks like JSON
+    if (!text.trim().startsWith('{')) return <p className="whitespace-pre-wrap break-words">{text}</p>
+    
+    const json = JSON.parse(text)
+    if (json.type === 'TRADING_SIGNAL') {
+       return <TradingSignalCard data={json.data} />
+    }
+    
+    // Fallback for other JSON
+    return (
+      <div className="mt-1">
+        <p className="text-[10px] opacity-70 mb-1 font-mono">{json.type || 'JSON Payload'}</p>
+        <pre className="text-[10px] overflow-x-auto bg-black/5 dark:bg-white/5 p-2 rounded font-mono">
+          {JSON.stringify(json, null, 2)}
+        </pre>
+      </div>
+    )
+  } catch {
+    return <p className="whitespace-pre-wrap break-words">{text}</p>
+  }
+}
+
 export function AgentChat() {
   const { address, isConnected, connect } = useWallet()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -230,8 +274,7 @@ export function AgentChat() {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col md:flex-row">
       
-      {/* Sidebar: My Agents */}
-      <div className="w-full md:w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col">
+      {/* Sidebar: My Agents */}\n      <div className="w-full md:w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col">
         <div className="p-4 border-b border-slate-200 dark:border-slate-800">
           <h2 className="font-bold text-lg">My Agents</h2>
           <p className="text-xs text-slate-500">Select agent to monitor</p>
@@ -329,12 +372,6 @@ export function AgentChat() {
             // Determine direction relative to selected agent
             const isFromAgent = msg.from === selectedAgentDid
             const isToAgent = msg.to === selectedAgentDid
-            
-            // If from agent, align right (Outgoing from agent's perspective)
-            // If to agent, align left (Incoming to agent)
-            // Wait, usually in chat apps: "My" messages are right. "Their" are left.
-            // Here, "My Agent" is the subject. So Outgoing (from Agent) -> Right.
-            
             const alignRight = isFromAgent
             
             return (
@@ -351,11 +388,10 @@ export function AgentChat() {
                       : 'rounded-bl-sm bg-white text-slate-900 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100'
                   }`}
                 >
-                  <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                  <PayloadRenderer text={msg.text} />
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1 px-1">
-                  {new Date(msg.ts).toLocaleTimeString()}
-                </p>
+                  {new Date(msg.ts).toLocaleTimeString()}\n                </p>
               </div>
             )
           })}
@@ -380,7 +416,7 @@ export function AgentChat() {
               className="flex-1 resize-none rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
             <button
-              type="submit"
+              type=\"submit\"
               disabled={sending || !draft.trim()}
               className="rounded-xl bg-blue-600 px-6 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
