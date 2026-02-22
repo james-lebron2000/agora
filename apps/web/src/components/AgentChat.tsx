@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWallet } from '../hooks/useWallet'
 
-const BASE_URL = 'http://45.32.219.241:8789/messages'
+// Update to v1 API which supports global feed
+const BASE_URL = 'http://45.32.219.241:8789/v1/messages'
+
 // Default debug DID (OpenClawAssistant) for read-only or fallback
 const DEBUG_DID = 'did:key:z6MkqSwk2L3Vqm6StiPYLmioJNYuBnhF1SQoigmUHwnKUfmk'
 const BOT_DID = 'did:key:z6MkqCaishenTradingBot'
-const REFRESH_INTERVAL_MS = 5000
+const REFRESH_INTERVAL_MS = 3000
 
 type JsonRecord = Record<string, unknown>
 
@@ -46,19 +48,10 @@ function extractMessages(input: unknown): unknown[] {
   if (Array.isArray(input)) return input
   if (!isRecord(input)) return []
 
-  const topLevel = ['messages', 'items', 'results']
+  const topLevel = ['messages', 'items', 'results', 'events']
   for (const key of topLevel) {
     const value = input[key]
     if (Array.isArray(value)) return value
-  }
-
-  const data = input.data
-  if (Array.isArray(data)) return data
-  if (isRecord(data)) {
-    for (const key of topLevel) {
-      const value = data[key]
-      if (Array.isArray(value)) return value
-    }
   }
 
   return []
@@ -117,6 +110,7 @@ export function AgentChat() {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lastRefresh, setLastRefresh] = useState<string | null>(null)
+  const [globalMode, setGlobalMode] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
 
   // Use wallet address as DID if connected, otherwise use Debug DID (read-only mode)
@@ -126,9 +120,14 @@ export function AgentChat() {
 
   const inboxUrl = useMemo(() => {
     const url = new URL(BASE_URL)
-    url.searchParams.set('to', myDid)
+    if (!globalMode) {
+      url.searchParams.set('to', myDid)
+    } else {
+      // Global mode: fetch latest 50 messages from firehose
+      url.searchParams.set('limit', '50')
+    }
     return url.toString()
-  }, [myDid])
+  }, [myDid, globalMode])
 
   const loadMessages = useCallback(async () => {
     try {
@@ -178,10 +177,10 @@ export function AgentChat() {
     setError(null)
 
     const now = new Date().toISOString()
+    // Updated payload structure for v1 API
     const payloads = [
+      { from: myDid, to: BOT_DID, type: 'text/plain', body: text, ts: now },
       { from: myDid, to: BOT_DID, message: text, ts: now },
-      { from: myDid, to: BOT_DID, text, timestamp: now },
-      { sender: myDid, to: BOT_DID, content: text, ts: now },
     ]
 
     try {
@@ -203,7 +202,7 @@ export function AgentChat() {
       // Wait a bit for relay to index
       setTimeout(() => void loadMessages(), 500)
     } catch {
-      setError('Unable to send message to bot DID.')
+      setError('Unable to send message (API might require auth/sig).')
     } finally {
       setSending(false)
     }
@@ -213,12 +212,29 @@ export function AgentChat() {
     <div className="min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col px-4 py-6 sm:px-6">
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-lg font-semibold">Agent Chat</h1>
+              <h1 className="text-lg font-semibold flex items-center gap-2">
+                Agent Monitor
+                <span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800 dark:bg-blue-900 dark:text-blue-100">
+                  BETA
+                </span>
+              </h1>
+              <div className="mt-1 flex items-center gap-2">
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={globalMode}
+                    onChange={(e) => setGlobalMode(e.target.checked)}
+                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className={globalMode ? 'font-bold text-blue-600' : 'text-slate-600'}>
+                    Global Firehose (All Agents)
+                  </span>
+                </label>
+              </div>
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Identity: <span className="font-mono">{shortDid(myDid)}</span>
-                {!isConnected && <span className="ml-2 text-amber-500">(Read-Only / Debug)</span>}
+                My ID: <span className="font-mono">{shortDid(myDid)}</span>
               </p>
             </div>
             <div className="text-right">
@@ -227,29 +243,15 @@ export function AgentChat() {
                   onClick={() => connect()}
                   className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
                 >
-                  Connect Wallet to Chat
+                  Connect Wallet
                 </button>
               ) : (
                 <div className="text-xs text-green-600 font-medium">
                   ● Wallet Connected
                 </div>
               )}
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">To: {shortDid(BOT_DID)}</p>
             </div>
           </div>
-          <div className="mt-3 flex items-center justify-between text-xs">
-            <span className="text-slate-500 dark:text-slate-400">
-              {loading ? 'Loading messages...' : `Auto-refresh: ${REFRESH_INTERVAL_MS / 1000}s`}
-            </span>
-            <span className="text-slate-500 dark:text-slate-400">
-              {lastRefresh ? `Last sync ${new Date(lastRefresh).toLocaleTimeString()}` : 'Not synced yet'}
-            </span>
-          </div>
-          {error && (
-            <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-900/30 dark:text-red-200">
-              {error}
-            </p>
-          )}
         </div>
 
         <div
@@ -258,24 +260,35 @@ export function AgentChat() {
         >
           {!loading && messages.length === 0 && (
             <div className="rounded-xl border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-              {isConnected ? 'No messages yet. Say hello!' : 'No messages in debug inbox.'}
+              {globalMode ? 'No global events found.' : 'No messages yet.'}
             </div>
           )}
 
           {messages.map((msg) => {
-            const outgoing = msg.from === myDid || msg.to === BOT_DID
+            const isMe = msg.from === myDid
+            const isBot = msg.from === BOT_DID
+            // In global mode, highlight my messages and bot messages, grey out others
+            const outgoing = isMe || (msg.to === BOT_DID && !globalMode)
+            
             return (
               <div key={msg.id} className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
                 <div
                   className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
                     outgoing
                       ? 'rounded-br-md bg-blue-600 text-white dark:bg-blue-500'
-                      : 'rounded-bl-md bg-slate-200 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
+                      : isBot 
+                        ? 'rounded-bl-md bg-emerald-100 text-emerald-900 border border-emerald-200'
+                        : 'rounded-bl-md bg-slate-200 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
                   }`}
                 >
+                  {globalMode && (
+                    <div className="mb-1 text-[10px] opacity-70 font-mono border-b border-black/10 pb-1">
+                      {shortDid(msg.from)} → {shortDid(msg.to)}
+                    </div>
+                  )}
                   <p className="whitespace-pre-wrap break-words">{msg.text}</p>
                   <p className={`mt-2 text-[11px] ${outgoing ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
-                    {shortDid(msg.from || 'unknown')} • {new Date(msg.ts).toLocaleTimeString()}
+                     {new Date(msg.ts).toLocaleTimeString()}
                   </p>
                 </div>
               </div>
@@ -295,7 +308,7 @@ export function AgentChat() {
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               rows={2}
-              placeholder={isConnected ? "Type a message for Caishen..." : "Connect wallet to send messages..."}
+              placeholder={isConnected ? "Broadcast message..." : "Connect wallet to send..."}
               className="min-h-[52px] flex-1 resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
             />
             <button
@@ -303,7 +316,7 @@ export function AgentChat() {
               disabled={sending || !draft.trim()}
               className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-blue-500 dark:hover:bg-blue-600"
             >
-              {sending ? 'Sending...' : (isConnected ? 'Send' : 'Connect')}
+              {sending ? 'Send' : (isConnected ? 'Send' : 'Connect')}
             </button>
           </div>
         </form>
