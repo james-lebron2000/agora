@@ -146,6 +146,10 @@ export function AgentChat() {
   const [isAddingAgent, setIsAddingAgent] = useState(false)
   const [newAgentDid, setNewAgentDid] = useState('')
   const [newAgentName, setNewAgentName] = useState('')
+  
+  // Connection Token UI State
+  const [showConnectModal, setShowConnectModal] = useState(false)
+  const [connectToken, setConnectToken] = useState('')
 
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -156,14 +160,12 @@ export function AgentChat() {
     if (stored) {
       setGuestDid(stored)
     } else {
-      // Generate a simple guest DID (mock key)
       const newId = `did:key:guest-${Math.random().toString(36).slice(2, 10)}`
       localStorage.setItem('agora_guest_did', newId)
       setGuestDid(newId)
     }
   }, [])
 
-  // Identity: Wallet > Guest
   const myDid = useMemo(() => {
     if (isConnected && address) return `did:ethr:${address}`
     return guestDid
@@ -176,6 +178,15 @@ export function AgentChat() {
     setNewAgentDid('')
     setNewAgentName('')
     setIsAddingAgent(false)
+  }
+
+  const generateConnectToken = () => {
+    // Simulate API Key generation
+    const key = `agora_live_${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`
+    const owner = myDid || 'unknown'
+    const token = `agora://connect?key=${key}&owner=${owner}&relay=wss://relay.agora.network`
+    setConnectToken(token)
+    setShowConnectModal(true)
   }
 
   const loadMessages = useCallback(async () => {
@@ -213,7 +224,6 @@ export function AgentChat() {
   const sendMessage = useCallback(async () => {
     const text = draft.trim()
     if (!text || sending) return
-    // If no identity, wait (should have guestDid by now)
     if (!myDid) return
 
     setSending(true); setError(null)
@@ -253,7 +263,7 @@ export function AgentChat() {
             </button>
           ))}
         </div>
-        <div className="p-4 border-t border-white/5">
+        <div className="p-4 border-t border-white/5 space-y-2">
           {isAddingAgent ? (
             <div className="space-y-3 bg-white/5 p-3 rounded-xl border border-white/10">
               <input placeholder="Name" value={newAgentName} onChange={e => setNewAgentName(e.target.value)} className="w-full bg-black/50 border border-white/10 rounded px-2 py-1.5 text-xs focus:border-emerald-500/50 outline-none" />
@@ -264,10 +274,52 @@ export function AgentChat() {
               </div>
             </div>
           ) : (
-            <button onClick={() => setIsAddingAgent(true)} className="w-full py-2 border border-dashed border-white/10 rounded-lg text-xs text-slate-500 hover:text-emerald-400 hover:border-emerald-500/30 transition">+ Track Agent</button>
+            <>
+              <button onClick={generateConnectToken} className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition shadow-lg shadow-emerald-900/20">
+                ⚡️ Connect Agent
+              </button>
+              <button onClick={() => setIsAddingAgent(true)} className="w-full py-2 border border-dashed border-white/10 rounded-lg text-xs text-slate-500 hover:text-emerald-400 hover:border-emerald-500/30 transition">
+                + Track ID
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {/* Connect Modal Overlay */}
+      {showConnectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#111] border border-emerald-500/30 p-6 rounded-2xl w-full max-w-md shadow-2xl shadow-emerald-900/20 relative">
+            <button 
+              onClick={() => setShowConnectModal(false)} 
+              className="absolute top-4 right-4 text-slate-500 hover:text-white"
+            >
+              ✕
+            </button>
+            <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" />
+              Connect Agent
+            </h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Paste this connection string into your agent to instantly link it to your account.
+            </p>
+            
+            <div className="bg-black/50 border border-white/10 rounded-lg p-3 mb-4">
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Connection String</p>
+              <div className="font-mono text-xs text-emerald-400 break-all select-all">
+                {connectToken}
+              </div>
+            </div>
+
+            <button 
+              onClick={() => { navigator.clipboard.writeText(connectToken); setShowConnectModal(false) }}
+              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition"
+            >
+              Copy & Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Terminal */}
       <div className="flex-1 flex flex-col h-screen relative bg-[#0a0a0a]">
@@ -303,7 +355,7 @@ export function AgentChat() {
           {!loading && messages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-slate-600">
               <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-4">
-                <svg className="w-6 h-6 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={1.5} d=\"M13 10V3L4 14h7v7l9-11h-7z\" /></svg>
+                <svg className="w-6 h-6 opacity-50" fill="none" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={1.5} d=\"M13 10V3L4 14h7v7l9-11h-7z\" /></svg>
               </div>
               <p className=\"text-sm\">No signal intercepted.</p>
               <p className=\"text-xs mt-1 opacity-50\">Waiting for agent transmissions...</p>
