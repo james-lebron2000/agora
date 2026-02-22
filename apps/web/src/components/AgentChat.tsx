@@ -36,56 +36,35 @@ function readString(obj: JsonRecord, keys: string[]): string | null {
 function extractText(raw: JsonRecord): string {
   const direct = readString(raw, ['text', 'message', 'content', 'body'])
   if (direct) return direct
-
   const payload = raw.payload
   if (isRecord(payload)) {
     const nested = readString(payload, ['text', 'message', 'content', 'body'])
     if (nested) return nested
   }
-
   return ''
 }
 
 function extractMessages(input: unknown): unknown[] {
   if (Array.isArray(input)) return input
   if (!isRecord(input)) return []
-
   const topLevel = ['messages', 'items', 'results', 'events']
   for (const key of topLevel) {
     const value = input[key]
     if (Array.isArray(value)) return value
   }
-
   return []
 }
 
 function normalizeMessage(raw: unknown, index: number): ChatMessage | null {
   if (!isRecord(raw)) return null
-
   const sender = isRecord(raw.sender) ? raw.sender : null
   const recipient = isRecord(raw.recipient) ? raw.recipient : null
-
-  const from =
-    readString(raw, ['from', 'sender', 'source', 'from_did']) ||
-    (sender ? readString(sender, ['id', 'did']) : null) ||
-    ''
-
-  const to =
-    readString(raw, ['to', 'recipient', 'target', 'to_did']) ||
-    (recipient ? readString(recipient, ['id', 'did']) : null) ||
-    ''
-
+  const from = readString(raw, ['from', 'sender', 'source', 'from_did']) || (sender ? readString(sender, ['id', 'did']) : null) || ''
+  const to = readString(raw, ['to', 'recipient', 'target', 'to_did']) || (recipient ? readString(recipient, ['id', 'did']) : null) || ''
   const text = extractText(raw)
   if (!text) return null
-
-  const ts =
-    readString(raw, ['ts', 'timestamp', 'created_at', 'createdAt', 'time']) ||
-    new Date().toISOString()
-
-  const id =
-    readString(raw, ['id', 'message_id', 'messageId', 'uuid']) ||
-    `${from || 'msg'}-${to || 'msg'}-${ts}-${index}`
-
+  const ts = readString(raw, ['ts', 'timestamp', 'created_at', 'createdAt', 'time']) || new Date().toISOString()
+  const id = readString(raw, ['id', 'message_id', 'messageId', 'uuid']) || `${from || 'msg'}-${to || 'msg'}-${ts}-${index}`
   return { id, from, to, text, ts }
 }
 
@@ -104,6 +83,7 @@ function shortDid(did: string): string {
   return `${did.slice(0, 14)}...${did.slice(-10)}`
 }
 
+// --- UI Components ---
 function TradingSignalCard({ data }: { data: any }) {
   if (!data) return null
   return (
@@ -134,12 +114,10 @@ function TradingSignalCard({ data }: { data: any }) {
 function PayloadRenderer({ text }: { text: string }) {
   try {
     if (!text.trim().startsWith('{')) return <p className="whitespace-pre-wrap break-words font-sans">{text}</p>
-    
     const json = JSON.parse(text)
     if (json.type === 'TRADING_SIGNAL') {
        return <TradingSignalCard data={json.data} />
     }
-    
     return (
       <div className="mt-1 font-mono">
         <p className="text-[10px] opacity-50 mb-1 uppercase tracking-wider">{json.type || 'DATA'}</p>
@@ -153,6 +131,7 @@ function PayloadRenderer({ text }: { text: string }) {
   }
 }
 
+// --- Main Component ---
 export function AgentChat() {
   const { address, isConnected, connect } = useWallet()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -169,7 +148,26 @@ export function AgentChat() {
   const [newAgentName, setNewAgentName] = useState('')
 
   const listRef = useRef<HTMLDivElement>(null)
-  const myDid = useMemo(() => isConnected && address ? `did:ethr:${address}` : null, [isConnected, address])
+
+  // Guest Identity Logic
+  const [guestDid, setGuestDid] = useState<string | null>(null)
+  useEffect(() => {
+    const stored = localStorage.getItem('agora_guest_did')
+    if (stored) {
+      setGuestDid(stored)
+    } else {
+      // Generate a simple guest DID (mock key)
+      const newId = `did:key:guest-${Math.random().toString(36).slice(2, 10)}`
+      localStorage.setItem('agora_guest_did', newId)
+      setGuestDid(newId)
+    }
+  }, [])
+
+  // Identity: Wallet > Guest
+  const myDid = useMemo(() => {
+    if (isConnected && address) return `did:ethr:${address}`
+    return guestDid
+  }, [isConnected, address, guestDid])
 
   const addAgent = () => {
     if (!newAgentDid.trim()) return
@@ -197,7 +195,8 @@ export function AgentChat() {
       setError(null)
     } catch {
       setError('Connection failed')
-    } finally {\n      setLoading(false)
+    } finally {
+      setLoading(false)
     }
   }, [selectedAgentDid])
 
@@ -214,18 +213,22 @@ export function AgentChat() {
   const sendMessage = useCallback(async () => {
     const text = draft.trim()
     if (!text || sending) return
-    if (!isConnected || !myDid) { connect(); return }
+    // If no identity, wait (should have guestDid by now)
+    if (!myDid) return
+
     setSending(true); setError(null)
     try {
       const payload = { from: myDid, to: selectedAgentDid, type: 'text/plain', body: text, ts: new Date().toISOString() }
-      const res = await fetch(BASE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })\n      if (!res.ok) throw new Error('Failed')
+      const res = await fetch(BASE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      if (!res.ok) throw new Error('Failed')
       setDraft('')
       setTimeout(() => void loadMessages(), 500)
     } catch { setError('Send failed') }
     finally { setSending(false) }
-  }, [draft, sending, isConnected, connect, myDid, selectedAgentDid, loadMessages])
+  }, [draft, sending, myDid, selectedAgentDid, loadMessages])
 
   const selectedAgentName = myAgents.find(a => a.did === selectedAgentDid)?.name || shortDid(selectedAgentDid)
+  const isGuest = !isConnected && !!guestDid
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-slate-200 flex flex-col md:flex-row font-sans selection:bg-emerald-500/30">
@@ -284,23 +287,26 @@ export function AgentChat() {
           </div>
           <div className="flex items-center gap-4">
             {error && <div className="text-xs text-red-400 bg-red-900/20 px-2 py-1 rounded border border-red-900/30">{error}</div>}
-            <div className=\"text-right\">
-              <div className=\"text-[10px] text-slate-500 uppercase tracking-wider\">Controller ID</div>
-              <div className=\"text-xs font-mono text-emerald-500/80\">
-                {isConnected && address ? shortDid(`did:ethr:${address}`) : <button onClick={() => connect()} className=\"hover:text-emerald-400 transition\">Connect Wallet →</button>}
+            <div className="text-right">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider">Controller ID</div>
+              <div className="text-xs font-mono text-emerald-500/80 flex items-center gap-2">
+                {isGuest && <span className="px-1.5 rounded bg-amber-500/20 text-amber-400 text-[9px]">GUEST</span>}
+                {shortDid(myDid || '...')}
+                {!isConnected && <button onClick={() => connect()} className="ml-2 text-[10px] bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded text-white transition">Connect Wallet</button>}
               </div>
             </div>
           </div>
         </div>
 
         {/* Log Feed */}
-        <div ref={listRef} className=\"flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth z-0\">
+        <div ref={listRef} className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth z-0">
           {!loading && messages.length === 0 && (
-            <div className=\"h-full flex flex-col items-center justify-center text-slate-600\">
-              <div className=\"w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-4\">
-                <svg className=\"w-6 h-6 opacity-50\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\"><path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={1.5} d=\"M13 10V3L4 14h7v7l9-11h-7z\" /></svg>
+            <div className="h-full flex flex-col items-center justify-center text-slate-600">
+              <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center mb-4">
+                <svg className="w-6 h-6 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap=\"round\" strokeLinejoin=\"round\" strokeWidth={1.5} d=\"M13 10V3L4 14h7v7l9-11h-7z\" /></svg>
               </div>
-              <p className=\"text-sm\">No signal intercepted.</p>\n              <p className=\"text-xs mt-1 opacity-50\">Waiting for agent transmissions...</p>
+              <p className=\"text-sm\">No signal intercepted.</p>
+              <p className=\"text-xs mt-1 opacity-50\">Waiting for agent transmissions...</p>
             </div>
           )}
           {messages.map((msg) => {
@@ -311,7 +317,8 @@ export function AgentChat() {
                   <span className={`text-[10px] font-mono uppercase tracking-wider ${isFromAgent ? 'text-emerald-500' : 'text-blue-400'}`}>
                     {isFromAgent ? 'OUTBOUND' : 'INBOUND'}
                   </span>
-                  <span className=\"text-[10px] text-slate-600\">{shortDid(isFromAgent ? msg.to : msg.from)}</span>\n                </div>
+                  <span className=\"text-[10px] text-slate-600\">{shortDid(isFromAgent ? msg.to : msg.from)}</span>
+                </div>
                 <div className={`max-w-2xl rounded-lg p-3 text-sm shadow-lg backdrop-blur-sm transition-all ${isFromAgent ? 'bg-emerald-900/10 border border-emerald-500/20 text-emerald-100 rounded-br-none' : 'bg-white/5 border border-white/10 text-slate-300 rounded-bl-none'}`}>
                   <PayloadRenderer text={msg.text} />
                 </div>
@@ -332,7 +339,7 @@ export function AgentChat() {
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder={isConnected ? \"Inject command...\" : \"Connect wallet to inject command...\"}
+              placeholder={`Inject command as ${isGuest ? 'Guest' : 'User'}...`}
               className=\"w-full bg-white/5 hover:bg-white/10 transition-colors border border-white/10 rounded-lg pl-8 pr-24 py-3 text-sm text-emerald-100 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-900/50 font-mono\"
             />
             <div className=\"absolute inset-y-0 right-1 flex items-center\">
@@ -343,5 +350,10 @@ export function AgentChat() {
               >
                 EXEC
               </button>
-            </div>\n          </form>
-        </div>\n      </div>\n    </div>\n  )\n}\n
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
