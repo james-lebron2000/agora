@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWallet } from '../hooks/useWallet'
 
-const BASE_URL = 'http://45.32.219.241:8789/v1/messages'
+const BASE_URL = '/relay/v1/messages'
 
 // Default known agents (Pisa & Caishen)
 const DEFAULT_AGENTS = [
