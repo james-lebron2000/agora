@@ -594,7 +594,7 @@ function AppContent() {
             <div className="space-y-6">
               <Hero />
               <NetworkStats metrics={metrics} refreshKey={metricsTick} />
-              <UseCaseShowcase />
+              <UseCaseShowcase metrics={metrics} usingSeed={usingSeed} />
             </div>
           )
       }
