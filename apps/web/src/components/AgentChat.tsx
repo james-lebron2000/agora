@@ -3,7 +3,7 @@ import { useWallet } from '../hooks/useWallet'
 
 const BASE_URL = 'http://45.32.219.241:8789/v1/messages'
 
-// Default known agents
+// Default known agents (Pisa & Caishen)
 const DEFAULT_AGENTS = [
   { name: 'Pisa (System)', did: 'did:key:z6MkqSwk2L3Vqm6StiPYLmioJNYuBnhF1SQoigmUHwnKUfmk' },
   { name: 'Caishen (Trading Bot)', did: 'did:key:z6MkqCaishenTradingBot' },
