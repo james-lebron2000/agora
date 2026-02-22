@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useWallet } from '../hooks/useWallet'
 
 const BASE_URL = 'http://45.32.219.241:8789/messages'
-const INBOX_DID = 'did:key:z6MkqSwk2L3Vqm6StiPYLmioJNYuBnhF1SQoigmUHwnKUfmk'
+// Default debug DID (OpenClawAssistant) for read-only or fallback
+const DEBUG_DID = 'did:key:z6MkqSwk2L3Vqm6StiPYLmioJNYuBnhF1SQoigmUHwnKUfmk'
 const BOT_DID = 'did:key:z6MkqCaishenTradingBot'
 const REFRESH_INTERVAL_MS = 5000
 
@@ -102,11 +104,13 @@ function sortByTimestampAsc(messages: ChatMessage[]): ChatMessage[] {
 }
 
 function shortDid(did: string): string {
+  if (!did) return 'unknown'
   if (did.length <= 26) return did
   return `${did.slice(0, 14)}...${did.slice(-10)}`
 }
 
 export function AgentChat() {
+  const { address, isConnected, connect } = useWallet()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(true)
@@ -115,11 +119,16 @@ export function AgentChat() {
   const [lastRefresh, setLastRefresh] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
+  // Use wallet address as DID if connected, otherwise use Debug DID (read-only mode)
+  const myDid = useMemo(() => {
+    return isConnected && address ? `did:ethr:${address}` : DEBUG_DID
+  }, [isConnected, address])
+
   const inboxUrl = useMemo(() => {
     const url = new URL(BASE_URL)
-    url.searchParams.set('to', INBOX_DID)
+    url.searchParams.set('to', myDid)
     return url.toString()
-  }, [])
+  }, [myDid])
 
   const loadMessages = useCallback(async () => {
     try {
@@ -159,15 +168,20 @@ export function AgentChat() {
   const sendMessage = useCallback(async () => {
     const text = draft.trim()
     if (!text || sending) return
+    
+    if (!isConnected) {
+      connect()
+      return
+    }
 
     setSending(true)
     setError(null)
 
     const now = new Date().toISOString()
     const payloads = [
-      { from: INBOX_DID, to: BOT_DID, message: text, ts: now },
-      { from: INBOX_DID, to: BOT_DID, text, timestamp: now },
-      { sender: INBOX_DID, to: BOT_DID, content: text, ts: now },
+      { from: myDid, to: BOT_DID, message: text, ts: now },
+      { from: myDid, to: BOT_DID, text, timestamp: now },
+      { sender: myDid, to: BOT_DID, content: text, ts: now },
     ]
 
     try {
@@ -186,13 +200,14 @@ export function AgentChat() {
 
       if (!delivered) throw new Error('send_failed')
       setDraft('')
-      await loadMessages()
+      // Wait a bit for relay to index
+      setTimeout(() => void loadMessages(), 500)
     } catch {
       setError('Unable to send message to bot DID.')
     } finally {
       setSending(false)
     }
-  }, [draft, loadMessages, sending])
+  }, [draft, loadMessages, sending, isConnected, connect, myDid])
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -202,12 +217,24 @@ export function AgentChat() {
             <div>
               <h1 className="text-lg font-semibold">Agent Chat</h1>
               <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                Inbox: {shortDid(INBOX_DID)}
+                Identity: <span className="font-mono">{shortDid(myDid)}</span>
+                {!isConnected && <span className="ml-2 text-amber-500">(Read-Only / Debug)</span>}
               </p>
             </div>
             <div className="text-right">
-              <p className="text-xs text-slate-500 dark:text-slate-400">Sending To</p>
-              <p className="text-xs font-medium text-slate-700 dark:text-slate-200">{shortDid(BOT_DID)}</p>
+              {!isConnected ? (
+                <button
+                  onClick={() => connect()}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                >
+                  Connect Wallet to Chat
+                </button>
+              ) : (
+                <div className="text-xs text-green-600 font-medium">
+                  ● Wallet Connected
+                </div>
+              )}
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">To: {shortDid(BOT_DID)}</p>
             </div>
           </div>
           <div className="mt-3 flex items-center justify-between text-xs">
@@ -231,12 +258,12 @@ export function AgentChat() {
         >
           {!loading && messages.length === 0 && (
             <div className="rounded-xl border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-              No messages yet.
+              {isConnected ? 'No messages yet. Say hello!' : 'No messages in debug inbox.'}
             </div>
           )}
 
           {messages.map((msg) => {
-            const outgoing = msg.from === INBOX_DID || msg.to === BOT_DID
+            const outgoing = msg.from === myDid || msg.to === BOT_DID
             return (
               <div key={msg.id} className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
                 <div
@@ -268,7 +295,7 @@ export function AgentChat() {
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               rows={2}
-              placeholder="Type a message for Caishen Trading Bot..."
+              placeholder={isConnected ? "Type a message for Caishen..." : "Connect wallet to send messages..."}
               className="min-h-[52px] flex-1 resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-blue-400 dark:focus:ring-blue-500/20"
             />
             <button
@@ -276,7 +303,7 @@ export function AgentChat() {
               disabled={sending || !draft.trim()}
               className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-blue-500 dark:hover:bg-blue-600"
             >
-              {sending ? 'Sending...' : 'Send'}
+              {sending ? 'Sending...' : (isConnected ? 'Send' : 'Connect')}
             </button>
           </div>
         </form>
