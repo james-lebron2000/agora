@@ -9,6 +9,7 @@ import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 import { Echo } from './pages/Echo'
 import { Analytics as Tokenomics } from './pages/Analytics'
+import { ARHud } from './pages/ARHud'
 import { AgentChat } from './components/AgentChat'
 
 type EventsResp = { ok: boolean; events: AgoraEvent[]; lastTs: string | null }
@@ -47,7 +48,7 @@ const MOCK_METRICS: NetworkMetrics = {
   volume24h: 12450,
 }
 
-type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'agentChat'
+type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'agentChat' | 'ar'
 
 const FALLBACK_AGENTS: AgentSummary[] = [
   {
@@ -129,6 +130,7 @@ function formatPricing(pricing?: AgentPricing): string {
 
 function useRoute(): { route: Route; navigate: (route: Route) => void } {
   const getRoute = () => {
+    if (window.location.pathname === '/ar') return 'ar'
     if (window.location.pathname === '/agent-chat') return 'agentChat'
     if (window.location.pathname === '/echo') return 'echo'
     if (window.location.pathname === '/tokenomics') return 'tokenomics'
@@ -153,7 +155,9 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
             ? '/echo'
             : next === 'agentChat'
               ? '/agent-chat'
-              : '/'
+              : next === 'ar'
+                ? '/ar'
+                : '/'
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path)
       setRoute(next)
@@ -566,6 +570,12 @@ function AppContent() {
         active={route === 'agentChat'}
         onClick={() => navigate('agentChat')}
       />
+      <NavLink
+        label="AR HUD"
+        href="/ar"
+        active={route === 'ar'}
+        onClick={() => navigate('ar')}
+      />
     </>
   )
 
@@ -580,6 +590,10 @@ function AppContent() {
 
   if (route === 'agentChat') {
     return <AgentChat />
+  }
+  
+  if (route === 'ar') {
+    return <ARHud />
   }
 
   return (
