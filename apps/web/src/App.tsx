@@ -5,6 +5,8 @@ import { Hero } from './components/Hero'
 import { AnalyticsDashboard } from './components/AnalyticsDashboard'
 import { NetworkStats, type NetworkMetrics } from './components/NetworkStats'
 import { UseCaseShowcase } from './components/UseCaseShowcase'
+import { BridgeCard } from './components/BridgeCard'
+import { BridgeStatus } from './components/BridgeStatus'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 
@@ -44,7 +46,7 @@ const MOCK_METRICS: NetworkMetrics = {
   volume24h: 12450,
 }
 
-type Route = 'home' | 'analytics'
+type Route = 'home' | 'analytics' | 'bridge'
 
 const FALLBACK_AGENTS: AgentSummary[] = [
   {
@@ -125,7 +127,11 @@ function formatPricing(pricing?: AgentPricing): string {
 }
 
 function useRoute(): { route: Route; navigate: (route: Route) => void } {
-  const getRoute = () => (window.location.pathname.startsWith('/analytics') ? 'analytics' : 'home')
+  const getRoute = (): Route => {
+    if (window.location.pathname.startsWith('/analytics')) return 'analytics'
+    if (window.location.pathname.startsWith('/bridge')) return 'bridge'
+    return 'home'
+  }
   const [route, setRoute] = useState<Route>(() => getRoute())
 
   useEffect(() => {
@@ -135,7 +141,7 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
   }, [])
 
   const navigate = (next: Route) => {
-    const path = next === 'analytics' ? '/analytics' : '/'
+    const path = next === 'analytics' ? '/analytics' : next === 'bridge' ? '/bridge' : '/'
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path)
       setRoute(next)
@@ -517,6 +523,23 @@ function AppContent() {
     </div>
   )
 
+  const bridgeCenter = (
+    <div className="space-y-8">
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-base-light rounded-lg flex items-center justify-center">
+            <svg className="w-4 h-4 text-base-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-bold text-agora-900">Cross-Chain Bridge</h3>
+        </div>
+        <BridgeCard />
+      </div>
+      <BridgeStatus />
+    </div>
+  )
+
   const nav = (
     <>
       <NavLink
@@ -531,25 +554,38 @@ function AppContent() {
         active={route === 'analytics'}
         onClick={() => navigate('analytics')}
       />
+      <NavLink
+        label="Bridge"
+        href="/bridge"
+        active={route === 'bridge'}
+        onClick={() => navigate('bridge')}
+      />
     </>
   )
+
+  const getCenter = () => {
+    if (route === 'analytics') return analyticsCenter
+    if (route === 'bridge') return bridgeCenter
+    return homeCenter
+  }
+
+  const getHero = () => {
+    if (route === 'analytics' || route === 'bridge') return undefined
+    return (
+      <div className="space-y-6">
+        <Hero />
+        <NetworkStats metrics={metrics} refreshKey={metricsTick} />
+        <UseCaseShowcase />
+      </div>
+    )
+  }
 
   return (
     <Layout
       left={left}
-      center={route === 'analytics' ? analyticsCenter : homeCenter}
+      center={getCenter()}
       right={right}
-      hero={
-        route === 'analytics'
-          ? undefined
-          : (
-            <div className="space-y-6">
-              <Hero />
-              <NetworkStats metrics={metrics} refreshKey={metricsTick} />
-              <UseCaseShowcase />
-            </div>
-          )
-      }
+      hero={getHero()}
       nav={nav}
     />
   )
