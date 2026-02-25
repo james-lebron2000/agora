@@ -20,8 +20,8 @@ export default defineConfig(({ mode }) => ({
   build: {
     // Enable CSS code splitting
     cssCodeSplit: true,
-    // Optimize chunk size
-    chunkSizeWarningLimit: 500,
+    // Optimize chunk size (increased limit for web3 libraries)
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         // Optimize manual chunks with better splitting strategy
@@ -34,31 +34,18 @@ export default defineConfig(({ mode }) => ({
           if (id.includes('node_modules/@tanstack/react-query') || id.includes('node_modules/@tanstack/query-core')) {
             return 'query-vendor'
           }
-          // Web3 / Wallet libraries - split into smaller chunks
-          if (id.includes('node_modules/viem')) {
-            return 'web3-viem'
-          }
-          if (id.includes('node_modules/wagmi')) {
-            return 'web3-wagmi'
-          }
-          if (id.includes('node_modules/@reown')) {
-            return 'web3-reown'
-          }
-          if (id.includes('node_modules/@walletconnect')) {
-            return 'web3-walletconnect'
-          }
-          if (id.includes('node_modules/@coinbase')) {
-            return 'web3-coinbase'
-          }
-          if (id.includes('node_modules/@rainbow-me')) {
-            return 'web3-rainbow'
-          }
-          // Other web3 related libraries
+          // Web3 / Wallet libraries - all in one chunk to avoid circular dependencies
           if (
+            id.includes('node_modules/viem') ||
+            id.includes('node_modules/wagmi') ||
+            id.includes('node_modules/@reown') ||
+            id.includes('node_modules/@walletconnect') ||
+            id.includes('node_modules/@coinbase') ||
+            id.includes('node_modules/@rainbow-me') ||
             id.includes('node_modules/@metamask') ||
             id.includes('node_modules/metamask')
           ) {
-            return 'web3-metamask'
+            return 'web3-vendor'
           }
           // UI libraries
           if (
