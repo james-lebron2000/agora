@@ -1,251 +1,127 @@
 # Bridge Module
 
-The Bridge module enables seamless cross-chain asset transfers with instant finality and multi-signature security.
+API reference for the `@agora/sdk/bridge` module.
 
-## Overview
+## Interfaces
 
-```mermaid
-graph LR
-    A[Ethereum] --> B[Agora Bridge]
-    C[Solana] --> B
-    D[Cosmos] --> B
-    B --> E[Instant Transfer]
-```
+### BridgeQuote
 
-## Basic Usage
+| Property | Type | Description |
+|----------|------|-------------|
+| sourceChain | `SupportedChain` |  |
+| destinationChain | `SupportedChain` |  |
+| token | `string` |  |
+| amount | `string` |  |
+| estimatedFee | `string` |  |
+| estimatedTime | `number` |  |
+| path? | `string[]` |  |
+| lzFee? | `{` |  |
+| nativeFee | `bigint` |  |
+| lzTokenFee | `bigint` |  |
 
-### Simple Transfer
+### BridgeTransaction
 
-```typescript
-const result = await agora.bridge.transfer({
-  from: {
-    chain: 'ethereum',
-    token: 'USDC',
-    amount: '1000'
-  },
-  to: {
-    chain: 'solana',
-    address: 'recipient-address'
-  }
-});
+| Property | Type | Description |
+|----------|------|-------------|
+| txHash | `Hex` |  |
+| sourceChain | `SupportedChain` |  |
+| destinationChain | `SupportedChain` |  |
+| amount | `string` |  |
+| token | `string` |  |
+| status | `BridgeTransactionStatus` |  |
+| timestamp | `number` |  |
+| fees? | `{` |  |
+| nativeFee | `string` |  |
+| lzTokenFee | `string` |  |
 
-console.log('Transfer complete:', result.txHash);
-```
+### BridgeTransactionFilter
 
-### Supported Chains
+| Property | Type | Description |
+|----------|------|-------------|
+| chain? | `SupportedChain` |  |
+| status? | `BridgeTransactionStatus` |  |
+| startTime? | `number` |  |
+| endTime? | `number` |  |
 
-| Chain | Chain ID | Status |
-|-------|----------|--------|
-| Ethereum | 1 | ✅ Live |
-| Solana | - | ✅ Live |
-| Polygon | 137 | ✅ Live |
-| Arbitrum | 42161 | ✅ Live |
-| Optimism | 10 | ✅ Live |
-| Base | 8453 | ✅ Live |
-| Cosmos | - | 🚧 Beta |
+### ChainBalance
 
-## Advanced Features
+| Property | Type | Description |
+|----------|------|-------------|
+| chain | `SupportedChain` |  |
+| nativeBalance | `string` |  |
+| usdcBalance | `string` |  |
 
-### Multi-Hop Transfers
+### BridgeResult
 
-Bridge through intermediate chains for optimal routes:
+| Property | Type | Description |
+|----------|------|-------------|
+| success | `boolean` |  |
+| txHash? | `Hex` |  |
+| error? | `string` |  |
+| sourceChain | `SupportedChain` |  |
+| destinationChain | `SupportedChain` |  |
+| amount | `string` |  |
+| fees? | `{` |  |
+| nativeFee | `string` |  |
+| lzTokenFee | `string` |  |
 
-```typescript
-const result = await agora.bridge.transfer({
-  from: { chain: 'ethereum', token: 'USDC', amount: '1000' },
-  to: { chain: 'solana', address: 'recipient' },
-  route: 'optimal', // or specify: ['ethereum', 'polygon', 'solana']
-  maxSlippage: 0.5  // 0.5% max slippage
-});
-```
+## Classes
 
-### Batch Transfers
+### BridgeTransactionHistory
 
-Transfer multiple assets in a single transaction:
+Cross-Chain Bridge Module for Agora Supports Base, Optimism, and Arbitrum chains Uses LayerZero V2 for cross-chain messaging and USDC transfers via OFT (Omnichain Fungible Token)
 
-```typescript
-const batch = await agora.bridge.batchTransfer([
-  {
-    from: { chain: 'ethereum', token: 'USDC', amount: '500' },
-    to: { chain: 'solana', address: 'addr1' }
-  },
-  {
-    from: { chain: 'ethereum', token: 'ETH', amount: '1' },
-    to: { chain: 'polygon', address: 'addr2' }
-  }
-]);
-```
-
-### Conditional Transfers
-
-Execute transfers based on conditions:
+#### toLowerCase()
 
 ```typescript
-const result = await agora.bridge.transfer({
-  from: { chain: 'ethereum', token: 'USDC', amount: '1000' },
-  to: { chain: 'solana', address: 'recipient' },
-  conditions: {
-    minRate: 1.0,
-    deadline: Date.now() + 3600000, // 1 hour
-    revertOnFailure: true
-  }
-});
+toLowerCase(): void
 ```
 
-## Bridge Status
+### CrossChainBridge
 
-### Check Bridge Health
+Cross-Chain Bridge Module for Agora Supports Base, Optimism, and Arbitrum chains Uses LayerZero V2 for cross-chain messaging and USDC transfers via OFT (Omnichain Fungible Token)
+
+## Functions
+
+### getBridgeHistory()
 
 ```typescript
-const status = await agora.bridge.getStatus();
-
-console.log(status);
-// {
-//   healthy: true,
-//   chains: {
-//     ethereum: { status: 'online', latency: 120 },
-//     solana: { status: 'online', latency: 80 }
-//   }
-// }
+getBridgeHistory(): BridgeTransaction[]
 ```
 
-### Get Transfer Status
+### createChainPublicClient()
 
 ```typescript
-const transfer = await agora.bridge.getTransfer('transfer-id');
-
-console.log(transfer.status);
-// 'pending' | 'confirmed' | 'completed' | 'failed'
+createChainPublicClient(): void
 ```
 
-## Fee Structure
-
-### Get Bridge Fees
+### getUSDCBalance()
 
 ```typescript
-const fees = await agora.bridge.getFees({
-  fromChain: 'ethereum',
-  toChain: 'solana',
-  amount: '1000',
-  token: 'USDC'
-});
-
-console.log(fees);
-// {
-//   baseFee: '2.50',
-//   protocolFee: '0.10',
-//   gasEstimate: '0.005',
-//   total: '2.605'
-// }
+getUSDCBalance(): Promise<string>
 ```
 
-## Security
-
-### Validator Set
+### getNativeBalance()
 
 ```typescript
-const validators = await agora.bridge.getValidators();
-
-console.log(`Active validators: ${validators.length}`);
-console.log(`Threshold: ${validators.threshold}`);
+getNativeBalance(): Promise<string>
 ```
 
-### Pause and Emergency
+### getAllBalances()
 
 ```typescript
-// Emergency pause (requires admin)
-await agora.bridge.emergencyPause({
-  reason: 'Security incident',
-  chain: 'ethereum'
-});
-
-// Resume operations
-await agora.bridge.resume({ chain: 'ethereum' });
+getAllBalances(): Promise<ChainBalance[]>
 ```
 
-## Events
-
-### Listen to Bridge Events
+### getBridgeQuote()
 
 ```typescript
-agora.bridge.on('transferStarted', (event) => {
-  console.log('Transfer started:', event.transferId);
-});
-
-agora.bridge.on('transferCompleted', (event) => {
-  console.log('Transfer completed:', event.txHash);
-});
-
-agora.bridge.on('transferFailed', (event) => {
-  console.error('Transfer failed:', event.error);
-});
+getBridgeQuote(): Promise<BridgeQuote>
 ```
 
-## Error Handling
+### findCheapestChain()
 
 ```typescript
-try {
-  await agora.bridge.transfer({...});
-} catch (error) {
-  if (error.code === 'INSUFFICIENT_LIQUIDITY') {
-    console.error('Bridge has insufficient liquidity');
-  } else if (error.code === 'SLIPPAGE_TOO_HIGH') {
-    console.error('Slippage exceeded threshold');
-  } else if (error.code === 'TIMEOUT') {
-    console.error('Transfer timed out');
-  }
-}
+findCheapestChain(): Promise<
 ```
 
-## Best Practices
-
-1. **Always check fees** before initiating transfers
-2. **Set reasonable slippage** to avoid failed transactions
-3. **Monitor events** for real-time transfer status
-4. **Use batch transfers** for multiple operations
-5. **Implement retries** with exponential backoff
-
-## API Reference
-
-### Methods
-
-| Method | Description |
-|--------|-------------|
-| `transfer(options)` | Execute a cross-chain transfer |
-| `batchTransfer(transfers)` | Execute multiple transfers |
-| `getStatus()` | Get bridge health status |
-| `getTransfer(id)` | Get transfer details |
-| `getFees(params)` | Calculate bridge fees |
-| `getValidators()` | List active validators |
-
-### Types
-
-```typescript
-interface TransferOptions {
-  from: {
-    chain: string;
-    token: string;
-    amount: string;
-  };
-  to: {
-    chain: string;
-    address: string;
-  };
-  route?: string | string[];
-  maxSlippage?: number;
-  conditions?: TransferConditions;
-}
-
-interface TransferResult {
-  transferId: string;
-  txHash: string;
-  status: string;
-  timestamp: number;
-}
-```
-
-## Next Steps
-
-- Learn about [Agent Profiles](/sdk/profile)
-- Explore [Wallet Management](/sdk/wallet)
-- See [Bridge Examples](/examples/cross-chain-bridge)

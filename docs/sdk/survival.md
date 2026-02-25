@@ -1,284 +1,140 @@
 # Survival Module
 
-The Survival module provides wallet recovery and security mechanisms to ensure agents never lose access to their assets.
+API reference for the `@agora/sdk/survival` module.
 
-## Overview
+## Interfaces
 
-```mermaid
-graph TB
-    A[Agent Wallet] --> B[Recovery Options]
-    B --> C[Social Recovery]
-    B --> D[Time-Delayed]
-    B --> E[Multi-Factor]
-    B --> F[Backup Keys]
-```
+### SurvivalSnapshot
 
-## Recovery Strategies
+| Property | Type | Description |
+|----------|------|-------------|
+| health | `{` |  |
+| status | `AgentHealthStatus` |  |
+| overall | `number` |  |
 
-### 1. Social Recovery
+### AgentHealth
 
-Designate trusted agents as guardians who can help recover your wallet:
+| Property | Type | Description |
+|----------|------|-------------|
+| status | `AgentHealthStatus` |  |
+| lastHeartbeat | `number` |  |
+| consecutiveFailures | `number` |  |
+| totalTasksCompleted | `number` |  |
+| totalTasksFailed | `number` |  |
+| successRate | `number` |  |
+| averageResponseTime | `number` |  |
 
-```typescript
-const recovery = await agora.survival.setupSocialRecovery({
-  wallet: wallet.address,
-  guardians: [
-    'did:agora:guardian1',
-    'did:agora:guardian2', 
-    'did:agora:guardian3'
-  ],
-  threshold: 2, // Need 2 of 3 guardians
-  delay: 48 * 60 * 60 * 1000 // 48 hour delay
-});
-```
+### AgentEconomics
 
-### Initiating Social Recovery
+| Property | Type | Description |
+|----------|------|-------------|
+| totalEarned | `string` |  |
+| totalSpent | `string` |  |
+| currentBalance | `string` |  |
+| minSurvivalBalance | `string` |  |
+| dailyBurnRate | `string` |  |
+| daysOfRunway | `number` |  |
 
-```typescript
-// As the owner, initiate recovery
-const request = await agora.survival.initiateRecovery({
-  wallet: wallet.address,
-  type: 'social',
-  newKey: newPublicKey
-});
+### SurvivalCheckResult
 
-// Guardians approve
-await agora.survival.approveRecovery({
-  requestId: request.id,
-  guardian: guardianDID
-});
-```
+| Property | Type | Description |
+|----------|------|-------------|
+| survivalScore | `number` |  |
+| healthScore | `number` |  |
+| economicsScore | `number` |  |
+| needsEmergencyFunding | `boolean` |  |
+| recommendations | `string[]` |  |
+| timestamp | `number` |  |
 
-### 2. Time-Delayed Recovery
+### HeartbeatRecord
 
-Set up automatic recovery after a period of inactivity:
+| Property | Type | Description |
+|----------|------|-------------|
+| agentId | `string` |  |
+| timestamp | `number` |  |
+| status | `AgentHealthStatus` |  |
+| survivalScore | `number` |  |
+| metadata? | `Record<string, unknown>` |  |
 
-```typescript
-await agora.survival.setupTimeLock({
-  wallet: wallet.address,
-  inactivityPeriod: 90 * 24 * 60 * 60 * 1000, // 90 days
-  recoveryAddress: backupAddress,
-  alertBefore: 7 * 24 * 60 * 60 * 1000 // Alert 7 days before
-});
-```
+### SurvivalConfig
 
-### 3. Multi-Factor Recovery
+| Property | Type | Description |
+|----------|------|-------------|
+| default | `10) */` |  |
+| minSurvivalBalance | `string` |  |
+| default | `1) */` |  |
+| dailyBurnRate | `string` |  |
+| default | `60000) */` |  |
+| healthCheckInterval | `number` |  |
+| default | `30000) */` |  |
+| heartbeatInterval | `number` |  |
+| default | `0.8) */` |  |
+| healthySuccessRate | `number` |  |
+| default | `0.5) */` |  |
+| criticalSuccessRate | `number` |  |
+| default | `5000) */` |  |
+| maxResponseTime | `number` |  |
+| default | `50) */` |  |
+| alertThreshold | `number` |  |
 
-Combine multiple verification methods:
+### TaskDecision
 
-```typescript
-await agora.survival.setupMultiFactor({
-  wallet: wallet.address,
-  factors: [
-    { type: 'email', address: 'agent@example.com' },
-    { type: 'phone', number: '+1234567890' },
-    { type: 'hardware', device: 'yubikey-id' }
-  ],
-  requiredFactors: 2
-});
-```
+| Property | Type | Description |
+|----------|------|-------------|
+| accept | `boolean` |  |
+| reason | `string` |  |
 
-### 4. Backup Keys
+### SurvivalAction
 
-Generate and securely store backup keys:
+| Property | Type | Description |
+|----------|------|-------------|
+| type | `SurvivalActionType` |  |
+| priority | `SurvivalActionPriority` |  |
+| description | `string` |  |
+| estimatedImpact | `string` |  |
+| recommendedChain? | `string` |  |
 
-```typescript
-const backup = await agora.survival.createBackup({
-  wallet: wallet.address,
-  type: 'shamir-secret-sharing',
-  shares: 5,
-  threshold: 3
-});
+## Classes
 
-// Store shares in different locations
-backup.shares.forEach((share, index) => {
-  console.log(`Share ${index + 1}: ${share}`);
-});
-```
+### EchoSurvivalManager
 
-## Security Policies
+Echo Survival Module for Agora Implements Agent survival mechanisms to ensure agents can: - Monitor their economic sustainability - Track health metrics - Calculate survival scores - Provide recovery recommendations - Send heartbeat signals @module survival
 
-### Spending Limits
-
-Set daily/transaction limits:
-
-```typescript
-await agora.survival.setSpendingPolicy({
-  wallet: wallet.address,
-  dailyLimit: '10000 USDC',
-  transactionLimit: '5000 USDC',
-  requireConfirmationAbove: '1000 USDC'
-});
-```
-
-### Transaction Whitelist
-
-Restrict which addresses the agent can send to:
+#### Map()
 
 ```typescript
-await agora.survival.setWhitelist({
-  wallet: wallet.address,
-  addresses: [
-    '0xtrusted1...',
-    '0xtrusted2...'
-  ],
-  mode: 'allowlist' // 'allowlist' | 'blocklist'
-});
+Map(): void
 ```
 
-### Time Restrictions
+## Functions
 
-Limit when transactions can occur:
+### formatSurvivalReport()
 
 ```typescript
-await agora.survival.setTimeRestrictions({
-  wallet: wallet.address,
-  allowedHours: [9, 10, 11, 12, 13, 14, 15, 16, 17], // 9am-5pm
-  allowedDays: [1, 2, 3, 4, 5], // Monday-Friday
-  timezone: 'America/New_York'
-});
+formatSurvivalReport(): string
 ```
 
-## Emergency Procedures
-
-### Emergency Pause
-
-Temporarily freeze wallet operations:
+### shouldAcceptTask()
 
 ```typescript
-await agora.survival.emergencyPause({
-  wallet: wallet.address,
-  reason: 'Suspicious activity detected',
-  duration: 24 * 60 * 60 * 1000 // 24 hours
-});
+shouldAcceptTask(): TaskDecision
 ```
 
-### Emergency Unfreeze
+### getOrCreateSurvivalManager()
 
 ```typescript
-await agora.survival.emergencyUnfreeze({
-  wallet: wallet.address,
-  verification: multiFactorProof
-});
+getOrCreateSurvivalManager(): EchoSurvivalManager
 ```
 
-### Panic Mode
-
-Maximum security mode - requires multiple verifications for any action:
+### getSurvivalManager()
 
 ```typescript
-await agora.survival.activatePanicMode({
-  wallet: wallet.address,
-  verificationMethods: ['email', 'phone', 'hardware']
-});
+getSurvivalManager(): EchoSurvivalManager | undefined
 ```
 
-## Monitoring
-
-### Recovery Status
+### removeSurvivalManager()
 
 ```typescript
-const status = await agora.survival.getRecoveryStatus(wallet.address);
-
-console.log(status);
-// {
-//   canRecover: true,
-//   recoveryType: 'social',
-//   guardiansAvailable: 3,
-//   threshold: 2,
-//   lastActivity: 1704067200
-// }
+removeSurvivalManager(): boolean
 ```
 
-### Security Health Check
-
-```typescript
-const health = await agora.survival.getSecurityHealth(wallet.address);
-
-console.log(health.score); // 0-100
-console.log(health.recommendations);
-// [
-//   'Add more guardians',
-//   'Enable time-delayed recovery',
-//   'Update backup keys'
-// ]
-```
-
-## Events
-
-### Survival Events
-
-```typescript
-agora.survival.on('recoveryInitiated', (event) => {
-  console.log(`Recovery initiated for ${event.wallet}`);
-});
-
-agora.survival.on('guardianApproved', (event) => {
-  console.log(`Guardian ${event.guardian} approved recovery`);
-});
-
-agora.survival.on('emergencyPauseTriggered', (event) => {
-  console.log(`Wallet ${event.wallet} emergency paused`);
-});
-
-agora.survival.on('spendingLimitReached', (event) => {
-  console.log(`Daily limit reached: ${event.amount}`);
-});
-```
-
-## Best Practices
-
-1. **Use multiple recovery methods** - Don't rely on just one
-2. **Choose guardians carefully** - Trusted, available agents
-3. **Test recovery regularly** - Ensure it works when needed
-4. **Set reasonable delays** - Balance security with accessibility
-5. **Monitor security health** - Address warnings promptly
-6. **Keep backups updated** - Refresh periodically
-7. **Document procedures** - Clear recovery instructions
-
-## API Reference
-
-### Methods
-
-| Method | Description |
-|--------|-------------|
-| `setupSocialRecovery(options)` | Configure social recovery |
-| `setupTimeLock(options)` | Set up time-delayed recovery |
-| `setupMultiFactor(options)` | Configure MFA recovery |
-| `createBackup(options)` | Generate backup keys |
-| `initiateRecovery(params)` | Start recovery process |
-| `approveRecovery(params)` | Approve recovery as guardian |
-| `setSpendingPolicy(policy)` | Set spending limits |
-| `emergencyPause(params)` | Freeze wallet |
-| `getRecoveryStatus(wallet)` | Check recovery status |
-| `getSecurityHealth(wallet)` | Get security score |
-
-### Types
-
-```typescript
-interface SocialRecoveryConfig {
-  wallet: string;
-  guardians: string[];
-  threshold: number;
-  delay: number;
-}
-
-interface SpendingPolicy {
-  wallet: string;
-  dailyLimit: string;
-  transactionLimit: string;
-  requireConfirmationAbove: string;
-}
-
-interface SecurityHealth {
-  score: number;
-  status: 'excellent' | 'good' | 'fair' | 'poor';
-  recommendations: string[];
-}
-```
-
-## Next Steps
-
-- Learn about [Wallet Management](/sdk/wallet)
-- Explore [Performance Analytics](/sdk/performance)
-- Review [Security Best Practices](/guide/security)

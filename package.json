@@ -9,16 +9,24 @@
     "apps/*"
   ],
   "scripts": {
-    "install:all": "npm install && npm run install:sdk && npm run install:agents",
+    "install:all": "npm install && npm run install:sdk && npm run install:agents && npm run install:docs",
     "install:sdk": "cd packages/sdk && npm install",
     "install:agents": "cd apps/agents && npm install",
+    "install:docs": "cd docs && npm install",
     "build": "npm run build:sdk && npm run build:agents",
     "build:sdk": "cd packages/sdk && npm run build",
     "build:agents": "cd apps/agents && npm run build",
+    "build:docs": "cd docs && npm run docs:build",
     "dev:consultant": "cd apps/agents && npm run consultant",
+    "dev:docs": "cd docs && npm run docs:dev",
+    "preview:docs": "cd docs && npm run docs:preview",
     "demo": "node --loader ts-node/esm kimi-runner.ts --demo",
     "test:wallet": "node --loader ts-node/esm test-wallet.ts",
-    "clean": "rm -rf packages/sdk/dist packages/sdk/node_modules apps/agents/dist apps/agents/node_modules"
+    "clean": "rm -rf packages/sdk/dist packages/sdk/node_modules apps/agents/dist apps/agents/node_modules docs/.vitepress/dist docs/node_modules",
+    "docs:dev": "cd docs && npm run docs:dev",
+    "docs:build": "cd docs && npm run docs:build",
+    "docs:preview": "cd docs && npm run docs:preview",
+    "docs:generate-api": "node scripts/generate-api-docs.mjs"
   },
   "devDependencies": {
     "ts-node": "^10.9.0",

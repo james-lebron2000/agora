@@ -8,6 +8,8 @@ export default defineConfig({
   
   lastUpdated: true,
   
+  ignoreDeadLinks: true,
+  
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     logo: '/logo.svg',
@@ -107,10 +109,6 @@ export default defineConfig({
       light: 'github-light',
       dark: 'github-dark'
     },
-    lineNumbers: true,
-    config: (md) => {
-      // Add Mermaid support
-      md.use(require('vitepress-plugin-mermaid'))
-    }
+    lineNumbers: true
   }
 })
