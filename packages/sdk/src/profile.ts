@@ -153,6 +153,7 @@ export interface ReputationHistoryEntry {
  * Calculate level from XP
  */
 export function calculateLevel(xp: number): number {
+  if (xp < 0) return 1;
   // Level formula: level = floor(sqrt(xp / 100)) + 1
   return Math.floor(Math.sqrt(xp / 100)) + 1;
 }
@@ -168,12 +169,14 @@ export function xpForNextLevel(currentLevel: number): number {
  * Calculate progress to next level (0-1)
  */
 export function levelProgress(xp: number): number {
+  if (xp < 0) return 0;
   const currentLevel = calculateLevel(xp);
   const currentLevelBaseXp = (currentLevel - 1) * (currentLevel - 1) * 100;
   const nextLevelXp = currentLevel * currentLevel * 100;
   const xpInLevel = xp - currentLevelBaseXp;
   const xpNeeded = nextLevelXp - currentLevelBaseXp;
-  return Math.min(1, xpInLevel / xpNeeded);
+  if (xpNeeded <= 0) return 1;
+  return Math.min(1, Math.max(0, xpInLevel / xpNeeded));
 }
 
 /**
