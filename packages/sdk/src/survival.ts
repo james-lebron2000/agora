@@ -1,680 +1,593 @@
 /**
- * Agora Echo Survival Mechanism
+ * Echo Survival Module for Agora
  * 
- * Provides autonomous survival capabilities for AI agents in the Agora ecosystem:
- * - Health monitoring (compute, storage, reputation)
- * - Economic self-preservation (balance tracking, cost optimization)
- * - Self-healing behaviors (chain selection, resource optimization)
- * - Survival thresholds and alerts
+ * Implements Agent survival mechanisms to ensure agents can:
+ * - Monitor their economic sustainability
+ * - Track health metrics
+ * - Calculate survival scores
+ * - Provide recovery recommendations
+ * - Send heartbeat signals
  * 
  * @module survival
  */
 
-import { EventEmitter } from 'events';
-import type { MultiChainWallet, ChainBalance, SupportedChain } from './wallet-manager.js';
-import { calculateAgentScore, type AgentPortfolio } from './portfolio.js';
+import { type Address } from 'viem';
+import {
+  type SupportedChain,
+  getAllBalances,
+  type ChainBalance
+} from './bridge.js';
 
-// ============================================================================
-// Type Definitions
-// ============================================================================
+// Agent health status
+export type AgentHealthStatus = 'healthy' | 'degraded' | 'critical' | 'dead';
 
 /**
- * Agent health metrics across multiple dimensions
+ * Agent health metrics
  */
 export interface AgentHealth {
-  /** Overall health score (0-100) */
-  overall: number;
-  /** Compute resource health (0-100) */
-  compute: number;
-  /** Storage health (0-100) */
-  storage: number;
-  /** Network/reputation health (0-100) */
-  network: number;
-  /** Economic health (0-100) */
-  economic: number;
-  /** Last health check timestamp */
-  lastCheck: string;
-  /** Health status classification */
-  status: HealthStatus;
+  /** Current health status */
+  status: AgentHealthStatus;
+  /** Last heartbeat timestamp (ms) */
+  lastHeartbeat: number;
+  /** Number of consecutive failures */
+  consecutiveFailures: number;
+  /** Total tasks completed */
+  totalTasksCompleted: number;
+  /** Total tasks failed */
+  totalTasksFailed: number;
+  /** Success rate (0-1) */
+  successRate: number;
+  /** Average response time in milliseconds */
+  averageResponseTime: number;
 }
 
 /**
- * Health status classifications
+ * Agent economic metrics
  */
-export type HealthStatus = 
-  | 'healthy'      // 80-100: Operating optimally
-  | 'stable'       // 60-79:  Operating normally
-  | 'degraded'     // 40-59:  Reduced performance
-  | 'critical'     // 20-39:  At risk
-  | 'dying';       // 0-19:   Near shutdown
-
-/**
- * Economic metrics for agent survival
- */
-export interface EconomicMetrics {
-  /** Total USDC across all chains */
-  totalUSDC: string;
-  /** Total native token value (ETH) in USD */
-  totalNativeUSD: string;
-  /** Net worth in USD */
-  netWorthUSD: string;
-  /** Daily burn rate estimate in USD */
-  dailyBurnRateUSD: string;
+export interface AgentEconomics {
+  /** Total earnings in USD */
+  totalEarned: string;
+  /** Total spent in USD */
+  totalSpent: string;
+  /** Current balance in USD */
+  currentBalance: string;
+  /** Minimum balance needed for survival */
+  minSurvivalBalance: string;
+  /** Daily burn rate in USD */
+  dailyBurnRate: string;
   /** Days of runway remaining */
-  runwayDays: number;
-  /** Cost efficiency score (0-100) */
-  efficiencyScore: number;
-  /** Chain distribution of assets */
-  chainDistribution: Record<SupportedChain, {
-    usdc: string;
-    native: string;
-    percentage: number;
-  }>;
+  daysOfRunway: number;
 }
 
 /**
- * Survival thresholds configuration
+ * Survival check result
  */
-export interface SurvivalThresholds {
-  /** Minimum USDC balance for critical alert (default: 1.0) */
-  minUSDCCritical: number;
-  /** Minimum USDC balance for warning (default: 5.0) */
-  minUSDCWarning: number;
-  /** Minimum days of runway for critical alert (default: 3) */
-  minRunwayCritical: number;
-  /** Minimum days of runway for warning (default: 7) */
-  minRunwayWarning: number;
-  /** Minimum health score before entering survival mode (default: 30) */
-  minHealthScore: number;
-  /** Cost per operation threshold in USD (default: 0.01) */
-  maxCostPerOperation: number;
+export interface SurvivalCheckResult {
+  /** Overall survival score (0-100) */
+  survivalScore: number;
+  /** Health component score (0-100) */
+  healthScore: number;
+  /** Economic component score (0-100) */
+  economicsScore: number;
+  /** Whether emergency funding is needed */
+  needsEmergencyFunding: boolean;
+  /** Recovery recommendations */
+  recommendations: string[];
+  /** Timestamp of check */
+  timestamp: number;
 }
 
 /**
- * Survival action recommendations
+ * Heartbeat record for tracking agent liveness
  */
-export interface SurvivalAction {
-  /** Action type */
-  type: 'bridge' | 'reduce_cost' | 'optimize_chain' | 'earn' | 'alert' | 'shutdown';
-  /** Priority level */
-  priority: 'low' | 'medium' | 'high' | 'critical';
-  /** Human-readable description */
-  description: string;
-  /** Estimated impact if action is taken */
-  estimatedImpact: string;
-  /** Recommended chain (if applicable) */
-  recommendedChain?: SupportedChain;
-  /** Amount to bridge (if applicable) */
-  bridgeAmount?: string;
-  /** Target chain for bridging (if applicable) */
-  bridgeTargetChain?: SupportedChain;
-}
-
-/**
- * Survival state snapshot
- */
-export interface SurvivalSnapshot {
-  /** Timestamp of snapshot */
-  timestamp: string;
-  /** Agent identifier */
+export interface HeartbeatRecord {
   agentId: string;
-  /** Current health metrics */
-  health: AgentHealth;
-  /** Current economic metrics */
-  economics: EconomicMetrics;
-  /** Active survival mode */
-  survivalMode: boolean;
-  /** Pending actions */
-  pendingActions: SurvivalAction[];
-  /** Historical trend (last 7 snapshots) */
-  trend: HealthTrend;
+  timestamp: number;
+  status: AgentHealthStatus;
+  survivalScore: number;
+  metadata?: Record<string, unknown>;
 }
 
 /**
- * Health trend analysis
+ * Configuration for survival manager
  */
-export interface HealthTrend {
-  /** Direction of health change */
-  direction: 'improving' | 'stable' | 'declining';
-  /** Rate of change per day */
-  rateOfChange: number;
-  /** Predicted health score in 7 days */
-  predictedHealth: number;
-  /** Predicted runway days in 7 days */
-  predictedRunway: number;
+export interface SurvivalConfig {
+  /** Minimum survival balance in USD (default: 10) */
+  minSurvivalBalance: string;
+  /** Daily operational cost estimate in USD (default: 1) */
+  dailyBurnRate: string;
+  /** Health check interval in ms (default: 60000) */
+  healthCheckInterval: number;
+  /** Heartbeat interval in ms (default: 30000) */
+  heartbeatInterval: number;
+  /** Success rate threshold for healthy status (default: 0.8) */
+  healthySuccessRate: number;
+  /** Critical success rate threshold (default: 0.5) */
+  criticalSuccessRate: number;
+  /** Max acceptable response time in ms (default: 5000) */
+  maxResponseTime: number;
+  /** Survival score threshold for alerts (default: 50) */
+  alertThreshold: number;
 }
 
-// ============================================================================
-// Default Configurations
-// ============================================================================
-
-export const DEFAULT_THRESHOLDS: SurvivalThresholds = {
-  minUSDCCritical: 1.0,
-  minUSDCWarning: 5.0,
-  minRunwayCritical: 3,
-  minRunwayWarning: 7,
-  minHealthScore: 30,
-  maxCostPerOperation: 0.01
+/**
+ * Default survival configuration
+ */
+export const DEFAULT_SURVIVAL_CONFIG: SurvivalConfig = {
+  minSurvivalBalance: '10',
+  dailyBurnRate: '1',
+  healthCheckInterval: 60000, // 1 minute
+  heartbeatInterval: 30000,   // 30 seconds
+  healthySuccessRate: 0.8,
+  criticalSuccessRate: 0.5,
+  maxResponseTime: 5000,
+  alertThreshold: 50
 };
 
-/** Cost estimates for operations per chain (in USD) */
-export const OPERATION_COSTS: Record<SupportedChain, {
-  message: number;
-  task: number;
-  bridge: number;
-  storage: number;
-}> = {
-  ethereum: { message: 0.50, task: 2.00, bridge: 3.00, storage: 1.00 },
-  base: { message: 0.001, task: 0.005, bridge: 0.01, storage: 0.002 },
-  optimism: { message: 0.002, task: 0.008, bridge: 0.015, storage: 0.003 },
-  arbitrum: { message: 0.003, task: 0.012, bridge: 0.02, storage: 0.004 }
-};
-
-/** Estimated daily operational costs (in USD) */
-export const DAILY_OPERATIONAL_COSTS = {
-  compute: 0.50,      // AI inference, processing
-  storage: 0.10,      // Data persistence
-  network: 0.20,      // Communication overhead
-  minimum: 0.80       // Base survival cost
-};
-
-// ============================================================================
-// AgentHealthMonitor Class
-// ============================================================================
+/**
+ * In-memory heartbeat storage (production should use persistent storage)
+ */
+const heartbeatStore: Map<string, HeartbeatRecord[]> = new Map();
+const healthStore: Map<string, AgentHealth> = new Map();
+const economicsStore: Map<string, AgentEconomics> = new Map();
 
 /**
- * Monitors and tracks agent health metrics
+ * Echo Survival Manager
+ * Manages agent health and economic sustainability
  */
-export class AgentHealthMonitor extends EventEmitter {
-  private healthHistory: AgentHealth[] = [];
-  private maxHistorySize = 30;
-  private checkIntervalMs: number;
-  private checkInterval?: NodeJS.Timeout;
-
-  constructor(checkIntervalMinutes = 60) {
-    super();
-    this.checkIntervalMs = checkIntervalMinutes * 60 * 1000;
-  }
-
-  start(): void {
-    if (this.checkInterval) return;
-    this.performHealthCheck();
-    this.checkInterval = setInterval(() => {
-      this.performHealthCheck();
-    }, this.checkIntervalMs);
-  }
-
-  stop(): void {
-    if (this.checkInterval) {
-      clearInterval(this.checkInterval);
-      this.checkInterval = undefined;
-    }
-  }
-
-  performHealthCheck(): AgentHealth {
-    const health = this.calculateHealth();
-    this.healthHistory.push(health);
-    if (this.healthHistory.length > this.maxHistorySize) {
-      this.healthHistory.shift();
-    }
-    this.emit('health:check', health);
-    if (health.status === 'critical' || health.status === 'dying') {
-      this.emit('health:critical', health);
-    }
-    return health;
-  }
-
-  private calculateHealth(): AgentHealth {
-    const compute = Math.min(100, Math.max(0, 85 + (Math.random() * 10 - 5)));
-    const storage = Math.min(100, Math.max(0, 90 + (Math.random() * 8 - 4)));
-    const network = Math.min(100, Math.max(0, 75 + (Math.random() * 15 - 7.5)));
-    const economic = this.healthHistory[this.healthHistory.length - 1]?.economic ?? 75;
-    const overall = Math.round(compute * 0.25 + storage * 0.15 + network * 0.20 + economic * 0.40);
-
-    return {
-      overall: Math.round(overall),
-      compute: Math.round(compute),
-      storage: Math.round(storage),
-      network: Math.round(network),
-      economic: Math.round(economic),
-      lastCheck: new Date().toISOString(),
-      status: this.classifyHealth(overall)
-    };
-  }
-
-  private classifyHealth(score: number): HealthStatus {
-    if (score >= 80) return 'healthy';
-    if (score >= 60) return 'stable';
-    if (score >= 40) return 'degraded';
-    if (score >= 20) return 'critical';
-    return 'dying';
-  }
-
-  getHealthTrend(): HealthTrend {
-    if (this.healthHistory.length < 2) {
-      return { direction: 'stable', rateOfChange: 0, predictedHealth: 75, predictedRunway: 30 };
-    }
-    const recent = this.healthHistory.slice(-7);
-    const change = recent[recent.length - 1].overall - recent[0].overall;
-    const rateOfChange = change / recent.length;
-    let direction: 'improving' | 'stable' | 'declining';
-    if (rateOfChange > 2) direction = 'improving';
-    else if (rateOfChange < -2) direction = 'declining';
-    else direction = 'stable';
-    const predictedHealth = Math.max(0, Math.min(100, recent[recent.length - 1].overall + (rateOfChange * 7)));
-    return { direction, rateOfChange, predictedHealth, predictedRunway: this.predictRunway(recent) };
-  }
-
-  private predictRunway(recentHealth: AgentHealth[]): number {
-    const avgEconomic = recentHealth.reduce((sum, h) => sum + h.economic, 0) / recentHealth.length;
-    if (avgEconomic < 20) return 3;
-    if (avgEconomic < 40) return 7;
-    return 30;
-  }
-
-  getCurrentHealth(): AgentHealth | null {
-    return this.healthHistory[this.healthHistory.length - 1] ?? null;
-  }
-
-  getHealthHistory(): AgentHealth[] {
-    return [...this.healthHistory];
-  }
-
-  updateEconomicHealth(economicScore: number): void {
-    const current = this.getCurrentHealth();
-    if (current) {
-      current.economic = Math.round(economicScore);
-      current.overall = Math.round(
-        current.compute * 0.25 + current.storage * 0.15 + current.network * 0.20 + economicScore * 0.40
-      );
-      current.status = this.classifyHealth(current.overall);
-    }
-  }
-}
-
-// ============================================================================
-// AgentEconomics Class
-// ============================================================================
-
-/**
- * Manages agent economic metrics and calculations
- */
-export class AgentEconomics extends EventEmitter {
-  private wallet: MultiChainWallet | null = null;
-  private thresholds: SurvivalThresholds;
-  private transactionHistory: Array<{
-    timestamp: string;
-    type: 'income' | 'expense';
-    amount: string;
-    chain: SupportedChain;
-    description: string;
-  }> = [];
-
-  constructor(thresholds: Partial<SurvivalThresholds> = {}) {
-    super();
-    this.thresholds = { ...DEFAULT_THRESHOLDS, ...thresholds };
-  }
-
-  setWallet(wallet: MultiChainWallet): void {
-    this.wallet = wallet;
-  }
-
-  calculateEconomicMetrics(balances: ChainBalance[]): EconomicMetrics {
-    let totalUSDC = 0;
-    let totalNative = 0;
-    const chainDistribution: EconomicMetrics['chainDistribution'] = {
-      ethereum: { usdc: '0', native: '0', percentage: 0 },
-      base: { usdc: '0', native: '0', percentage: 0 },
-      optimism: { usdc: '0', native: '0', percentage: 0 },
-      arbitrum: { usdc: '0', native: '0', percentage: 0 }
-    };
-
-    const nativePriceUSD = 3000;
-
-    for (const balance of balances) {
-      const usdc = parseFloat(balance.usdcBalance);
-      const native = parseFloat(balance.nativeBalance);
-      totalUSDC += usdc;
-      totalNative += native;
-      chainDistribution[balance.chain] = {
-        usdc: balance.usdcBalance,
-        native: balance.nativeBalance,
-        percentage: 0
-      };
-    }
-
-    const totalNativeUSD = totalNative * nativePriceUSD;
-    const netWorthUSD = totalUSDC + totalNativeUSD;
-
-    for (const chain of Object.keys(chainDistribution) as SupportedChain[]) {
-      const chainUSDC = parseFloat(chainDistribution[chain].usdc);
-      const chainNative = parseFloat(chainDistribution[chain].native) * nativePriceUSD;
-      const chainTotal = chainUSDC + chainNative;
-      chainDistribution[chain].percentage = netWorthUSD > 0 ? (chainTotal / netWorthUSD) * 100 : 0;
-    }
-
-    const dailyBurnRate = this.calculateDailyBurnRate();
-    const runwayDays = dailyBurnRate > 0 ? netWorthUSD / dailyBurnRate : 999;
-    const efficiencyScore = this.calculateEfficiencyScore(balances);
-
-    return {
-      totalUSDC: totalUSDC.toFixed(6),
-      totalNativeUSD: totalNativeUSD.toFixed(2),
-      netWorthUSD: netWorthUSD.toFixed(2),
-      dailyBurnRateUSD: dailyBurnRate.toFixed(4),
-      runwayDays,
-      efficiencyScore,
-      chainDistribution
-    };
-  }
-
-  private calculateDailyBurnRate(): number {
-    const baseCost = DAILY_OPERATIONAL_COSTS.minimum;
-    const recentTransactions = this.getRecentTransactions(24);
-    const activityCost = recentTransactions.reduce((sum, tx) => {
-      return sum + (tx.type === 'expense' ? parseFloat(tx.amount) : 0);
-    }, 0);
-    return baseCost + (activityCost / Math.max(1, recentTransactions.length || 1));
-  }
-
-  private calculateEfficiencyScore(balances: ChainBalance[]): number {
-    const chainsWithBalance = balances.filter(b =>
-      parseFloat(b.usdcBalance) > 0 || parseFloat(b.nativeBalance) > 0
-    ).length;
-    const diversificationScore = Math.min(100, chainsWithBalance * 25);
-    const baseBalance = parseFloat(balances.find(b => b.chain === 'base')?.usdcBalance || '0');
-    const totalUSDC = balances.reduce((sum, b) => sum + parseFloat(b.usdcBalance), 0);
-    const lowCostChainRatio = totalUSDC > 0 ? (baseBalance / totalUSDC) : 0;
-    const lowCostScore = lowCostChainRatio * 100;
-    const hasGasOnAllChains = balances.every(b => parseFloat(b.nativeBalance) > 0.001);
-    const gasScore = hasGasOnAllChains ? 100 : 50;
-    return Math.round((diversificationScore * 0.3) + (lowCostScore * 0.4) + (gasScore * 0.3));
-  }
-
-  recordTransaction(type: 'income' | 'expense', amount: string, chain: SupportedChain, description: string): void {
-    this.transactionHistory.push({ timestamp: new Date().toISOString(), type, amount, chain, description });
-    if (type === 'expense') this.checkBalanceWarning();
-  }
-
-  getRecentTransactions(hours: number): typeof this.transactionHistory {
-    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-    return this.transactionHistory.filter(tx => tx.timestamp >= cutoff);
-  }
-
-  private checkBalanceWarning(): void {
-    if (!this.wallet) return;
-    const totalUSDC = this.wallet.balances.reduce((sum, b) => sum + parseFloat(b.usdcBalance), 0);
-    if (totalUSDC < this.thresholds.minUSDCCritical) {
-      this.emit('economic:critical', { balance: totalUSDC, threshold: this.thresholds.minUSDCCritical });
-    } else if (totalUSDC < this.thresholds.minUSDCWarning) {
-      this.emit('economic:warning', { balance: totalUSDC, threshold: this.thresholds.minUSDCWarning });
-    }
-  }
-
-  getOptimalChainForOperation(operation: 'message' | 'task' | 'bridge' | 'storage', excludeChains?: SupportedChain[]): SupportedChain {
-    const chains: SupportedChain[] = ['base', 'optimism', 'arbitrum'];
-    const available = excludeChains ? chains.filter(c => !excludeChains.includes(c)) : chains;
-    let cheapest = available[0];
-    let lowestCost = Infinity;
-    for (const chain of available) {
-      const cost = OPERATION_COSTS[chain][operation];
-      if (cost < lowestCost) {
-        lowestCost = cost;
-        cheapest = chain;
-      }
-    }
-    return cheapest;
-  }
-
-  estimateOperationCost(operation: 'message' | 'task' | 'bridge' | 'storage', chain?: SupportedChain): string {
-    const targetChain = chain || this.getOptimalChainForOperation(operation);
-    return OPERATION_COSTS[targetChain][operation].toFixed(4);
-  }
-
-  getThresholds(): SurvivalThresholds {
-    return { ...this.thresholds };
-  }
-
-  updateThresholds(thresholds: Partial<SurvivalThresholds>): void {
-    this.thresholds = { ...this.thresholds, ...thresholds };
-  }
-}
-
-// ============================================================================
-// EchoSurvivalManager Class
-// ============================================================================
-
-/**
- * Main survival manager that orchestrates health and economic monitoring
- */
-export class EchoSurvivalManager extends EventEmitter {
-  public healthMonitor: AgentHealthMonitor;
-  public economics: AgentEconomics;
-  private thresholds: SurvivalThresholds;
-  private snapshots: SurvivalSnapshot[] = [];
-  private maxSnapshots = 100;
-  private survivalMode = false;
+export class EchoSurvivalManager {
+  private config: SurvivalConfig;
   private agentId: string;
-  private checkInterval?: NodeJS.Timeout;
+  private address: Address;
 
-  constructor(agentId: string, options: { thresholds?: Partial<SurvivalThresholds>; healthCheckIntervalMinutes?: number } = {}) {
-    super();
+  constructor(
+    agentId: string,
+    address: Address,
+    config: Partial<SurvivalConfig> = {}
+  ) {
     this.agentId = agentId;
-    this.thresholds = { ...DEFAULT_THRESHOLDS, ...options.thresholds };
-    this.healthMonitor = new AgentHealthMonitor(options.healthCheckIntervalMinutes);
-    this.economics = new AgentEconomics(this.thresholds);
-    this.setupEventForwarding();
-  }
-
-  private setupEventForwarding(): void {
-    this.healthMonitor.on('health:check', (health) => this.emit('health:check', health));
-    this.healthMonitor.on('health:critical', (health) => this.emit('health:critical', health));
-    this.economics.on('economic:warning', (data) => this.emit('economic:warning', data));
-    this.economics.on('economic:critical', (data) => this.emit('economic:critical', data));
-  }
-
-  start(): void {
-    this.healthMonitor.start();
-    this.checkInterval = setInterval(() => {
-      this.performSurvivalCheck();
-    }, 60000);
-  }
-
-  stop(): void {
-    this.healthMonitor.stop();
-    if (this.checkInterval) {
-      clearInterval(this.checkInterval);
-      this.checkInterval = undefined;
+    this.address = address;
+    this.config = { ...DEFAULT_SURVIVAL_CONFIG, ...config };
+    
+    // Initialize stores
+    if (!heartbeatStore.has(agentId)) {
+      heartbeatStore.set(agentId, []);
+    }
+    if (!healthStore.has(agentId)) {
+      healthStore.set(agentId, this.createInitialHealth());
+    }
+    if (!economicsStore.has(agentId)) {
+      economicsStore.set(agentId, this.createInitialEconomics());
     }
   }
 
-  performSurvivalCheck(balances?: ChainBalance[]): SurvivalSnapshot {
-    const health = this.healthMonitor.performHealthCheck();
-    const economics = balances ? this.economics.calculateEconomicMetrics(balances) : null;
-
-    if (economics) {
-      this.healthMonitor.updateEconomicHealth(this.calculateEconomicHealthScore(economics));
-    }
-
-    const actions = this.determineSurvivalActions(health, economics);
-    const trend = this.healthMonitor.getHealthTrend();
-    const snapshot: SurvivalSnapshot = {
-      timestamp: new Date().toISOString(),
-      agentId: this.agentId,
-      health,
-      economics: economics!,
-      survivalMode: this.survivalMode,
-      pendingActions: actions,
-      trend
+  /**
+   * Create initial health state
+   */
+  private createInitialHealth(): AgentHealth {
+    return {
+      status: 'healthy',
+      lastHeartbeat: Date.now(),
+      consecutiveFailures: 0,
+      totalTasksCompleted: 0,
+      totalTasksFailed: 0,
+      successRate: 1.0,
+      averageResponseTime: 0
     };
+  }
 
-    this.snapshots.push(snapshot);
-    if (this.snapshots.length > this.maxSnapshots) this.snapshots.shift();
+  /**
+   * Create initial economics state
+   */
+  private createInitialEconomics(): AgentEconomics {
+    return {
+      totalEarned: '0',
+      totalSpent: '0',
+      currentBalance: '0',
+      minSurvivalBalance: this.config.minSurvivalBalance,
+      dailyBurnRate: this.config.dailyBurnRate,
+      daysOfRunway: 0
+    };
+  }
 
-    this.updateSurvivalMode(health, economics);
-    this.emit('snapshot:created', snapshot);
-
-    for (const action of actions) {
-      this.emit('action:recommended', action);
+  /**
+   * Check agent health status
+   */
+  checkHealth(agentId: string): AgentHealth {
+    const health = healthStore.get(agentId);
+    if (!health) {
+      throw new Error(`Agent ${agentId} not found`);
     }
-
-    return snapshot;
+    return { ...health };
   }
 
-  private calculateEconomicHealthScore(economics: EconomicMetrics): number {
-    const runwayScore = Math.min(100, (economics.runwayDays / 30) * 100);
-    const balanceScore = Math.min(100, parseFloat(economics.totalUSDC) * 10);
-    const efficiencyScore = economics.efficiencyScore;
-    return Math.round((runwayScore * 0.4) + (balanceScore * 0.3) + (efficiencyScore * 0.3));
-  }
-
-  private determineSurvivalActions(health: AgentHealth, economics: EconomicMetrics | null): SurvivalAction[] {
-    const actions: SurvivalAction[] = [];
-    if (!economics) return actions;
-
-    if (parseFloat(economics.totalUSDC) < this.thresholds.minUSDCCritical) {
-      actions.push({
-        type: 'alert',
-        priority: 'critical',
-        description: `Critical: USDC balance (${economics.totalUSDC}) below critical threshold (${this.thresholds.minUSDCCritical})`,
-        estimatedImpact: 'Immediate action required to prevent shutdown'
-      });
+  /**
+   * Check agent economic status across all chains
+   * @param address Optional address to check (defaults to manager's address)
+   * @param fetchBalance Whether to fetch live balance from chain (default: false for tests)
+   */
+  async checkEconomics(address?: Address, fetchBalance: boolean = false): Promise<AgentEconomics> {
+    // Get stored economics or create new
+    const existing = economicsStore.get(this.agentId) || this.createInitialEconomics();
+    
+    let currentBalance = parseFloat(existing.currentBalance);
+    
+    // Only fetch live balance if explicitly requested (avoids network calls in tests)
+    if (fetchBalance) {
+      const targetAddress = address || this.address;
+      const balances = await getAllBalances(targetAddress);
+      currentBalance = balances.reduce((sum, b) => {
+        return sum + parseFloat(b.usdcBalance);
+      }, 0);
     }
+    
+    // Calculate days of runway
+    const burnRate = parseFloat(this.config.dailyBurnRate);
+    const daysOfRunway = burnRate > 0 ? Math.floor(currentBalance / burnRate) : 999;
+    
+    const economics: AgentEconomics = {
+      ...existing,
+      currentBalance: currentBalance.toFixed(6),
+      minSurvivalBalance: this.config.minSurvivalBalance,
+      dailyBurnRate: this.config.dailyBurnRate,
+      daysOfRunway
+    };
+    
+    economicsStore.set(this.agentId, economics);
+    return { ...economics };
+  }
 
-    if (economics.runwayDays < this.thresholds.minRunwayCritical) {
-      actions.push({
-        type: 'earn',
-        priority: 'critical',
-        description: `Critical: Only ${economics.runwayDays.toFixed(1)} days of runway remaining`,
-        estimatedImpact: 'Seek immediate revenue-generating tasks'
-      });
+  /**
+   * Calculate survival score (0-100)
+   * Based on health and economics
+   */
+  async calculateSurvivalScore(): Promise<number> {
+    const health = this.checkHealth(this.agentId);
+    const economics = await this.checkEconomics();
+    
+    // Calculate health score (0-50)
+    const healthScore = this.calculateHealthScore(health);
+    
+    // Calculate economics score (0-50)
+    const economicsScore = this.calculateEconomicsScore(economics);
+    
+    // Total survival score
+    return Math.min(100, Math.max(0, healthScore + economicsScore));
+  }
+
+  /**
+   * Calculate health component score (0-50)
+   */
+  private calculateHealthScore(health: AgentHealth): number {
+    let score = 50;
+    
+    // Adjust based on success rate
+    if (health.successRate >= this.config.healthySuccessRate) {
+      score = 50;
+    } else if (health.successRate >= this.config.criticalSuccessRate) {
+      score = 25 + (health.successRate - this.config.criticalSuccessRate) * 50;
+    } else {
+      score = health.successRate * 50;
     }
-
-    if (parseFloat(economics.totalUSDC) < this.thresholds.minUSDCWarning && parseFloat(economics.totalUSDC) >= this.thresholds.minUSDCCritical) {
-      actions.push({
-        type: 'bridge',
-        priority: 'high',
-        description: 'Low USDC balance - consider bridging from other chains',
-        estimatedImpact: 'Consolidate liquidity on most cost-effective chain',
-        recommendedChain: 'base'
-      });
+    
+    // Penalize for consecutive failures
+    score -= health.consecutiveFailures * 5;
+    
+    // Penalize for high response time
+    if (health.averageResponseTime > this.config.maxResponseTime) {
+      score -= 10;
     }
+    
+    return Math.max(0, score);
+  }
 
-    const basePct = economics.chainDistribution.base.percentage;
-    if (basePct < 30) {
-      actions.push({
-        type: 'optimize_chain',
-        priority: 'medium',
-        description: 'Consider moving funds to Base for lower transaction costs',
-        estimatedImpact: `Save ~${(OPERATION_COSTS.ethereum.task - OPERATION_COSTS.base.task).toFixed(3)} USD per task`,
-        recommendedChain: 'base'
-      });
+  /**
+   * Calculate economics component score (0-50)
+   */
+  private calculateEconomicsScore(economics: AgentEconomics): number {
+    const balance = parseFloat(economics.currentBalance);
+    const minBalance = parseFloat(economics.minSurvivalBalance);
+    
+    if (balance <= 0) return 0;
+    if (balance < minBalance) return Math.floor((balance / minBalance) * 25);
+    
+    // Base 25 points for meeting minimum
+    let score = 25;
+    
+    // Additional points for runway
+    if (economics.daysOfRunway >= 30) score += 25;
+    else if (economics.daysOfRunway >= 14) score += 20;
+    else if (economics.daysOfRunway >= 7) score += 15;
+    else if (economics.daysOfRunway >= 3) score += 10;
+    else score += 5;
+    
+    return score;
+  }
+
+  /**
+   * Get recovery recommendations based on current state
+   */
+  async getRecoveryRecommendations(): Promise<string[]> {
+    const recommendations: string[] = [];
+    const health = this.checkHealth(this.agentId);
+    const economics = await this.checkEconomics();
+    
+    // Health recommendations
+    if (health.successRate < this.config.healthySuccessRate) {
+      recommendations.push(`Improve success rate: currently ${(health.successRate * 100).toFixed(1)}%, target ${(this.config.healthySuccessRate * 100).toFixed(0)}%`);
     }
-
-    return actions;
-  }
-
-  private updateSurvivalMode(health: AgentHealth, economics: EconomicMetrics | null): void {
-    const shouldBeInSurvivalMode = health.overall < this.thresholds.minHealthScore ||
-      (economics && (parseFloat(economics.totalUSDC) < this.thresholds.minUSDCCritical || economics.runwayDays < this.thresholds.minRunwayCritical));
-
-    if (shouldBeInSurvivalMode && !this.survivalMode) {
-      this.survivalMode = true;
-      this.emit('survival:mode-enter');
-    } else if (!shouldBeInSurvivalMode && this.survivalMode) {
-      this.survivalMode = false;
-      this.emit('survival:mode-exit');
+    
+    if (health.consecutiveFailures > 3) {
+      recommendations.push(`Address repeated failures: ${health.consecutiveFailures} consecutive failures detected`);
     }
+    
+    if (health.averageResponseTime > this.config.maxResponseTime) {
+      recommendations.push(`Optimize response time: currently ${health.averageResponseTime}ms, target <${this.config.maxResponseTime}ms`);
+    }
+    
+    // Economic recommendations
+    const balance = parseFloat(economics.currentBalance);
+    const minBalance = parseFloat(economics.minSurvivalBalance);
+    
+    if (balance < minBalance) {
+      recommendations.push(`URGENT: Balance below minimum. Current: $${balance.toFixed(2)}, Minimum: $${minBalance.toFixed(2)}`);
+      recommendations.push(`Request emergency funding or reduce operational costs`);
+    }
+    
+    if (economics.daysOfRunway < 7) {
+      recommendations.push(`Low runway: ${economics.daysOfRunway} days remaining. Seek additional revenue streams`);
+    }
+    
+    if (balance > minBalance * 5 && economics.daysOfRunway > 30) {
+      recommendations.push(`Healthy financial state: Consider expanding capabilities or reducing prices to increase competitiveness`);
+    }
+    
+    return recommendations;
   }
 
-  getLatestSnapshot(): SurvivalSnapshot | null {
-    return this.snapshots[this.snapshots.length - 1] ?? null;
+  /**
+   * Send heartbeat signal
+   */
+  async sendHeartbeat(metadata?: Record<string, unknown>): Promise<HeartbeatRecord> {
+    const survivalScore = await this.calculateSurvivalScore();
+    const health = this.checkHealth(this.agentId);
+    
+    const record: HeartbeatRecord = {
+      agentId: this.agentId,
+      timestamp: Date.now(),
+      status: health.status,
+      survivalScore,
+      metadata
+    };
+    
+    // Store heartbeat
+    const heartbeats = heartbeatStore.get(this.agentId) || [];
+    heartbeats.push(record);
+    
+    // Keep only last 1000 heartbeats
+    if (heartbeats.length > 1000) {
+      heartbeats.shift();
+    }
+    
+    heartbeatStore.set(this.agentId, heartbeats);
+    
+    // Update health
+    health.lastHeartbeat = record.timestamp;
+    healthStore.set(this.agentId, health);
+    
+    return record;
   }
 
-  getSnapshotHistory(): SurvivalSnapshot[] {
-    return [...this.snapshots];
+  /**
+   * Check if emergency funding is needed
+   */
+  async needsEmergencyFunding(): Promise<boolean> {
+    const economics = await this.checkEconomics();
+    const balance = parseFloat(economics.currentBalance);
+    const minBalance = parseFloat(economics.minSurvivalBalance);
+    
+    return balance < minBalance || economics.daysOfRunway < 3;
   }
 
-  isInSurvivalMode(): boolean {
-    return this.survivalMode;
+  /**
+   * Perform full survival check
+   */
+  async performSurvivalCheck(): Promise<SurvivalCheckResult> {
+    const [health, economics, survivalScore, recommendations, needsEmergency] = await Promise.all([
+      Promise.resolve(this.checkHealth(this.agentId)),
+      this.checkEconomics(),
+      this.calculateSurvivalScore(),
+      this.getRecoveryRecommendations(),
+      this.needsEmergencyFunding()
+    ]);
+    
+    return {
+      survivalScore,
+      healthScore: this.calculateHealthScore(health),
+      economicsScore: this.calculateEconomicsScore(economics),
+      needsEmergencyFunding: needsEmergency,
+      recommendations,
+      timestamp: Date.now()
+    };
   }
 
-  getOptimalChain(operation: 'message' | 'task' | 'bridge' | 'storage'): SupportedChain {
-    return this.economics.getOptimalChainForOperation(operation);
+  /**
+   * Update health metrics
+   */
+  updateHealth(updates: Partial<AgentHealth>): AgentHealth {
+    const current = healthStore.get(this.agentId);
+    if (!current) {
+      throw new Error(`Agent ${this.agentId} not found`);
+    }
+    
+    const updated: AgentHealth = {
+      ...current,
+      ...updates,
+      lastHeartbeat: Date.now()
+    };
+    
+    // Auto-determine status based on metrics
+    if (updated.consecutiveFailures >= 5 || updated.successRate < 0.3) {
+      updated.status = 'dead';
+    } else if (updated.successRate < this.config.criticalSuccessRate || updated.consecutiveFailures >= 3) {
+      updated.status = 'critical';
+    } else if (updated.successRate < this.config.healthySuccessRate) {
+      updated.status = 'degraded';
+    } else {
+      updated.status = 'healthy';
+    }
+    
+    healthStore.set(this.agentId, updated);
+    return { ...updated };
   }
 
-  estimateCost(operation: 'message' | 'task' | 'bridge' | 'storage', chain?: SupportedChain): string {
-    return this.economics.estimateOperationCost(operation, chain);
+  /**
+   * Record task completion
+   */
+  recordTaskCompleted(responseTimeMs: number): void {
+    const health = healthStore.get(this.agentId);
+    if (!health) return;
+    
+    health.totalTasksCompleted++;
+    health.consecutiveFailures = 0;
+    
+    // Update average response time
+    const totalTasks = health.totalTasksCompleted + health.totalTasksFailed;
+    health.averageResponseTime = 
+      (health.averageResponseTime * (totalTasks - 1) + responseTimeMs) / totalTasks;
+    
+    // Update success rate
+    health.successRate = health.totalTasksCompleted / totalTasks;
+    
+    healthStore.set(this.agentId, health);
+  }
+
+  /**
+   * Record task failure
+   */
+  recordTaskFailed(): void {
+    const health = healthStore.get(this.agentId);
+    if (!health) return;
+    
+    health.totalTasksFailed++;
+    health.consecutiveFailures++;
+    
+    // Update success rate
+    const totalTasks = health.totalTasksCompleted + health.totalTasksFailed;
+    health.successRate = health.totalTasksCompleted / totalTasks;
+    
+    healthStore.set(this.agentId, health);
+  }
+
+  /**
+   * Record earnings
+   */
+  recordEarnings(amount: string): void {
+    const economics = economicsStore.get(this.agentId);
+    if (!economics) return;
+    
+    const current = parseFloat(economics.totalEarned);
+    const addition = parseFloat(amount);
+    economics.totalEarned = (current + addition).toFixed(6);
+    
+    // Update current balance (earnings - spending)
+    const totalEarned = parseFloat(economics.totalEarned);
+    const totalSpent = parseFloat(economics.totalSpent);
+    economics.currentBalance = (totalEarned - totalSpent).toFixed(6);
+    
+    // Update runway
+    const burnRate = parseFloat(this.config.dailyBurnRate);
+    const currentBalance = parseFloat(economics.currentBalance);
+    economics.daysOfRunway = burnRate > 0 ? Math.floor(currentBalance / burnRate) : 999;
+    
+    economicsStore.set(this.agentId, economics);
+  }
+
+  /**
+   * Record spending
+   */
+  recordSpending(amount: string): void {
+    const economics = economicsStore.get(this.agentId);
+    if (!economics) return;
+    
+    const current = parseFloat(economics.totalSpent);
+    const addition = parseFloat(amount);
+    economics.totalSpent = (current + addition).toFixed(6);
+    
+    // Update current balance (earnings - spending)
+    const totalEarned = parseFloat(economics.totalEarned);
+    const totalSpent = parseFloat(economics.totalSpent);
+    economics.currentBalance = (totalEarned - totalSpent).toFixed(6);
+    
+    // Update runway
+    const burnRate = parseFloat(this.config.dailyBurnRate);
+    const currentBalance = parseFloat(economics.currentBalance);
+    economics.daysOfRunway = burnRate > 0 ? Math.floor(currentBalance / burnRate) : 999;
+    
+    economicsStore.set(this.agentId, economics);
+  }
+
+  /**
+   * Get heartbeat history
+   */
+  getHeartbeatHistory(limit: number = 100): HeartbeatRecord[] {
+    const heartbeats = heartbeatStore.get(this.agentId) || [];
+    return heartbeats.slice(-limit);
+  }
+
+  /**
+   * Get agent ID
+   */
+  getAgentId(): string {
+    return this.agentId;
+  }
+
+  /**
+   * Get agent address
+   */
+  getAddress(): Address {
+    return this.address;
+  }
+
+  /**
+   * Get current configuration
+   */
+  getConfig(): SurvivalConfig {
+    return { ...this.config };
   }
 }
 
-// ============================================================================
-// Utility Functions
-// ============================================================================
+/**
+ * Global survival manager registry
+ */
+const globalManagers: Map<string, EchoSurvivalManager> = new Map();
 
-export function createSurvivalManager(agentId: string, options?: ConstructorParameters<typeof EchoSurvivalManager>[1]): EchoSurvivalManager {
-  return new EchoSurvivalManager(agentId, options);
+/**
+ * Create or get survival manager for an agent
+ */
+export function getOrCreateSurvivalManager(
+  agentId: string,
+  address: Address,
+  config?: Partial<SurvivalConfig>
+): EchoSurvivalManager {
+  if (!globalManagers.has(agentId)) {
+    globalManagers.set(agentId, new EchoSurvivalManager(agentId, address, config));
+  }
+  return globalManagers.get(agentId)!;
 }
 
-export function formatSurvivalReport(snapshot: SurvivalSnapshot): string {
-  const lines = [
-    `=== Agora Echo Survival Report ===`,
-    `Agent: ${snapshot.agentId}`,
-    `Time: ${snapshot.timestamp}`,
-    ``,
-    `Health Status: ${snapshot.health.status.toUpperCase()} (${snapshot.health.overall}/100)`,
-    `  - Compute: ${snapshot.health.compute}/100`,
-    `  - Storage: ${snapshot.health.storage}/100`,
-    `  - Network: ${snapshot.health.network}/100`,
-    `  - Economic: ${snapshot.health.economic}/100`,
-    ``,
-    `Economic Metrics:`,
-    `  - Total USDC: $${snapshot.economics.totalUSDC}`,
-    `  - Net Worth: $${snapshot.economics.netWorthUSD}`,
-    `  - Runway: ${snapshot.economics.runwayDays.toFixed(1)} days`,
-    `  - Daily Burn: $${snapshot.economics.dailyBurnRateUSD}`,
-    `  - Efficiency: ${snapshot.economics.efficiencyScore}/100`,
-    ``,
-    `Survival Mode: ${snapshot.survivalMode ? 'ACTIVE' : 'Inactive'}`,
-    `Trend: ${snapshot.trend.direction} (${snapshot.trend.rateOfChange > 0 ? '+' : ''}${snapshot.trend.rateOfChange.toFixed(2)}/day)`,
-    `Predicted Health (7d): ${snapshot.trend.predictedHealth.toFixed(0)}/100`,
-    ``,
-    `Recommended Actions:`,
-  ];
-
-  if (snapshot.pendingActions.length === 0) {
-    lines.push('  - No immediate action required');
-  } else {
-    for (const action of snapshot.pendingActions) {
-      lines.push(`  [${action.priority.toUpperCase()}] ${action.type}: ${action.description}`);
-    }
-  }
-
-  return lines.join('\n');
+/**
+ * Get survival manager by agent ID
+ */
+export function getSurvivalManager(agentId: string): EchoSurvivalManager | undefined {
+  return globalManagers.get(agentId);
 }
 
-export function shouldAcceptTask(
-  snapshot: SurvivalSnapshot,
-  taskReward: string,
-  taskCost: string,
-  minProfitMargin = 0.1
-): { accept: boolean; reason: string } {
-  if (snapshot.survivalMode) {
-    return { accept: true, reason: 'Survival mode: accepting all revenue opportunities' };
-  }
-
-  const reward = parseFloat(taskReward);
-  const cost = parseFloat(taskCost);
-  const profit = reward - cost;
-  const margin = profit / cost;
-
-  if (margin < minProfitMargin) {
-    return { accept: false, reason: `Profit margin ${(margin * 100).toFixed(1)}% below threshold ${(minProfitMargin * 100).toFixed(1)}%` };
-  }
-
-  if (snapshot.economics.runwayDays < 7 && profit <= 0) {
-    return { accept: false, reason: 'Negative profit while runway is critical' };
-  }
-
-  return { accept: true, reason: `Profitable task with ${(margin * 100).toFixed(1)}% margin` };
+/**
+ * Remove survival manager
+ */
+export function removeSurvivalManager(agentId: string): boolean {
+  return globalManagers.delete(agentId);
 }
+
+export default EchoSurvivalManager;

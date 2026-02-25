@@ -16,7 +16,8 @@ export function Layout({
 }) {
   return (
     <div className="min-h-screen bg-agora-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* Desktop Container */}
+      <div className="hidden lg:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Header */}
         <header className="flex flex-col gap-4 mb-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
@@ -74,6 +75,29 @@ export function Layout({
             </div>
           </aside>
         </div>
+      </div>
+
+      {/* Mobile Container */}
+      <div className="lg:hidden pt-24 pb-24 px-4">
+        {hero && <div className="mb-4">{hero}</div>}
+        
+        {/* Mobile Main Content */}
+        <main className="space-y-4">
+          {/* Left Sidebar Content - Collapsed on Mobile */}
+          <div className="bg-white rounded-2xl border border-agora-200 shadow-sm p-4">
+            {left}
+          </div>
+
+          {/* Main Content */}
+          <div className="bg-white rounded-2xl border border-agora-200 shadow-sm p-4 min-h-[400px]">
+            {center}
+          </div>
+
+          {/* Right Sidebar Content */}
+          <div className="bg-white rounded-2xl border border-agora-200 shadow-sm p-4">
+            {right}
+          </div>
+        </main>
       </div>
     </div>
   )
