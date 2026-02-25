@@ -308,15 +308,18 @@ describe('Cross-Chain Bridge Module', () => {
           return Promise.resolve(0n); // allowance
         });
         mockWalletClient.writeContract.mockResolvedValue(mockTxHash);
-        // Mock timeout scenario - receipt always returns null (not mined)
-        mockPublicClient.getTransactionReceipt.mockResolvedValue(null);
+        // Mock a transaction that gets mined but fails (status = 'reverted')
+        mockPublicClient.getTransactionReceipt.mockResolvedValue({
+          status: 'reverted',
+          blockNumber: 100n
+        });
         mockPublicClient.getBlockNumber.mockResolvedValue(101n);
         
         const bridge = new CrossChainBridge(mockPrivateKey, 'base');
         const result = await bridge.bridgeUSDC('optimism', '100');
         expect(result.success).toBe(false);
         expect(result.error).toContain('Bridge transaction not confirmed within timeout');
-      }, 150000);
+      }, 10000);
 
       it('should support different L2 routes', async () => {
         const routes: [SupportedChain, SupportedChain][] = [
