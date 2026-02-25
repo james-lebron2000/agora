@@ -24,3 +24,12 @@ dist-ssr
 *.sw?
 .vercel
 .env*.local
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+e2e/screenshots/
+e2e/snapshots/
+*.snap.png
+!e2e/snapshots/*.snap.png
