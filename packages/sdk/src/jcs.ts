@@ -1,4 +1,5 @@
-import canonicalizeImpl from "canonicalize";
+import * as canonicalizeModule from 'canonicalize';
+const canonicalizeImpl = (canonicalizeModule as any).default || canonicalizeModule;
 
 export type JcsCanonicalizer = (value: unknown) => string;
 
