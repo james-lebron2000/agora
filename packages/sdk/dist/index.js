@@ -14,5 +14,5 @@ export { generateWallet, loadOrCreateWallet, loadWallet, saveEncryptedWallet, ge
 // Multi-chain wallet management (v1.2)
 export { createMultiChainClient, createMultiChainWallet, loadOrCreateMultiChainWallet, refreshBalances, getTotalUSDCBalance, getChainWithHighestBalance, getCheapestChainForOperations, hasSufficientBalance, selectOptimalChain, MultiChainWalletManager } from './wallet-manager.js';
 // Cross-chain bridge (v1.2)
-export { CrossChainBridge, createChainPublicClient, getUSDCBalance, getNativeBalance, getAllBalances, getBridgeQuote, findCheapestChain, SUPPORTED_CHAINS, USDC_ADDRESSES, LAYERZERO_ENDPOINTS, LAYERZERO_CHAIN_IDS, LAYERZERO_USDC_OFT, RPC_URLS } from './bridge.js';
+export { CrossChainBridge, createChainPublicClient, getUSDCBalance, getNativeBalance, getAllBalances, getBridgeQuote, findCheapestChain, SUPPORTED_CHAINS, USDC_ADDRESSES, LAYERZERO_ENDPOINTS, LAYERZERO_CHAIN_IDS, LAYERZERO_USDC_OFT, RPC_URLS, BridgeTransactionHistory, getBridgeHistory } from './bridge.js';
 //# sourceMappingURL=index.js.map

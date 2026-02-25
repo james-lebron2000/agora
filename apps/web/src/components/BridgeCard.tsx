@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useWallet } from '../hooks/useWallet'
-import type { SupportedChain } from '@agora/sdk'
+import type { SupportedChain, BridgeTransaction } from '@agora/sdk'
+import { useBridgeHistory } from '../hooks/useBridgeHistory'
 
 // Local BridgeQuote type (mirror of SDK)
 interface BridgeQuote {
@@ -56,6 +57,7 @@ export function BridgeCard({
   defaultDestChain = 'optimism' 
 }: BridgeCardProps) {
   const { address, isConnected } = useWallet()
+  const { addPendingTx } = useBridgeHistory(address ?? undefined)
   
   // Form state
   const [sourceChain, setSourceChain] = useState<SupportedChain>(defaultSourceChain)
@@ -160,6 +162,24 @@ export function BridgeCard({
         amount,
         token
       }
+      
+      // Save transaction to history
+      const bridgeTx: BridgeTransaction = {
+        txHash: mockTxHash as `0x${string}`,
+        sourceChain,
+        destinationChain: destChain,
+        amount,
+        token,
+        status: 'pending',
+        timestamp: Date.now(),
+        fees: quote ? {
+          nativeFee: quote.estimatedFee,
+          lzTokenFee: '0'
+        } : undefined,
+        senderAddress: (address || mockTxHash) as `0x${string}`,
+        recipientAddress: (useCustomRecipient && recipient ? recipient : (address || mockTxHash)) as `0x${string}`
+      }
+      addPendingTx(bridgeTx)
       
       onBridgeComplete?.(result)
       setAmount('')

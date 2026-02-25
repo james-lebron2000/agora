@@ -83,8 +83,12 @@ export {
   LAYERZERO_CHAIN_IDS,
   LAYERZERO_USDC_OFT,
   RPC_URLS,
+  BridgeTransactionHistory,
+  getBridgeHistory,
   type SupportedChain,
   type BridgeQuote,
   type ChainBalance,
-  type BridgeResult
+  type BridgeResult,
+  type BridgeTransaction,
+  type BridgeTransactionFilter
 } from './bridge.js';

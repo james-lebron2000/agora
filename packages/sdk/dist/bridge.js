@@ -37,6 +37,106 @@ export const LAYERZERO_USDC_OFT = {
     optimism: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C',
     arbitrum: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C'
 };
+// Bridge transaction history class with localStorage persistence
+export class BridgeTransactionHistory {
+    storageKey;
+    transactions;
+    constructor(address) {
+        this.storageKey = `bridge-history-${address.toLowerCase()}`;
+        this.transactions = this.loadFromStorage();
+    }
+    loadFromStorage() {
+        try {
+            // Check if we're in a browser environment
+            const storage = typeof globalThis !== 'undefined' && 'localStorage' in globalThis
+                ? globalThis.localStorage
+                : null;
+            if (!storage)
+                return [];
+            const stored = storage.getItem(this.storageKey);
+            return stored ? JSON.parse(stored) : [];
+        }
+        catch {
+            return [];
+        }
+    }
+    saveToStorage() {
+        try {
+            // Check if we're in a browser environment
+            const storage = typeof globalThis !== 'undefined' && 'localStorage' in globalThis
+                ? globalThis.localStorage
+                : null;
+            if (!storage)
+                return;
+            storage.setItem(this.storageKey, JSON.stringify(this.transactions));
+        }
+        catch (error) {
+            console.error('[BridgeHistory] Failed to save to storage:', error);
+        }
+    }
+    addTransaction(tx) {
+        // Check for duplicates
+        const existingIndex = this.transactions.findIndex(t => t.txHash.toLowerCase() === tx.txHash.toLowerCase());
+        if (existingIndex >= 0) {
+            // Update existing transaction
+            this.transactions[existingIndex] = { ...this.transactions[existingIndex], ...tx };
+        }
+        else {
+            // Add new transaction at the beginning
+            this.transactions.unshift(tx);
+        }
+        // Keep only last 100 transactions
+        if (this.transactions.length > 100) {
+            this.transactions = this.transactions.slice(0, 100);
+        }
+        this.saveToStorage();
+    }
+    getTransactions(filter) {
+        let result = [...this.transactions];
+        if (filter) {
+            if (filter.chain) {
+                result = result.filter(t => t.sourceChain === filter.chain || t.destinationChain === filter.chain);
+            }
+            if (filter.status) {
+                result = result.filter(t => t.status === filter.status);
+            }
+            if (filter.startTime) {
+                result = result.filter(t => t.timestamp >= filter.startTime);
+            }
+            if (filter.endTime) {
+                result = result.filter(t => t.timestamp <= filter.endTime);
+            }
+        }
+        return result;
+    }
+    getTransactionByHash(txHash) {
+        return this.transactions.find(t => t.txHash.toLowerCase() === txHash.toLowerCase());
+    }
+    updateTransactionStatus(txHash, status) {
+        const index = this.transactions.findIndex(t => t.txHash.toLowerCase() === txHash.toLowerCase());
+        if (index >= 0) {
+            this.transactions[index].status = status;
+            this.saveToStorage();
+            return true;
+        }
+        return false;
+    }
+    clearHistory() {
+        this.transactions = [];
+        this.saveToStorage();
+    }
+    getPendingTransactions() {
+        return this.transactions.filter(t => t.status === 'pending');
+    }
+    getTransactionCount() {
+        return this.transactions.length;
+    }
+}
+// Get bridge history for an address
+export function getBridgeHistory(address, chain) {
+    const history = new BridgeTransactionHistory(address);
+    return history.getTransactions(chain ? { chain } : undefined);
+}
 // RPC endpoints
 export const RPC_URLS = {
     ethereum: ['https://eth.llamarpc.com', 'https://rpc.ankr.com/eth'],

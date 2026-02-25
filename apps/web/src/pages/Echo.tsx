@@ -18,11 +18,14 @@ import {
   Wifi, 
   Zap,
   Wallet,
-  Info
+  Info,
+  History
 } from 'lucide-react'
 import { MultiChainBalance } from '../components/MultiChainBalance'
+import { BridgeHistory } from '../components/BridgeHistory'
 import { useWallet } from '../hooks/useWallet'
 import { useSurvival } from '../hooks/useSurvival'
+import { useBridgeHistory } from '../hooks/useBridgeHistory'
 
 // Types (from useSurvival hook)
 import type { 
@@ -436,14 +439,56 @@ function SurvivalMonitor({ agentId }: { agentId?: string }) {
   )
 }
 
+// Tab type
+type TabType = 'survival' | 'bridge-history'
+
 // Main Echo Page Component
 export function Echo() {
   const { address } = useWallet()
+  const [activeTab, setActiveTab] = useState<TabType>('survival')
+  const { transactions, isLoading, refreshHistory } = useBridgeHistory(address ?? undefined)
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-2xl mx-auto px-4 py-6">
-        <SurvivalMonitor agentId={address || undefined} />
+        {/* Tab Navigation */}
+        <div className="flex gap-1 p-1 bg-gray-200 rounded-xl mb-6">
+          <button
+            onClick={() => setActiveTab('survival')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
+              activeTab === 'survival'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            Survival
+          </button>
+          <button
+            onClick={() => setActiveTab('bridge-history')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all ${
+              activeTab === 'bridge-history'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <History className="w-4 h-4" />
+            Bridge History
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'survival' && (
+          <SurvivalMonitor agentId={address || undefined} />
+        )}
+        
+        {activeTab === 'bridge-history' && (
+          <BridgeHistory 
+            transactions={transactions}
+            isLoading={isLoading}
+            onRefresh={refreshHistory}
+          />
+        )}
       </div>
     </div>
   )

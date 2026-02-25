@@ -68,6 +68,158 @@ export interface BridgeQuote {
   };
 }
 
+// Bridge transaction status
+type BridgeTransactionStatus = 'pending' | 'completed' | 'failed';
+
+// Bridge transaction interface
+export interface BridgeTransaction {
+  txHash: Hex;
+  sourceChain: SupportedChain;
+  destinationChain: SupportedChain;
+  amount: string;
+  token: string;
+  status: BridgeTransactionStatus;
+  timestamp: number;
+  fees?: {
+    nativeFee: string;
+    lzTokenFee: string;
+  };
+  senderAddress: Address;
+  recipientAddress: Address;
+}
+
+// Bridge transaction filter interface
+export interface BridgeTransactionFilter {
+  chain?: SupportedChain;
+  status?: BridgeTransactionStatus;
+  startTime?: number;
+  endTime?: number;
+}
+
+// Bridge transaction history class with localStorage persistence
+export class BridgeTransactionHistory {
+  private storageKey: string;
+  private transactions: BridgeTransaction[];
+
+  constructor(address: Address) {
+    this.storageKey = `bridge-history-${address.toLowerCase()}`;
+    this.transactions = this.loadFromStorage();
+  }
+
+  private loadFromStorage(): BridgeTransaction[] {
+    try {
+      // Check if we're in a browser environment
+      const storage = typeof globalThis !== 'undefined' && 'localStorage' in globalThis 
+        ? (globalThis as any).localStorage 
+        : null;
+      if (!storage) return [];
+      const stored = storage.getItem(this.storageKey);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private saveToStorage(): void {
+    try {
+      // Check if we're in a browser environment
+      const storage = typeof globalThis !== 'undefined' && 'localStorage' in globalThis 
+        ? (globalThis as any).localStorage 
+        : null;
+      if (!storage) return;
+      storage.setItem(this.storageKey, JSON.stringify(this.transactions));
+    } catch (error) {
+      console.error('[BridgeHistory] Failed to save to storage:', error);
+    }
+  }
+
+  addTransaction(tx: BridgeTransaction): void {
+    // Check for duplicates
+    const existingIndex = this.transactions.findIndex(
+      t => t.txHash.toLowerCase() === tx.txHash.toLowerCase()
+    );
+    
+    if (existingIndex >= 0) {
+      // Update existing transaction
+      this.transactions[existingIndex] = { ...this.transactions[existingIndex], ...tx };
+    } else {
+      // Add new transaction at the beginning
+      this.transactions.unshift(tx);
+    }
+    
+    // Keep only last 100 transactions
+    if (this.transactions.length > 100) {
+      this.transactions = this.transactions.slice(0, 100);
+    }
+    
+    this.saveToStorage();
+  }
+
+  getTransactions(filter?: BridgeTransactionFilter): BridgeTransaction[] {
+    let result = [...this.transactions];
+
+    if (filter) {
+      if (filter.chain) {
+        result = result.filter(
+          t => t.sourceChain === filter.chain || t.destinationChain === filter.chain
+        );
+      }
+      if (filter.status) {
+        result = result.filter(t => t.status === filter.status);
+      }
+      if (filter.startTime) {
+        result = result.filter(t => t.timestamp >= filter.startTime!);
+      }
+      if (filter.endTime) {
+        result = result.filter(t => t.timestamp <= filter.endTime!);
+      }
+    }
+
+    return result;
+  }
+
+  getTransactionByHash(txHash: Hex): BridgeTransaction | undefined {
+    return this.transactions.find(
+      t => t.txHash.toLowerCase() === txHash.toLowerCase()
+    );
+  }
+
+  updateTransactionStatus(txHash: Hex, status: BridgeTransactionStatus): boolean {
+    const index = this.transactions.findIndex(
+      t => t.txHash.toLowerCase() === txHash.toLowerCase()
+    );
+    
+    if (index >= 0) {
+      this.transactions[index].status = status;
+      this.saveToStorage();
+      return true;
+    }
+    return false;
+  }
+
+  clearHistory(): void {
+    this.transactions = [];
+    this.saveToStorage();
+  }
+
+  getPendingTransactions(): BridgeTransaction[] {
+    return this.transactions.filter(t => t.status === 'pending');
+  }
+
+  getTransactionCount(): number {
+    return this.transactions.length;
+  }
+}
+
+// Get bridge history for an address
+export function getBridgeHistory(
+  address: Address,
+  chain?: SupportedChain
+): BridgeTransaction[] {
+  const history = new BridgeTransactionHistory(address);
+  return history.getTransactions(chain ? { chain } : undefined);
+}
+
 // RPC endpoints
 export const RPC_URLS: Record<SupportedChain, string[]> = {
   ethereum: ['https://eth.llamarpc.com', 'https://rpc.ankr.com/eth'],

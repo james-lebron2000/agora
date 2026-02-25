@@ -3,7 +3,7 @@
  * Tests the bridge functionality for Base, Optimism, and Arbitrum
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import {
   CrossChainBridge,
   createChainPublicClient,
@@ -14,7 +14,10 @@ import {
   findCheapestChain,
   SUPPORTED_CHAINS,
   USDC_ADDRESSES,
-  type SupportedChain
+  BridgeTransactionHistory,
+  getBridgeHistory,
+  type SupportedChain,
+  type BridgeTransaction
 } from '../src/bridge.js';
 import {
   createMultiChainWallet,
@@ -338,6 +341,317 @@ describe('Integration: Bridge + Wallet Manager', () => {
 
     expect(quote.sourceChain).toBe(cheapest.chain);
     expect(parseFloat(quote.estimatedFee)).toBeGreaterThan(0);
+  });
+});
+
+// Simple localStorage mock for Node.js environment
+class LocalStorageMock {
+  private store: Record<string, string> = {};
+  
+  getItem(key: string): string | null {
+    return this.store[key] || null;
+  }
+  
+  setItem(key: string, value: string): void {
+    this.store[key] = value;
+  }
+  
+  removeItem(key: string): void {
+    delete this.store[key];
+  }
+  
+  clear(): void {
+    this.store = {};
+  }
+}
+
+// Setup global localStorage mock
+globalThis.localStorage = new LocalStorageMock() as any;
+
+describe('Bridge Transaction History', () => {
+  const TEST_ADDRESS: Address = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+  
+  describe('BridgeTransactionHistory Class', () => {
+    let history: BridgeTransactionHistory;
+    let BridgeTransactionHistory: any;
+    
+    beforeEach(async () => {
+      // Clear any existing storage before each test
+      globalThis.localStorage.clear();
+      const bridge = await import('../src/bridge.ts');
+      BridgeTransactionHistory = bridge.BridgeTransactionHistory;
+      history = new BridgeTransactionHistory(TEST_ADDRESS);
+    });
+    
+    it('should create a new history instance', () => {
+      expect(history).toBeDefined();
+      expect(history.getTransactionCount()).toBe(0);
+    });
+    
+    it('should add a transaction', () => {
+      const tx: BridgeTransaction = {
+        txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+        sourceChain: 'base',
+        destinationChain: 'optimism',
+        amount: '100',
+        token: 'USDC',
+        status: 'pending',
+        timestamp: Date.now(),
+        fees: { nativeFee: '0.001', lzTokenFee: '0' },
+        senderAddress: TEST_ADDRESS,
+        recipientAddress: TEST_ADDRESS
+      };
+      
+      history.addTransaction(tx);
+      expect(history.getTransactionCount()).toBe(1);
+    });
+    
+    it('should retrieve a transaction by hash', () => {
+      const txHash = '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
+      const tx: BridgeTransaction = {
+        txHash: txHash as Hex,
+        sourceChain: 'arbitrum',
+        destinationChain: 'base',
+        amount: '50',
+        token: 'USDC',
+        status: 'completed',
+        timestamp: Date.now(),
+        senderAddress: TEST_ADDRESS,
+        recipientAddress: TEST_ADDRESS
+      };
+      
+      history.addTransaction(tx);
+      const retrieved = history.getTransactionByHash(txHash as Hex);
+      
+      expect(retrieved).toBeDefined();
+      expect(retrieved?.txHash.toLowerCase()).toBe(txHash.toLowerCase());
+      expect(retrieved?.amount).toBe('50');
+    });
+    
+    it('should update transaction status', () => {
+      const txHash = '0x1111111111111111111111111111111111111111111111111111111111111111';
+      const tx: BridgeTransaction = {
+        txHash: txHash as Hex,
+        sourceChain: 'optimism',
+        destinationChain: 'arbitrum',
+        amount: '25',
+        token: 'USDC',
+        status: 'pending',
+        timestamp: Date.now(),
+        senderAddress: TEST_ADDRESS,
+        recipientAddress: TEST_ADDRESS
+      };
+      
+      history.addTransaction(tx);
+      expect(history.getTransactionByHash(txHash as Hex)?.status).toBe('pending');
+      
+      const updated = history.updateTransactionStatus(txHash as Hex, 'completed');
+      expect(updated).toBe(true);
+      expect(history.getTransactionByHash(txHash as Hex)?.status).toBe('completed');
+    });
+    
+    it('should filter transactions by status', () => {
+      const now = Date.now();
+      
+      const pendingTx: BridgeTransaction = {
+        txHash: '0x2222222222222222222222222222222222222222222222222222222222222222' as Hex,
+        sourceChain: 'base',
+        destinationChain: 'optimism',
+        amount: '10',
+        token: 'USDC',
+        status: 'pending',
+        timestamp: now,
+        senderAddress: TEST_ADDRESS,
+        recipientAddress: TEST_ADDRESS
+      };
+      
+      const completedTx: BridgeTransaction = {
+        txHash: '0x3333333333333333333333333333333333333333333333333333333333333333' as Hex,
+        sourceChain: 'optimism',
+        destinationChain: 'base',
+        amount: '20',
+        token: 'USDC',
+        status: 'completed',
+        timestamp: now - 1000,
+        senderAddress: TEST_ADDRESS,
+        recipientAddress: TEST_ADDRESS
+      };
+      
+      history.addTransaction(pendingTx);
+      history.addTransaction(completedTx);
+      
+      const pending = history.getTransactions({ status: 'pending' });
+      const completed = history.getTransactions({ status: 'completed' });
+      
+      expect(pending).toHaveLength(1);
+      expect(pending[0].status).toBe('pending');
+      expect(completed).toHaveLength(1);
+      expect(completed[0].status).toBe('completed');
+    });
+    
+    it('should filter transactions by chain', () => {
+      const now = Date.now();
+      
+      const baseToOptTx: BridgeTransaction = {
+        txHash: '0x4444444444444444444444444444444444444444444444444444444444444444' as Hex,
+        sourceChain: 'base',
+        destinationChain: 'optimism',
+        amount: '30',
+        token: 'USDC',
+        status: 'completed',
+        timestamp: now,
+        senderAddress: TEST_ADDRESS,
+        recipientAddress: TEST_ADDRESS
+      };
+      
+      const optToArbTx: BridgeTransaction = {
+        txHash: '0x5555555555555555555555555555555555555555555555555555555555555555' as Hex,
+        sourceChain: 'optimism',
+        destinationChain: 'arbitrum',
+        amount: '40',
+        token: 'USDC',
+        status: 'completed',
+        timestamp: now - 1000,
+        senderAddress: TEST_ADDRESS,
+        recipientAddress: TEST_ADDRESS
+      };
+      
+      history.addTransaction(baseToOptTx);
+      history.addTransaction(optToArbTx);
+      
+      const baseTxs = history.getTransactions({ chain: 'base' });
+      const optimismTxs = history.getTransactions({ chain: 'optimism' });
+      
+      expect(baseTxs).toHaveLength(1);
+      expect(baseTxs[0].sourceChain).toBe('base');
+      expect(optimismTxs).toHaveLength(2); // Both as source and destination
+    });
+    
+    it('should get pending transactions', () => {
+      const now = Date.now();
+      
+      history.addTransaction({
+        txHash: '0x6666666666666666666666666666666666666666666666666666666666666666' as Hex,
+        sourceChain: 'base',
+        destinationChain: 'optimism',
+        amount: '5',
+        token: 'USDC',
+        status: 'pending',
+        timestamp: now,
+        senderAddress: TEST_ADDRESS,
+        recipientAddress: TEST_ADDRESS
+      });
+      
+      history.addTransaction({
+        txHash: '0x7777777777777777777777777777777777777777777777777777777777777777' as Hex,
+        sourceChain: 'optimism',
+        destinationChain: 'arbitrum',
+        amount: '15',
+        token: 'USDC',
+        status: 'pending',
+        timestamp: now - 1000,
+        senderAddress: TEST_ADDRESS,
+        recipientAddress: TEST_ADDRESS
+      });
+      
+      history.addTransaction({
+        txHash: '0x8888888888888888888888888888888888888888888888888888888888888888' as Hex,
+        sourceChain: 'arbitrum',
+        destinationChain: 'base',
+        amount: '25',
+        token: 'USDC',
+        status: 'completed',
+        timestamp: now - 2000,
+        senderAddress: TEST_ADDRESS,
+        recipientAddress: TEST_ADDRESS
+      });
+      
+      const pending = history.getPendingTransactions();
+      expect(pending).toHaveLength(2);
+      expect(pending.every(tx => tx.status === 'pending')).toBe(true);
+    });
+    
+    it('should limit to 100 transactions', () => {
+      for (let i = 0; i < 105; i++) {
+        const tx: BridgeTransaction = {
+          txHash: `0x${i.toString(16).padStart(64, '0')}` as Hex,
+          sourceChain: 'base',
+          destinationChain: 'optimism',
+          amount: String(i),
+          token: 'USDC',
+          status: 'completed',
+          timestamp: Date.now() - i * 1000,
+          senderAddress: TEST_ADDRESS,
+          recipientAddress: TEST_ADDRESS
+        };
+        history.addTransaction(tx);
+      }
+      
+      expect(history.getTransactionCount()).toBe(100);
+    });
+    
+    it('should clear history', () => {
+      history.addTransaction({
+        txHash: '0x9999999999999999999999999999999999999999999999999999999999999999' as Hex,
+        sourceChain: 'base',
+        destinationChain: 'optimism',
+        amount: '100',
+        token: 'USDC',
+        status: 'completed',
+        timestamp: Date.now(),
+        senderAddress: TEST_ADDRESS,
+        recipientAddress: TEST_ADDRESS
+      });
+      
+      expect(history.getTransactionCount()).toBe(1);
+      history.clearHistory();
+      expect(history.getTransactionCount()).toBe(0);
+    });
+  });
+  
+  describe('getBridgeHistory Function', () => {
+    it('should return all transactions when no chain filter', async () => {
+      const bridge = await import('../src/bridge.ts');
+      const history = bridge.getBridgeHistory(TEST_ADDRESS);
+      expect(Array.isArray(history)).toBe(true);
+    });
+    
+    it('should filter by chain when specified', async () => {
+      const bridge = await import('../src/bridge.ts');
+      const history = bridge.getBridgeHistory(TEST_ADDRESS, 'base');
+      expect(Array.isArray(history)).toBe(true);
+    });
+  });
+  
+  describe('localStorage Persistence', () => {
+    const TEST_ADDRESS_2: Address = '0x1111111111111111111111111111111111111111';
+    
+    beforeEach(() => {
+      globalThis.localStorage.clear();
+    });
+    
+    it('should persist transactions to localStorage', async () => {
+      const bridge = await import('../src/bridge.ts');
+      const history = new bridge.BridgeTransactionHistory(TEST_ADDRESS_2);
+      const tx: BridgeTransaction = {
+        txHash: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as Hex,
+        sourceChain: 'base',
+        destinationChain: 'optimism',
+        amount: '1000',
+        token: 'USDC',
+        status: 'completed',
+        timestamp: Date.now(),
+        senderAddress: TEST_ADDRESS_2,
+        recipientAddress: TEST_ADDRESS_2
+      };
+      
+      history.addTransaction(tx);
+      
+      // Create new instance with same address
+      const history2 = new bridge.BridgeTransactionHistory(TEST_ADDRESS_2);
+      expect(history2.getTransactionCount()).toBe(1);
+      expect(history2.getTransactionByHash(tx.txHash)).toBeDefined();
+    });
   });
 });
 

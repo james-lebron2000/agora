@@ -750,6 +750,43 @@ export interface BridgeQuote {
         lzTokenFee: bigint;
     };
 }
+type BridgeTransactionStatus = 'pending' | 'completed' | 'failed';
+export interface BridgeTransaction {
+    txHash: Hex;
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    amount: string;
+    token: string;
+    status: BridgeTransactionStatus;
+    timestamp: number;
+    fees?: {
+        nativeFee: string;
+        lzTokenFee: string;
+    };
+    senderAddress: Address;
+    recipientAddress: Address;
+}
+export interface BridgeTransactionFilter {
+    chain?: SupportedChain;
+    status?: BridgeTransactionStatus;
+    startTime?: number;
+    endTime?: number;
+}
+export declare class BridgeTransactionHistory {
+    private storageKey;
+    private transactions;
+    constructor(address: Address);
+    private loadFromStorage;
+    private saveToStorage;
+    addTransaction(tx: BridgeTransaction): void;
+    getTransactions(filter?: BridgeTransactionFilter): BridgeTransaction[];
+    getTransactionByHash(txHash: Hex): BridgeTransaction | undefined;
+    updateTransactionStatus(txHash: Hex, status: BridgeTransactionStatus): boolean;
+    clearHistory(): void;
+    getPendingTransactions(): BridgeTransaction[];
+    getTransactionCount(): number;
+}
+export declare function getBridgeHistory(address: Address, chain?: SupportedChain): BridgeTransaction[];
 export declare const RPC_URLS: Record<SupportedChain, string[]>;
 export interface ChainBalance {
     chain: SupportedChain;
@@ -5167,7 +5204,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         withdrawals?: import("viem").Withdrawal[] | undefined | undefined | undefined;
         withdrawalsRoot?: `0x${string}` | undefined | undefined;
         transactions: includeTransactions extends true ? ({
-            type: "legacy";
             to: Address | null;
             nonce: number;
             yParity?: undefined | undefined;
@@ -5184,6 +5220,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined;
             blobVersionedHashes?: undefined | undefined;
             chainId?: number | undefined;
+            type: "legacy";
             gasPrice: bigint;
             maxFeePerBlobGas?: undefined | undefined;
             maxFeePerGas?: undefined | undefined;
@@ -5192,7 +5229,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_1 ? T_1 extends (blockTag extends "pending" ? true : false) ? T_1 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_2 ? T_2 extends (blockTag extends "pending" ? true : false) ? T_2 extends true ? null : number : never : never;
         } | {
-            type: "eip2930";
             to: Address | null;
             nonce: number;
             yParity: number;
@@ -5209,6 +5245,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined;
             blobVersionedHashes?: undefined | undefined;
             chainId: number;
+            type: "eip2930";
             gasPrice: bigint;
             maxFeePerBlobGas?: undefined | undefined;
             maxFeePerGas?: undefined | undefined;
@@ -5217,7 +5254,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_4 ? T_4 extends (blockTag extends "pending" ? true : false) ? T_4 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_5 ? T_5 extends (blockTag extends "pending" ? true : false) ? T_5 extends true ? null : number : never : never;
         } | {
-            type: "eip1559";
             to: Address | null;
             nonce: number;
             yParity: number;
@@ -5234,6 +5270,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined;
             blobVersionedHashes?: undefined | undefined;
             chainId: number;
+            type: "eip1559";
             gasPrice?: undefined | undefined;
             maxFeePerBlobGas?: undefined | undefined;
             maxFeePerGas: bigint;
@@ -5242,7 +5279,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_7 ? T_7 extends (blockTag extends "pending" ? true : false) ? T_7 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_8 ? T_8 extends (blockTag extends "pending" ? true : false) ? T_8 extends true ? null : number : never : never;
         } | {
-            type: "eip4844";
             to: Address | null;
             nonce: number;
             yParity: number;
@@ -5259,6 +5295,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined;
             blobVersionedHashes: readonly Hex[];
             chainId: number;
+            type: "eip4844";
             gasPrice?: undefined | undefined;
             maxFeePerBlobGas: bigint;
             maxFeePerGas: bigint;
@@ -5267,7 +5304,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_10 ? T_10 extends (blockTag extends "pending" ? true : false) ? T_10 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_11 ? T_11 extends (blockTag extends "pending" ? true : false) ? T_11 extends true ? null : number : never : never;
         } | {
-            type: "eip7702";
             to: Address | null;
             nonce: number;
             yParity: number;
@@ -5284,6 +5320,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList: import("viem").SignedAuthorizationList;
             blobVersionedHashes?: undefined | undefined;
             chainId: number;
+            type: "eip7702";
             gasPrice?: undefined | undefined;
             maxFeePerBlobGas?: undefined | undefined;
             maxFeePerGas: bigint;
@@ -5292,7 +5329,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_13 ? T_13 extends (blockTag extends "pending" ? true : false) ? T_13 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_14 ? T_14 extends (blockTag extends "pending" ? true : false) ? T_14 extends true ? null : number : never : never;
         } | {
-            type: "deposit";
             to: import("abitype").Address | null;
             nonce: number;
             yParity: number;
@@ -5305,6 +5341,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
+            type: "deposit";
             gasPrice?: undefined | undefined | undefined;
             maxFeePerBlobGas?: undefined | undefined | undefined;
             maxFeePerGas: bigint;
@@ -5316,7 +5353,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_16 ? T_16 extends (blockTag extends "pending" ? true : false) ? T_16 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_17 ? T_17 extends (blockTag extends "pending" ? true : false) ? T_17 extends true ? null : number : never : never;
         } | {
-            type: "legacy";
             to: import("abitype").Address | null;
             nonce: number;
             yParity?: undefined | undefined | undefined;
@@ -5333,6 +5369,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined | undefined;
             blobVersionedHashes?: undefined | undefined | undefined;
             chainId?: number | undefined | undefined;
+            type: "legacy";
             gasPrice: bigint;
             maxFeePerBlobGas?: undefined | undefined | undefined;
             maxFeePerGas?: undefined | undefined | undefined;
@@ -5344,7 +5381,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_19 ? T_19 extends (blockTag extends "pending" ? true : false) ? T_19 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_20 ? T_20 extends (blockTag extends "pending" ? true : false) ? T_20 extends true ? null : number : never : never;
         } | {
-            type: "eip2930";
             to: import("abitype").Address | null;
             nonce: number;
             yParity: number;
@@ -5361,6 +5397,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined | undefined;
             blobVersionedHashes?: undefined | undefined | undefined;
             chainId: number;
+            type: "eip2930";
             gasPrice: bigint;
             maxFeePerBlobGas?: undefined | undefined | undefined;
             maxFeePerGas?: undefined | undefined | undefined;
@@ -5372,7 +5409,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_22 ? T_22 extends (blockTag extends "pending" ? true : false) ? T_22 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_23 ? T_23 extends (blockTag extends "pending" ? true : false) ? T_23 extends true ? null : number : never : never;
         } | {
-            type: "eip1559";
             to: import("abitype").Address | null;
             nonce: number;
             yParity: number;
@@ -5389,6 +5425,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined | undefined;
             blobVersionedHashes?: undefined | undefined | undefined;
             chainId: number;
+            type: "eip1559";
             gasPrice?: undefined | undefined | undefined;
             maxFeePerBlobGas?: undefined | undefined | undefined;
             maxFeePerGas: bigint;
@@ -5400,7 +5437,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_25 ? T_25 extends (blockTag extends "pending" ? true : false) ? T_25 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_26 ? T_26 extends (blockTag extends "pending" ? true : false) ? T_26 extends true ? null : number : never : never;
         } | {
-            type: "eip4844";
             to: import("abitype").Address | null;
             nonce: number;
             yParity: number;
@@ -5417,6 +5453,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined | undefined;
             blobVersionedHashes: readonly import("viem").Hex[];
             chainId: number;
+            type: "eip4844";
             gasPrice?: undefined | undefined | undefined;
             maxFeePerBlobGas: bigint;
             maxFeePerGas: bigint;
@@ -5428,7 +5465,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_28 ? T_28 extends (blockTag extends "pending" ? true : false) ? T_28 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_29 ? T_29 extends (blockTag extends "pending" ? true : false) ? T_29 extends true ? null : number : never : never;
         } | {
-            type: "eip7702";
             to: import("abitype").Address | null;
             nonce: number;
             yParity: number;
@@ -5445,6 +5481,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList: import("viem").SignedAuthorizationList;
             blobVersionedHashes?: undefined | undefined | undefined;
             chainId: number;
+            type: "eip7702";
             gasPrice?: undefined | undefined | undefined;
             maxFeePerBlobGas?: undefined | undefined | undefined;
             maxFeePerGas: bigint;
@@ -5456,7 +5493,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_31 ? T_31 extends (blockTag extends "pending" ? true : false) ? T_31 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_32 ? T_32 extends (blockTag extends "pending" ? true : false) ? T_32 extends true ? null : number : never : never;
         } | {
-            type: "deposit";
             to: import("abitype").Address | null;
             nonce: number;
             yParity: number;
@@ -5469,6 +5505,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
+            type: "deposit";
             gasPrice?: undefined | undefined | undefined;
             maxFeePerBlobGas?: undefined | undefined | undefined;
             maxFeePerGas: bigint;
@@ -5480,7 +5517,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_34 ? T_34 extends (blockTag extends "pending" ? true : false) ? T_34 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_35 ? T_35 extends (blockTag extends "pending" ? true : false) ? T_35 extends true ? null : number : never : never;
         } | {
-            type: "legacy";
             to: import("abitype").Address | null;
             nonce: number;
             yParity?: undefined | undefined | undefined;
@@ -5497,6 +5533,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined | undefined;
             blobVersionedHashes?: undefined | undefined | undefined;
             chainId?: number | undefined | undefined;
+            type: "legacy";
             gasPrice: bigint;
             maxFeePerBlobGas?: undefined | undefined | undefined;
             maxFeePerGas?: undefined | undefined | undefined;
@@ -5508,7 +5545,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_37 ? T_37 extends (blockTag extends "pending" ? true : false) ? T_37 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_38 ? T_38 extends (blockTag extends "pending" ? true : false) ? T_38 extends true ? null : number : never : never;
         } | {
-            type: "eip2930";
             to: import("abitype").Address | null;
             nonce: number;
             yParity: number;
@@ -5525,6 +5561,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined | undefined;
             blobVersionedHashes?: undefined | undefined | undefined;
             chainId: number;
+            type: "eip2930";
             gasPrice: bigint;
             maxFeePerBlobGas?: undefined | undefined | undefined;
             maxFeePerGas?: undefined | undefined | undefined;
@@ -5536,7 +5573,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_40 ? T_40 extends (blockTag extends "pending" ? true : false) ? T_40 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_41 ? T_41 extends (blockTag extends "pending" ? true : false) ? T_41 extends true ? null : number : never : never;
         } | {
-            type: "eip1559";
             to: import("abitype").Address | null;
             nonce: number;
             yParity: number;
@@ -5553,6 +5589,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined | undefined;
             blobVersionedHashes?: undefined | undefined | undefined;
             chainId: number;
+            type: "eip1559";
             gasPrice?: undefined | undefined | undefined;
             maxFeePerBlobGas?: undefined | undefined | undefined;
             maxFeePerGas: bigint;
@@ -5564,7 +5601,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_43 ? T_43 extends (blockTag extends "pending" ? true : false) ? T_43 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_44 ? T_44 extends (blockTag extends "pending" ? true : false) ? T_44 extends true ? null : number : never : never;
         } | {
-            type: "eip4844";
             to: import("abitype").Address | null;
             nonce: number;
             yParity: number;
@@ -5581,6 +5617,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList?: undefined | undefined | undefined;
             blobVersionedHashes: readonly import("viem").Hex[];
             chainId: number;
+            type: "eip4844";
             gasPrice?: undefined | undefined | undefined;
             maxFeePerBlobGas: bigint;
             maxFeePerGas: bigint;
@@ -5592,7 +5629,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_46 ? T_46 extends (blockTag extends "pending" ? true : false) ? T_46 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_47 ? T_47 extends (blockTag extends "pending" ? true : false) ? T_47 extends true ? null : number : never : never;
         } | {
-            type: "eip7702";
             to: import("abitype").Address | null;
             nonce: number;
             yParity: number;
@@ -5609,6 +5645,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             authorizationList: import("viem").SignedAuthorizationList;
             blobVersionedHashes?: undefined | undefined | undefined;
             chainId: number;
+            type: "eip7702";
             gasPrice?: undefined | undefined | undefined;
             maxFeePerBlobGas?: undefined | undefined | undefined;
             maxFeePerGas: bigint;
@@ -6367,7 +6404,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
     } | undefined) => Promise<import("viem").EstimateMaxPriorityFeePerGasReturnType>;
     getStorageAt: (args: import("viem").GetStorageAtParameters) => Promise<import("viem").GetStorageAtReturnType>;
     getTransaction: <blockTag extends import("viem").BlockTag = "latest">(args: import("viem").GetTransactionParameters<blockTag>) => Promise<{
-        type: "legacy";
         to: Address | null;
         nonce: number;
         yParity?: undefined | undefined;
@@ -6384,6 +6420,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined;
         blobVersionedHashes?: undefined | undefined;
         chainId?: number | undefined;
+        type: "legacy";
         gasPrice: bigint;
         maxFeePerBlobGas?: undefined | undefined;
         maxFeePerGas?: undefined | undefined;
@@ -6392,7 +6429,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_1 ? T_1 extends (blockTag extends "pending" ? true : false) ? T_1 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_2 ? T_2 extends (blockTag extends "pending" ? true : false) ? T_2 extends true ? null : number : never : never;
     } | {
-        type: "eip2930";
         to: Address | null;
         nonce: number;
         yParity: number;
@@ -6409,6 +6445,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined;
         blobVersionedHashes?: undefined | undefined;
         chainId: number;
+        type: "eip2930";
         gasPrice: bigint;
         maxFeePerBlobGas?: undefined | undefined;
         maxFeePerGas?: undefined | undefined;
@@ -6417,7 +6454,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_4 ? T_4 extends (blockTag extends "pending" ? true : false) ? T_4 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_5 ? T_5 extends (blockTag extends "pending" ? true : false) ? T_5 extends true ? null : number : never : never;
     } | {
-        type: "eip1559";
         to: Address | null;
         nonce: number;
         yParity: number;
@@ -6434,6 +6470,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined;
         blobVersionedHashes?: undefined | undefined;
         chainId: number;
+        type: "eip1559";
         gasPrice?: undefined | undefined;
         maxFeePerBlobGas?: undefined | undefined;
         maxFeePerGas: bigint;
@@ -6442,7 +6479,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_7 ? T_7 extends (blockTag extends "pending" ? true : false) ? T_7 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_8 ? T_8 extends (blockTag extends "pending" ? true : false) ? T_8 extends true ? null : number : never : never;
     } | {
-        type: "eip4844";
         to: Address | null;
         nonce: number;
         yParity: number;
@@ -6459,6 +6495,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined;
         blobVersionedHashes: readonly Hex[];
         chainId: number;
+        type: "eip4844";
         gasPrice?: undefined | undefined;
         maxFeePerBlobGas: bigint;
         maxFeePerGas: bigint;
@@ -6467,7 +6504,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_10 ? T_10 extends (blockTag extends "pending" ? true : false) ? T_10 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_11 ? T_11 extends (blockTag extends "pending" ? true : false) ? T_11 extends true ? null : number : never : never;
     } | {
-        type: "eip7702";
         to: Address | null;
         nonce: number;
         yParity: number;
@@ -6484,6 +6520,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList: import("viem").SignedAuthorizationList;
         blobVersionedHashes?: undefined | undefined;
         chainId: number;
+        type: "eip7702";
         gasPrice?: undefined | undefined;
         maxFeePerBlobGas?: undefined | undefined;
         maxFeePerGas: bigint;
@@ -6492,7 +6529,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_13 ? T_13 extends (blockTag extends "pending" ? true : false) ? T_13 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_14 ? T_14 extends (blockTag extends "pending" ? true : false) ? T_14 extends true ? null : number : never : never;
     } | {
-        type: "deposit";
         to: import("abitype").Address | null;
         nonce: number;
         yParity: number;
@@ -6505,6 +6541,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
+        type: "deposit";
         gasPrice?: undefined | undefined | undefined;
         maxFeePerBlobGas?: undefined | undefined | undefined;
         maxFeePerGas: bigint;
@@ -6516,7 +6553,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_16 ? T_16 extends (blockTag extends "pending" ? true : false) ? T_16 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_17 ? T_17 extends (blockTag extends "pending" ? true : false) ? T_17 extends true ? null : number : never : never;
     } | {
-        type: "legacy";
         to: import("abitype").Address | null;
         nonce: number;
         yParity?: undefined | undefined | undefined;
@@ -6533,6 +6569,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined | undefined;
         blobVersionedHashes?: undefined | undefined | undefined;
         chainId?: number | undefined | undefined;
+        type: "legacy";
         gasPrice: bigint;
         maxFeePerBlobGas?: undefined | undefined | undefined;
         maxFeePerGas?: undefined | undefined | undefined;
@@ -6544,7 +6581,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_19 ? T_19 extends (blockTag extends "pending" ? true : false) ? T_19 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_20 ? T_20 extends (blockTag extends "pending" ? true : false) ? T_20 extends true ? null : number : never : never;
     } | {
-        type: "eip2930";
         to: import("abitype").Address | null;
         nonce: number;
         yParity: number;
@@ -6561,6 +6597,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined | undefined;
         blobVersionedHashes?: undefined | undefined | undefined;
         chainId: number;
+        type: "eip2930";
         gasPrice: bigint;
         maxFeePerBlobGas?: undefined | undefined | undefined;
         maxFeePerGas?: undefined | undefined | undefined;
@@ -6572,7 +6609,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_22 ? T_22 extends (blockTag extends "pending" ? true : false) ? T_22 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_23 ? T_23 extends (blockTag extends "pending" ? true : false) ? T_23 extends true ? null : number : never : never;
     } | {
-        type: "eip1559";
         to: import("abitype").Address | null;
         nonce: number;
         yParity: number;
@@ -6589,6 +6625,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined | undefined;
         blobVersionedHashes?: undefined | undefined | undefined;
         chainId: number;
+        type: "eip1559";
         gasPrice?: undefined | undefined | undefined;
         maxFeePerBlobGas?: undefined | undefined | undefined;
         maxFeePerGas: bigint;
@@ -6600,7 +6637,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_25 ? T_25 extends (blockTag extends "pending" ? true : false) ? T_25 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_26 ? T_26 extends (blockTag extends "pending" ? true : false) ? T_26 extends true ? null : number : never : never;
     } | {
-        type: "eip4844";
         to: import("abitype").Address | null;
         nonce: number;
         yParity: number;
@@ -6617,6 +6653,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined | undefined;
         blobVersionedHashes: readonly import("viem").Hex[];
         chainId: number;
+        type: "eip4844";
         gasPrice?: undefined | undefined | undefined;
         maxFeePerBlobGas: bigint;
         maxFeePerGas: bigint;
@@ -6628,7 +6665,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_28 ? T_28 extends (blockTag extends "pending" ? true : false) ? T_28 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_29 ? T_29 extends (blockTag extends "pending" ? true : false) ? T_29 extends true ? null : number : never : never;
     } | {
-        type: "eip7702";
         to: import("abitype").Address | null;
         nonce: number;
         yParity: number;
@@ -6645,6 +6681,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList: import("viem").SignedAuthorizationList;
         blobVersionedHashes?: undefined | undefined | undefined;
         chainId: number;
+        type: "eip7702";
         gasPrice?: undefined | undefined | undefined;
         maxFeePerBlobGas?: undefined | undefined | undefined;
         maxFeePerGas: bigint;
@@ -6656,7 +6693,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_31 ? T_31 extends (blockTag extends "pending" ? true : false) ? T_31 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_32 ? T_32 extends (blockTag extends "pending" ? true : false) ? T_32 extends true ? null : number : never : never;
     } | {
-        type: "deposit";
         to: import("abitype").Address | null;
         nonce: number;
         yParity: number;
@@ -6669,6 +6705,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
+        type: "deposit";
         gasPrice?: undefined | undefined | undefined;
         maxFeePerBlobGas?: undefined | undefined | undefined;
         maxFeePerGas: bigint;
@@ -6680,7 +6717,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_34 ? T_34 extends (blockTag extends "pending" ? true : false) ? T_34 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_35 ? T_35 extends (blockTag extends "pending" ? true : false) ? T_35 extends true ? null : number : never : never;
     } | {
-        type: "legacy";
         to: import("abitype").Address | null;
         nonce: number;
         yParity?: undefined | undefined | undefined;
@@ -6697,6 +6733,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined | undefined;
         blobVersionedHashes?: undefined | undefined | undefined;
         chainId?: number | undefined | undefined;
+        type: "legacy";
         gasPrice: bigint;
         maxFeePerBlobGas?: undefined | undefined | undefined;
         maxFeePerGas?: undefined | undefined | undefined;
@@ -6708,7 +6745,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_37 ? T_37 extends (blockTag extends "pending" ? true : false) ? T_37 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_38 ? T_38 extends (blockTag extends "pending" ? true : false) ? T_38 extends true ? null : number : never : never;
     } | {
-        type: "eip2930";
         to: import("abitype").Address | null;
         nonce: number;
         yParity: number;
@@ -6725,6 +6761,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined | undefined;
         blobVersionedHashes?: undefined | undefined | undefined;
         chainId: number;
+        type: "eip2930";
         gasPrice: bigint;
         maxFeePerBlobGas?: undefined | undefined | undefined;
         maxFeePerGas?: undefined | undefined | undefined;
@@ -6736,7 +6773,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_40 ? T_40 extends (blockTag extends "pending" ? true : false) ? T_40 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_41 ? T_41 extends (blockTag extends "pending" ? true : false) ? T_41 extends true ? null : number : never : never;
     } | {
-        type: "eip1559";
         to: import("abitype").Address | null;
         nonce: number;
         yParity: number;
@@ -6753,6 +6789,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined | undefined;
         blobVersionedHashes?: undefined | undefined | undefined;
         chainId: number;
+        type: "eip1559";
         gasPrice?: undefined | undefined | undefined;
         maxFeePerBlobGas?: undefined | undefined | undefined;
         maxFeePerGas: bigint;
@@ -6764,7 +6801,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_43 ? T_43 extends (blockTag extends "pending" ? true : false) ? T_43 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_44 ? T_44 extends (blockTag extends "pending" ? true : false) ? T_44 extends true ? null : number : never : never;
     } | {
-        type: "eip4844";
         to: import("abitype").Address | null;
         nonce: number;
         yParity: number;
@@ -6781,6 +6817,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList?: undefined | undefined | undefined;
         blobVersionedHashes: readonly import("viem").Hex[];
         chainId: number;
+        type: "eip4844";
         gasPrice?: undefined | undefined | undefined;
         maxFeePerBlobGas: bigint;
         maxFeePerGas: bigint;
@@ -6792,7 +6829,6 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_46 ? T_46 extends (blockTag extends "pending" ? true : false) ? T_46 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_47 ? T_47 extends (blockTag extends "pending" ? true : false) ? T_47 extends true ? null : number : never : never;
     } | {
-        type: "eip7702";
         to: import("abitype").Address | null;
         nonce: number;
         yParity: number;
@@ -6809,6 +6845,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList: import("viem").SignedAuthorizationList;
         blobVersionedHashes?: undefined | undefined | undefined;
         chainId: number;
+        type: "eip7702";
         gasPrice?: undefined | undefined | undefined;
         maxFeePerBlobGas?: undefined | undefined | undefined;
         maxFeePerGas: bigint;
@@ -14452,7 +14489,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList: import("viem").TransactionSerializableEIP7702["authorizationList"];
     } ? "eip7702" : never) | (request["type"] extends string | undefined ? Extract<request["type"], string> : never)>) ? T_12 extends "eip7702" ? import("viem").TransactionRequestEIP7702 : never : never : never)>> & {
         chainId?: number | undefined;
-    }, (request["parameters"] extends readonly import("viem").PrepareTransactionRequestParameterType[] ? request["parameters"][number] : "type" | "nonce" | "fees" | "gas" | "blobVersionedHashes" | "chainId") extends infer T_13 ? T_13 extends (request["parameters"] extends readonly import("viem").PrepareTransactionRequestParameterType[] ? request["parameters"][number] : "type" | "nonce" | "fees" | "gas" | "blobVersionedHashes" | "chainId") ? T_13 extends "fees" ? "gasPrice" | "maxFeePerGas" | "maxPriorityFeePerGas" : T_13 : never : never> & (unknown extends request["kzg"] ? {} : Pick<request, "kzg">) extends infer T ? { [K in keyof T]: T[K]; } : never>;
+    }, (request["parameters"] extends readonly import("viem").PrepareTransactionRequestParameterType[] ? request["parameters"][number] : "nonce" | "fees" | "gas" | "blobVersionedHashes" | "chainId" | "type") extends infer T_13 ? T_13 extends (request["parameters"] extends readonly import("viem").PrepareTransactionRequestParameterType[] ? request["parameters"][number] : "nonce" | "fees" | "gas" | "blobVersionedHashes" | "chainId" | "type") ? T_13 extends "fees" ? "gasPrice" | "maxFeePerGas" | "maxPriorityFeePerGas" : T_13 : never : never> & (unknown extends request["kzg"] ? {} : Pick<request, "kzg">) extends infer T ? { [K in keyof T]: T[K]; } : never>;
     readContract: <const abi extends import("viem").Abi | readonly unknown[], functionName extends import("viem").ContractFunctionName<abi, "pure" | "view">, const args extends import("viem").ContractFunctionArgs<abi, "pure" | "view", functionName>>(args: import("viem").ReadContractParameters<abi, functionName, args>) => Promise<import("viem").ReadContractReturnType<abi, functionName, args>>;
     sendRawTransaction: (args: import("viem").SendRawTransactionParameters) => Promise<import("viem").SendRawTransactionReturnType>;
     sendRawTransactionSync: (args: import("viem").SendRawTransactionSyncParameters) => Promise<import("viem").TransactionReceipt | {
