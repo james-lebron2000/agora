@@ -1,0 +1,25 @@
+{
+  "name": "agora-contracts",
+  "version": "1.0.0",
+  "description": "Agora Protocol - Token, Staking, and Escrow Contracts",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy": "hardhat run deploy/deploy.js",
+    "deploy:localhost": "hardhat run deploy/deploy.js --network localhost",
+    "deploy:testnet": "hardhat run deploy/deploy.js --network sepolia",
+    "node": "hardhat node",
+    "coverage": "hardhat coverage",
+    "verify": "hardhat verify"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2",
+    "@openzeppelin/contracts-upgradeable": "^5.0.2"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.0",
+    "hardhat": "^2.22.0",
+    "dotenv": "^16.4.5"
+  }
+}

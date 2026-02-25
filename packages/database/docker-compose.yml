@@ -1,0 +1,212 @@
+version: '3.8'
+
+services:
+  # Primary PostgreSQL database
+  postgres-primary:
+    image: postgres:16-alpine
+    container_name: agora-postgres-primary
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agora_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-agora}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_primary_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agora} -d ${POSTGRES_DB:-agora}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - agora-network
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "hot_standby=on"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=768MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=4MB"
+      - "-c"
+      - "min_wal_size=1GB"
+      - "-c"
+      - "max_wal_size=4GB"
+      - "-c"
+      - "log_statement=all"
+      - "-c"
+      - "log_destination=stderr"
+
+  # PostgreSQL Read Replica (for testing read replica setup)
+  postgres-replica:
+    image: postgres:16-alpine
+    container_name: agora-postgres-replica
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-agora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agora_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-agora}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      REPLICA_NAME: replica1
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_REPLICA_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agora} -d ${POSTGRES_DB:-agora}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - agora-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    # Replica setup is handled by init script or manually for local dev
+    command:
+      - "postgres"
+      - "-c"
+      - "hot_standby=on"
+      - "-c"
+      - "max_connections=200"
+
+  # PgBouncer - Connection Pooler
+  pgbouncer:
+    image: pgbouncer/pgbouncer:1.21.0
+    container_name: agora-pgbouncer
+    environment:
+      DATABASES_HOST: postgres-primary
+      DATABASES_PORT: 5432
+      DATABASES_DATABASE: ${POSTGRES_DB:-agora}
+      DATABASES_USER: ${POSTGRES_USER:-agora}
+      DATABASES_PASSWORD: ${POSTGRES_PASSWORD:-agora_secret}
+      DATABASES_POOL_MODE: transaction
+      DATABASES_MAX_DB_CONNECTIONS: 100
+      DATABASES_DEFAULT_POOL_SIZE: 20
+      DATABASES_MIN_POOL_SIZE: 5
+      DATABASES_RESERVE_POOL_SIZE: 5
+      DATABASES_RESERVE_POOL_TIMEOUT: 3
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 10000
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 3
+      SERVER_IDLE_TIMEOUT: 600
+      SERVER_LIFETIME: 3600
+      SERVER_CONNECT_TIMEOUT: 15
+      QUERY_TIMEOUT: 0
+      QUERY_WAIT_TIMEOUT: 120
+      CLIENT_LOGIN_TIMEOUT: 60
+      AUTH_TYPE: scram-sha-256
+      ADMIN_USERS: ${POSTGRES_USER:-agora}
+      STATS_USERS: ${POSTGRES_USER:-agora}
+    ports:
+      - "${PGBOUNCER_PORT:-6432}:6432"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "pg_isready -h localhost -p 6432 -U ${POSTGRES_USER:-agora}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - agora-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+
+  # PgAdmin for database management (optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: agora-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@agora.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    networks:
+      - agora-network
+    depends_on:
+      - postgres-primary
+      - postgres-replica
+    profiles:
+      - pgadmin
+
+  # Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: agora-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agora-network
+
+  # Prisma Migrate Service (runs migrations on startup)
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    container_name: agora-migrate
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-agora}:${POSTGRES_PASSWORD:-agora_secret}@postgres-primary:5432/${POSTGRES_DB:-agora}
+      DIRECT_URL: postgresql://${POSTGRES_USER:-agora}:${POSTGRES_PASSWORD:-agora_secret}@postgres-primary:5432/${POSTGRES_DB:-agora}
+    volumes:
+      - ./prisma:/app/prisma:ro
+    networks:
+      - agora-network
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    profiles:
+      - migrate
+
+volumes:
+  postgres_primary_data:
+    driver: local
+  postgres_replica_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  agora-network:
+    driver: bridge
+    name: agora-network

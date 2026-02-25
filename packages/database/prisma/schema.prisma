@@ -1,0 +1,494 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../node_modules/.prisma/client"
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x", "linux-arm64-openssl-3.0.x"]
+  previewFeatures = ["postgresqlExtensions", "fullTextSearch", "fullTextIndex"]
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  directUrl         = env("DIRECT_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+  extensions        = [pgcrypto, pg_trgm, uuid_ossp]
+}
+
+// ===============================
+// USER MODULE
+// ===============================
+
+enum UserRole {
+  ADMIN
+  CREATOR
+  USER
+  AGENT_OWNER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+  DELETED
+}
+
+model User {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  walletAddress String?    @unique @map("wallet_address")
+  username      String?    @unique
+  displayName   String?    @map("display_name")
+  avatarUrl     String?    @map("avatar_url")
+  role          UserRole   @default(USER)
+  status        UserStatus @default(PENDING_VERIFICATION)
+  
+  // Authentication
+  passwordHash  String?    @map("password_hash")
+  lastLoginAt   DateTime?  @map("last_login_at")
+  
+  // Profile
+  bio           String?
+  twitterHandle String?    @map("twitter_handle")
+  discordId     String?    @map("discord_id")
+  telegramId    String?    @map("telegram_id")
+  
+  // Relations
+  agents        Agent[]
+  tasks         Task[]
+  payments      Payment[]
+  sessions      UserSession[]
+  
+  // Timestamps
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  deletedAt     DateTime?  @map("deleted_at")
+  
+  @@index([email])
+  @@index([walletAddress])
+  @@index([status])
+  @@index([role])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model UserSession {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  token        String    @unique
+  ipAddress    String?   @map("ip_address")
+  userAgent    String?   @map("user_agent")
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt    DateTime  @default(now()) @map("created_at")
+  
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+// ===============================
+// AGENT MODULE
+// ===============================
+
+enum AgentStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  PAUSED
+  SUSPENDED
+  ARCHIVED
+}
+
+enum AgentCategory {
+  TRADING
+  SOCIAL
+  GAMING
+  DATA_ANALYSIS
+  AUTOMATION
+  CUSTOMER_SERVICE
+  CONTENT_CREATION
+  RESEARCH
+  OTHER
+}
+
+model Agent {
+  id              String        @id @default(uuid())
+  name            String
+  description     String
+  shortDescription String?      @map("short_description") @db.VarChar(280)
+  
+  // Ownership
+  ownerId         String        @map("owner_id")
+  owner           User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  
+  // Configuration
+  category        AgentCategory @default(OTHER)
+  status          AgentStatus   @default(DRAFT)
+  
+  // Visibility
+  isPublic        Boolean       @default(false) @map("is_public")
+  isListed        Boolean       @default(false) @map("is_listed")
+  
+  // Pricing
+  pricePerTask    Decimal       @default(0) @map("price_per_task") @db.Decimal(20, 8)
+  currency        String        @default("USDC")
+  
+  // Stats
+  totalTasks      Int           @default(0) @map("total_tasks")
+  successRate     Decimal       @default(0) @map("success_rate") @db.Decimal(5, 2)
+  rating          Decimal       @default(0) @map("rating") @db.Decimal(3, 2)
+  reviewCount     Int           @default(0) @map("review_count")
+  
+  // Technical
+  runtime         String?       // e.g., "eliza", "custom"
+  runtimeConfig   Json?         @map("runtime_config")
+  webhookUrl      String?       @map("webhook_url")
+  apiKeyHash      String?       @map("api_key_hash")
+  
+  // Media
+  avatarUrl       String?       @map("avatar_url")
+  bannerUrl       String?       @map("banner_url")
+  
+  // Relations
+  tasks           Task[]
+  versions        AgentVersion[]
+  reviews         AgentReview[]
+  
+  // Timestamps
+  publishedAt     DateTime?     @map("published_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  deletedAt       DateTime?     @map("deleted_at")
+  
+  @@index([ownerId])
+  @@index([status])
+  @@index([category])
+  @@index([isListed, isPublic])
+  @@index([rating])
+  @@index([createdAt])
+  @@fulltext([name, description])
+  @@map("agents")
+}
+
+model AgentVersion {
+  id          String   @id @default(uuid())
+  agentId     String   @map("agent_id")
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  
+  version     String
+  configHash  String   @map("config_hash")
+  runtimeConfig Json
+  
+  // Changelog
+  changes     String?
+  isActive    Boolean  @default(false) @map("is_active")
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  @@unique([agentId, version])
+  @@index([agentId])
+  @@index([isActive])
+  @@map("agent_versions")
+}
+
+model AgentReview {
+  id        String   @id @default(uuid())
+  agentId   String   @map("agent_id")
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  
+  userId    String   @map("user_id")
+  rating    Int
+  comment   String?
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@unique([agentId, userId])
+  @@index([agentId])
+  @@index([rating])
+  @@map("agent_reviews")
+}
+
+// ===============================
+// TASK MODULE
+// ===============================
+
+enum TaskStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  TIMEOUT
+  RETRYING
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+model Task {
+  id          String       @id @default(uuid())
+  
+  // Relations
+  userId      String       @map("user_id")
+  user        User         @relation(fields: [userId], references: [id])
+  
+  agentId     String       @map("agent_id")
+  agent       Agent        @relation(fields: [agentId], references: [id])
+  
+  // Content
+  type        String       // Task type identifier
+  title       String
+  description String?
+  
+  // Input/Output
+  input       Json
+  output      Json?
+  metadata    Json?
+  
+  // Status
+  status      TaskStatus   @default(PENDING)
+  priority    TaskPriority @default(NORMAL)
+  
+  // Execution
+  startedAt   DateTime?    @map("started_at")
+  completedAt DateTime?    @map("completed_at")
+  durationMs  Int?         @map("duration_ms")
+  
+  // Retry
+  retryCount  Int          @default(0) @map("retry_count")
+  maxRetries  Int          @default(3) @map("max_retries")
+  lastError   String?      @map("last_error")
+  
+  // Payment
+  payment     Payment?
+  
+  // Callback
+  webhookUrl  String?      @map("webhook_url")
+  callbackData Json?       @map("callback_data")
+  
+  // Timestamps
+  expiresAt   DateTime?    @map("expires_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  
+  // Logs relation
+  logs        TaskLog[]
+  
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([agentId, status])
+  @@map("tasks")
+}
+
+model TaskLog {
+  id        String   @id @default(uuid())
+  taskId    String   @map("task_id")
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  
+  level     String   // INFO, WARN, ERROR, DEBUG
+  message   String
+  metadata  Json?
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@index([taskId])
+  @@index([level])
+  @@index([createdAt])
+  @@map("task_logs")
+}
+
+// ===============================
+// PAYMENT MODULE
+// ===============================
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CRYPTO_WALLET
+  CREDIT_CARD
+  STRIPE
+  USDC
+  USDT
+  ETH
+  SOL
+}
+
+enum PaymentType {
+  TASK_PAYMENT
+  AGENT_SUBSCRIPTION
+  PLATFORM_FEE
+  REFUND
+  DEPOSIT
+  WITHDRAWAL
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  
+  // Relations
+  userId          String        @map("user_id")
+  user            User          @relation(fields: [userId], references: [id])
+  
+  taskId          String?       @unique @map("task_id")
+  task            Task?         @relation(fields: [taskId], references: [id])
+  
+  agentId         String?       @map("agent_id")
+  
+  // Payment Details
+  type            PaymentType
+  amount          Decimal       @db.Decimal(20, 8)
+  currency        String        @default("USDC")
+  platformFee     Decimal       @default(0) @map("platform_fee") @db.Decimal(20, 8)
+  creatorPayout   Decimal       @default(0) @map("creator_payout") @db.Decimal(20, 8)
+  
+  // Status
+  status          PaymentStatus @default(PENDING)
+  method          PaymentMethod
+  
+  // Transaction IDs
+  providerTxId    String?       @map("provider_tx_id") // External payment ID
+  blockchainTxHash String?      @map("blockchain_tx_hash")
+  
+  // Wallet Info
+  fromWallet      String?       @map("from_wallet")
+  toWallet        String?       @map("to_wallet")
+  
+  // Refund Info
+  refundedAmount  Decimal?      @map("refunded_amount") @db.Decimal(20, 8)
+  refundReason    String?       @map("refund_reason")
+  refundedAt      DateTime?     @map("refunded_at")
+  
+  // Metadata
+  metadata        Json?
+  
+  // Timestamps
+  processedAt     DateTime?     @map("processed_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  
+  @@index([userId])
+  @@index([taskId])
+  @@index([status])
+  @@index([agentId])
+  @@index([createdAt])
+  @@index([blockchainTxHash])
+  @@map("payments")
+}
+
+// ===============================
+// SYSTEM MODULE
+// ===============================
+
+model SystemConfig {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       Json
+  description String?
+  updatedBy   String?  @map("updated_by")
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  @@map("system_configs")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  
+  entityType  String   @map("entity_type") // e.g., "user", "agent", "task"
+  entityId    String   @map("entity_id")
+  action      String   // e.g., "CREATE", "UPDATE", "DELETE"
+  
+  performedBy String?  @map("performed_by")
+  oldValue    Json?    @map("old_value")
+  newValue    Json?    @map("new_value")
+  
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ===============================
+// RATE LIMITING
+// ===============================
+
+model RateLimit {
+  id        String   @id @default(uuid())
+  
+  key       String   // Composite key: "user:{userId}:endpoint:{path}"
+  window    Int      // Time window in seconds
+  maxRequests Int    @map("max_requests")
+  
+  requests  Int      @default(0)
+  resetAt   DateTime @map("reset_at")
+  
+  createdAt DateTime @default(now()) @map("created_at")
+  
+  @@unique([key, window])
+  @@index([key])
+  @@index([resetAt])
+  @@map("rate_limits")
+}
+
+// ===============================
+// QUEUE/WORKER MODULE
+// ===============================
+
+model JobQueue {
+  id          String   @id @default(uuid())
+  
+  queue       String   // Queue name
+  jobType     String   @map("job_type")
+  payload     Json
+  
+  priority    Int      @default(0)
+  status      String   // pending, processing, completed, failed
+  
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3) @map("max_attempts")
+  
+  scheduledAt DateTime @default(now()) @map("scheduled_at")
+  processedAt DateTime? @map("processed_at")
+  completedAt DateTime? @map("completed_at")
+  
+  error       String?
+  result      Json?
+  
+  lockedBy    String?  @map("locked_by")
+  lockedAt    DateTime? @map("locked_at")
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  @@index([queue, status])
+  @@index([status, scheduledAt])
+  @@index([lockedBy, lockedAt])
+  @@map("job_queues")
+}

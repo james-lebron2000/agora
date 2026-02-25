@@ -1,0 +1,22 @@
+FROM node:20-alpine
+
+# Install dependencies for Prisma
+RUN apk add --no-cache openssl
+
+WORKDIR /app
+
+# Install Prisma globally
+RUN npm install -g prisma tsx
+
+# Copy package files
+COPY package*.json ./
+RUN npm install
+
+# Copy prisma schema
+COPY prisma ./prisma/
+
+# Generate Prisma Client
+RUN prisma generate
+
+# Default command runs migrations
+CMD ["prisma", "migrate", "deploy"]
