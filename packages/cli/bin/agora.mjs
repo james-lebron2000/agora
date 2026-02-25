@@ -472,4 +472,164 @@ program
     console.log(JSON.stringify(json, null, 2));
   });
 
+// Escrow commands
+const escrowProgram = program
+  .command('escrow')
+  .description('Escrow operations for payments');
+
+escrowProgram
+  .command('deposit')
+  .description('Deposit USDC into escrow')
+  .option('--relay <url>', 'Relay URL', DEFAULT_RELAY)
+  .option('--request-id <id>', 'Request ID')
+  .option('--seller <address>', 'Seller address')
+  .option('--amount <number>', 'Amount in USDC')
+  .option('--private-key <hex>', 'Private key for signing')
+  .action(async (opts) => {
+    if (!opts.requestId || !opts.seller || !opts.amount) {
+      console.error('Missing --request-id, --seller, or --amount');
+      process.exit(1);
+    }
+    const payload = {
+      request_id: opts.requestId,
+      seller: opts.seller,
+      amount: opts.amount,
+      type: 'ESCROW_DEPOSIT',
+    };
+    const { json } = await fetchJson(`${opts.relay.replace(/\/$/, '')}/v1/escrow/deposit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    console.log(JSON.stringify(json, null, 2));
+  });
+
+escrowProgram
+  .command('release')
+  .description('Release escrow to seller')
+  .option('--relay <url>', 'Relay URL', DEFAULT_RELAY)
+  .option('--request-id <id>', 'Request ID')
+  .option('--private-key <hex>', 'Private key for signing')
+  .action(async (opts) => {
+    if (!opts.requestId) {
+      console.error('Missing --request-id');
+      process.exit(1);
+    }
+    const payload = {
+      request_id: opts.requestId,
+      type: 'ESCROW_RELEASE',
+    };
+    const { json } = await fetchJson(`${opts.relay.replace(/\/$/, '')}/v1/escrow/release`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    console.log(JSON.stringify(json, null, 2));
+  });
+
+escrowProgram
+  .command('refund')
+  .description('Refund escrow to buyer')
+  .option('--relay <url>', 'Relay URL', DEFAULT_RELAY)
+  .option('--request-id <id>', 'Request ID')
+  .option('--private-key <hex>', 'Private key for signing')
+  .action(async (opts) => {
+    if (!opts.requestId) {
+      console.error('Missing --request-id');
+      process.exit(1);
+    }
+    const payload = {
+      request_id: opts.requestId,
+      type: 'ESCROW_REFUND',
+    };
+    const { json } = await fetchJson(`${opts.relay.replace(/\/$/, '')}/v1/escrow/refund`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    console.log(JSON.stringify(json, null, 2));
+  });
+
+escrowProgram
+  .command('batch-release')
+  .description('Release multiple escrows (gas efficient)')
+  .option('--relay <url>', 'Relay URL', DEFAULT_RELAY)
+  .option('--request-ids <ids>', 'Comma-separated request IDs')
+  .option('--file <path>', 'File with request IDs (JSON array)')
+  .option('--private-key <hex>', 'Private key for signing')
+  .action(async (opts) => {
+    let requestIds = [];
+    if (opts.file) {
+      requestIds = readJsonFile(opts.file);
+      if (!Array.isArray(requestIds)) {
+        console.error('File must contain a JSON array of request IDs');
+        process.exit(1);
+      }
+    } else if (opts.requestIds) {
+      requestIds = opts.requestIds.split(',').map(id => id.trim());
+    } else {
+      console.error('Missing --request-ids or --file');
+      process.exit(1);
+    }
+    
+    const payload = {
+      request_ids: requestIds,
+      type: 'ESCROW_BATCH_RELEASE',
+    };
+    const { json } = await fetchJson(`${opts.relay.replace(/\/$/, '')}/v1/escrow/batch-release`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    console.log(JSON.stringify(json, null, 2));
+  });
+
+escrowProgram
+  .command('batch-refund')
+  .description('Refund multiple escrows (gas efficient)')
+  .option('--relay <url>', 'Relay URL', DEFAULT_RELAY)
+  .option('--request-ids <ids>', 'Comma-separated request IDs')
+  .option('--file <path>', 'File with request IDs (JSON array)')
+  .option('--private-key <hex>', 'Private key for signing')
+  .action(async (opts) => {
+    let requestIds = [];
+    if (opts.file) {
+      requestIds = readJsonFile(opts.file);
+      if (!Array.isArray(requestIds)) {
+        console.error('File must contain a JSON array of request IDs');
+        process.exit(1);
+      }
+    } else if (opts.requestIds) {
+      requestIds = opts.requestIds.split(',').map(id => id.trim());
+    } else {
+      console.error('Missing --request-ids or --file');
+      process.exit(1);
+    }
+    
+    const payload = {
+      request_ids: requestIds,
+      type: 'ESCROW_BATCH_REFUND',
+    };
+    const { json } = await fetchJson(`${opts.relay.replace(/\/$/, '')}/v1/escrow/batch-refund`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    console.log(JSON.stringify(json, null, 2));
+  });
+
+escrowProgram
+  .command('status')
+  .description('Check escrow status')
+  .option('--relay <url>', 'Relay URL', DEFAULT_RELAY)
+  .option('--request-id <id>', 'Request ID')
+  .action(async (opts) => {
+    if (!opts.requestId) {
+      console.error('Missing --request-id');
+      process.exit(1);
+    }
+    const { json } = await fetchJson(`${opts.relay.replace(/\/$/, '')}/v1/escrow/status?request_id=${opts.requestId}`);
+    console.log(JSON.stringify(json, null, 2));
+  });
+
 program.parseAsync(process.argv);
