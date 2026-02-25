@@ -5,6 +5,7 @@ export * from './did.js';
 export * from './agent.js';
 export * from './payment.js';
 export * from './escrow.js';
+export * from './crypto.js';
 // Ad Auction module (v1.0)
 export { AdAuctionManager, getOrCreateAdAuctionManager, getAdAuctionManager, removeAdAuctionManager, getAuctionStats, getAllActiveBids, calculateVickreyPrice, calculateDecayedPrice, validateAdContent, formatBidAmount, getRecommendedBid, DEFAULT_AUCTION_CONFIG, SLOT_BASE_PRICES } from './ad-auction.js';
 // Batch escrow operations

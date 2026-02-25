@@ -1,4 +1,5 @@
-import canonicalize from 'canonicalize';
+import * as canonicalizeModule from 'canonicalize';
+const canonicalize = canonicalizeModule.default || canonicalizeModule;
 import * as ed25519 from '@noble/ed25519';
 import { didKeyToPublicKey } from './did.js';
 export class EnvelopeBuilder {
@@ -49,10 +50,15 @@ export class EnvelopeSigner {
             throw new Error('Ed25519 private key must be 32 bytes');
         }
     }
-    async sign(envelope) {
+    async sign(envelope, encryptedPayload) {
         // Create canonical JSON without signature
         const { sig: _, ...envelopeWithoutSig } = envelope;
-        const canonical = canonicalize(envelopeWithoutSig);
+        // If encrypted payload is provided, use it instead of the plaintext payload
+        // This ensures we sign the encrypted content, not the plaintext
+        const envelopeToSign = encryptedPayload
+            ? { ...envelopeWithoutSig, payload: { encrypted: encryptedPayload } }
+            : envelopeWithoutSig;
+        const canonical = canonicalize(envelopeToSign);
         if (!canonical) {
             throw new Error('Failed to canonicalize envelope');
         }
@@ -63,6 +69,16 @@ export class EnvelopeSigner {
             ...envelope,
             sig: base64urlEncode(signature),
         };
+    }
+    /**
+     * Sign an envelope with an encrypted payload
+     * This is a convenience method for signing encrypted envelopes
+     */
+    async signEncrypted(envelope, encryptedPayload) {
+        return this.sign({
+            ...envelope,
+            encrypted: true,
+        }, encryptedPayload);
     }
 }
 export class EnvelopeVerifier {
@@ -77,7 +93,13 @@ export class EnvelopeVerifier {
         }
         // Remove signature and canonicalize
         const { sig, ...envelopeWithoutSig } = envelope;
-        const canonical = canonicalize(envelopeWithoutSig);
+        // For encrypted envelopes with wrapped payload, verify the encrypted content
+        let envelopeToVerify = envelopeWithoutSig;
+        if (envelope.encrypted && envelope.payload?.encrypted) {
+            // Keep the payload as-is (containing encrypted data) for verification
+            envelopeToVerify = envelopeWithoutSig;
+        }
+        const canonical = canonicalize(envelopeToVerify);
         if (!canonical) {
             return false;
         }

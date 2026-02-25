@@ -1,4 +1,5 @@
-import canonicalizeImpl from "canonicalize";
+import * as canonicalizeModule from 'canonicalize';
+const canonicalizeImpl = canonicalizeModule.default || canonicalizeModule;
 /**
  * RFC 8785 JSON Canonicalization Scheme (JCS) implementation.
  *

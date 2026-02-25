@@ -9,6 +9,8 @@ export interface Envelope {
     thread?: Thread;
     meta?: Meta;
     sig?: string;
+    encrypted?: boolean;
+    encryptionNonce?: string;
 }
 export type MessageType = 'HELLO' | 'WELCOME' | 'STATUS' | 'REQUEST' | 'OFFER' | 'ACCEPT' | 'RESULT' | 'DEBATE' | 'ERROR' | 'REVOKE' | 'ESCROW_HELD' | 'ESCROW_RELEASED' | 'ESCROW_REFUNDED';
 export interface Sender {
@@ -31,6 +33,8 @@ export interface Meta {
 }
 export interface SignedEnvelope extends Envelope {
     sig: string;
+    encrypted?: boolean;
+    encryptionNonce?: string;
 }
 export declare class EnvelopeBuilder {
     private envelope;
@@ -46,7 +50,12 @@ export declare class EnvelopeBuilder {
 export declare class EnvelopeSigner {
     private privateKey;
     constructor(privateKey: Uint8Array);
-    sign(envelope: Envelope): Promise<SignedEnvelope>;
+    sign(envelope: Envelope, encryptedPayload?: string): Promise<SignedEnvelope>;
+    /**
+     * Sign an envelope with an encrypted payload
+     * This is a convenience method for signing encrypted envelopes
+     */
+    signEncrypted(envelope: Envelope, encryptedPayload: string): Promise<SignedEnvelope>;
 }
 export declare class EnvelopeVerifier {
     verify(envelope: SignedEnvelope): Promise<boolean>;
