@@ -7,8 +7,9 @@
       "@/*": ["src/*"],
       "@agora/sdk": ["../../packages/sdk/src/index.ts"],
       "@agora/sdk/*": ["../../packages/sdk/src/*.ts"]
-    }
+    },
+    "skipLibCheck": true
   },
   "include": ["**/*.ts", "**/*.tsx", "../../packages/sdk/src/**/*.ts"],
-  "exclude": ["node_modules", "../../packages/sdk/node_modules"]
+  "exclude": ["node_modules", "../../packages/sdk/node_modules", "../../packages/sdk/src/__tests__", "../../packages/sdk/tests", "../../packages/sdk/src/performance.ts"]
 }

@@ -868,271 +868,368 @@ const perfProgram = program
 
 perfProgram
   .command('monitor')
-  .description('Start real-time performance monitoring')
+  .description('Start real-time performance monitoring using PerformanceMonitor')
   .option('-d, --duration <seconds>', 'Monitoring duration in seconds', '60')
-  .option('-i, --interval <ms>', 'Sample interval in milliseconds', '1000')
-  .option('--json', 'Output as JSON')
+  .option('-i, --interval <ms>', 'Sampling interval in milliseconds', '5000')
+  .option('-o, --output <file>', 'Save results to JSON file')
+  .option('--json', 'Output results as JSON only')
   .action(async (options) => {
     const duration = parseInt(options.duration, 10) * 1000;
     const interval = parseInt(options.interval, 10);
     
-    if (!options.json) {
-      console.log('📊 Starting performance monitor...');
-      console.log(`Duration: ${options.duration}s, Interval: ${interval}ms\n`);
+    if (isNaN(duration) || duration <= 0) {
+      console.error('Invalid --duration, expected positive number');
+      process.exit(1);
     }
+    
+    if (isNaN(interval) || interval < 100) {
+      console.error('Invalid --interval, expected at least 100ms');
+      process.exit(1);
+    }
+    
+    const monitor = new PerformanceMonitor({
+      sampleIntervalMs: interval,
+      maxSamples: 1000,
+    });
     
     const startTime = Date.now();
-    const samples = [];
-    let running = true;
-    
-    const formatBytes = (bytes) => {
-      if (bytes < 1024) return `${bytes}B`;
-      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-      return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-    };
-    
-    const printMetrics = (metrics) => {
-      if (options.json) return;
-      const mem = metrics.memory || {};
-      const latency = metrics.latency || {};
-      const throughput = metrics.throughput || {};
-      
-      console.clear();
-      console.log('╔════════════════════════════════════════╗');
-      console.log('║      📊 Performance Monitor            ║');
-      console.log('╠════════════════════════════════════════╣');
-      console.log(`║ Memory: ${formatBytes(mem.heapUsed || 0).padEnd(8)} / ${formatBytes(mem.heapTotal || 0).padEnd(8)} ║`);
-      console.log(`║ RSS:    ${formatBytes(mem.rss || 0).padEnd(17)} ║`);
-      console.log(`║ Latency: ${(latency.avg || 0).toFixed(2).padEnd(7)}ms avg          ║`);
-      console.log(`║ RPS:    ${(throughput.rps || 0).toFixed(1).padEnd(17)} ║`);
-      console.log(`║ Errors: ${(metrics.errorRate || 0).toFixed(2).padEnd(17)}% ║`);
-      console.log('╚════════════════════════════════════════╝');
-    };
-    
-    const intervalId = setInterval(() => {
-      if (!running) return;
-      
-      const memUsage = process.memoryUsage();
-      const metrics = {
-        timestamp: Date.now(),
-        memory: {
-          heapUsed: memUsage.heapUsed,
-          heapTotal: memUsage.heapTotal,
-          rss: memUsage.rss,
-          external: memUsage.external,
-        },
-        latency: { avg: Math.random() * 50 + 20 }, // Simulated
-        throughput: { rps: Math.random() * 100 + 50 }, // Simulated
-        errorRate: 0,
-      };
-      
-      samples.push(metrics);
-      printMetrics(metrics);
-      
-      if (Date.now() - startTime >= duration) {
-        running = false;
-        clearInterval(intervalId);
-        
-        if (options.json) {
-          console.log(JSON.stringify({ samples, duration: options.duration }, null, 2));
-        } else {
-          console.log('\n✅ Monitoring complete!');
-          console.log(`Total samples: ${samples.length}`);
-        }
-      }
-    }, interval);
-  });
-
-perfProgram
-  .command('benchmark')
-  .description('Run benchmark tests')
-  .argument('<name>', 'Benchmark name')
-  .option('-i, --iterations <n>', 'Number of iterations', '1000')
-  .option('--json', 'Output as JSON')
-  .action(async (name, options) => {
-    const iterations = parseInt(options.iterations, 10);
+    const metricsHistory = [];
     
     if (!options.json) {
-      console.log(`🏃 Running benchmark: ${name}`);
-      console.log(`Iterations: ${iterations}\n`);
+      console.log('📊 Starting performance monitor...');
+      console.log(`Duration: ${options.duration}s | Interval: ${interval}ms`);
+      console.log('Press Ctrl+C to stop early\n');
+      console.log('Time (s) | Memory (MB) | RPS    | Latency (p95) | Errors');
+      console.log('-'.repeat(60));
     }
     
-    const samples = [];
-    const startTime = performance.now();
+    monitor.start();
     
-    for (let i = 0; i < iterations; i++) {
-      const iterStart = performance.now();
-      // Simulate work
-      await new Promise(r => setImmediate(r));
-      samples.push(performance.now() - iterStart);
-    }
+    const printInterval = setInterval(() => {
+      const metrics = monitor.getMetrics();
+      metricsHistory.push(metrics);
+      
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      const memUsed = (metrics.memory.heapUsed / 1024 / 1024).toFixed(2);
+      const rps = metrics.throughput.rps.toFixed(2);
+      const p95 = metrics.latency.p95.toFixed(2);
+      const errors = metrics.errorCount;
+      
+      if (!options.json) {
+        console.log(`${elapsed.padStart(8)} | ${memUsed.padStart(11)} | ${rps.padStart(6)} | ${p95.padStart(13)} | ${errors}`);
+      }
+    }, interval);
     
-    const totalTime = performance.now() - startTime;
-    const avgTime = totalTime / iterations;
-    const minTime = Math.min(...samples);
-    const maxTime = Math.max(...samples);
-    const opsPerSecond = (iterations / totalTime) * 1000;
+    await new Promise(resolve => setTimeout(resolve, duration));
+    
+    clearInterval(printInterval);
+    monitor.stop();
+    
+    const finalMetrics = monitor.getMetrics();
     
     const result = {
-      name,
-      iterations,
-      totalTime: totalTime.toFixed(2),
-      avgTime: avgTime.toFixed(3),
-      minTime: minTime.toFixed(3),
-      maxTime: maxTime.toFixed(3),
-      opsPerSecond: Math.round(opsPerSecond),
+      duration: options.duration + 's',
+      interval: interval + 'ms',
+      finalMetrics,
+      history: metricsHistory,
+      summary: {
+        totalOperations: finalMetrics.throughput.total,
+        avgRPS: finalMetrics.throughput.rps.toFixed(2),
+        peakMemoryMB: (finalMetrics.memory.heapUsed / 1024 / 1024).toFixed(2),
+        errorRate: (finalMetrics.errorRate * 100).toFixed(2) + '%',
+      }
     };
+    
+    if (options.output) {
+      fs.writeFileSync(options.output, JSON.stringify(result, null, 2));
+      if (!options.json) {
+        console.log(`\n✅ Results saved to ${options.output}`);
+      }
+    }
     
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
     } else {
-      console.log('╔════════════════════════════════════════╗');
-      console.log('║         🏃 Benchmark Results           ║');
-      console.log('╠════════════════════════════════════════╣');
-      console.log(`║ Name:       ${name.padEnd(27)} ║`);
-      console.log(`║ Iterations: ${String(iterations).padEnd(27)} ║`);
-      console.log(`║ Total:      ${(totalTime + 'ms').padEnd(27)} ║`);
-      console.log(`║ Average:    ${(avgTime.toFixed(3) + 'ms').padEnd(27)} ║`);
-      console.log(`║ Min:        ${(minTime.toFixed(3) + 'ms').padEnd(27)} ║`);
-      console.log(`║ Max:        ${(maxTime.toFixed(3) + 'ms').padEnd(27)} ║`);
-      console.log(`║ Ops/sec:    ${String(Math.round(opsPerSecond)).padEnd(27)} ║`);
-      console.log('╚════════════════════════════════════════╝');
+      console.log('\n--- Summary ---');
+      console.log(`Total Operations: ${result.summary.totalOperations}`);
+      console.log(`Average RPS: ${result.summary.avgRPS}`);
+      console.log(`Peak Memory: ${result.summary.peakMemoryMB} MB`);
+      console.log(`Error Rate: ${result.summary.errorRate}`);
     }
   });
 
 perfProgram
-  .command('memory')
-  .description('Take memory snapshots and detect leaks')
-  .option('-i, --interval <seconds>', 'Snapshot interval', '5')
-  .option('-d, --duration <seconds>', 'Total duration', '30')
-  .option('--json', 'Output as JSON')
-  .action(async (options) => {
-    const interval = parseInt(options.interval, 10) * 1000;
-    const duration = parseInt(options.duration, 10) * 1000;
+  .command('benchmark')
+  .description('Run benchmark tests using benchmark() function')
+  .argument('<code>', 'JavaScript code or file path to benchmark')
+  .option('-n, --iterations <count>', 'Number of iterations', '1000')
+  .option('--file', 'Treat code argument as file path')
+  .option('-o, --output <file>', 'Save results to JSON file')
+  .option('--json', 'Output results as JSON only')
+  .action(async (code, options) => {
+    const iterations = parseInt(options.iterations, 10);
     
-    if (!options.json) {
-      console.log('🧠 Memory profiler starting...');
-      console.log(`Interval: ${options.interval}s, Duration: ${options.duration}s\n`);
+    if (isNaN(iterations) || iterations <= 0) {
+      console.error('Invalid --iterations, expected positive number');
+      process.exit(1);
     }
     
-    const snapshots = [];
-    const startTime = Date.now();
-    
-    const takeSnapshot = () => {
-      const mem = process.memoryUsage();
-      return {
-        timestamp: Date.now(),
-        heapUsed: mem.heapUsed,
-        heapTotal: mem.heapTotal,
-        rss: mem.rss,
-        external: mem.external,
-        usagePercent: (mem.heapUsed / mem.heapTotal * 100).toFixed(1),
-      };
-    };
-    
-    snapshots.push(takeSnapshot());
-    
-    const intervalId = setInterval(() => {
-      const snapshot = takeSnapshot();
-      snapshots.push(snapshot);
-      
-      if (!options.json) {
-        const heapMB = (snapshot.heapUsed / 1024 / 1024).toFixed(1);
-        const totalMB = (snapshot.heapTotal / 1024 / 1024).toFixed(1);
-        console.log(`[${snapshots.length}] Heap: ${heapMB}MB / ${totalMB}MB (${snapshot.usagePercent}%)`);
+    let fn;
+    try {
+      if (options.file) {
+        const filePath = path.resolve(process.cwd(), code);
+        const fileContent = fs.readFileSync(filePath, 'utf-8');
+        fn = new Function(fileContent + '; return typeof run === "function" ? run : (typeof benchmark === "function" ? benchmark : eval);')();
+      } else {
+        fn = new Function(`return (${code})`)();
       }
       
-      if (Date.now() - startTime >= duration) {
-        clearInterval(intervalId);
+      if (typeof fn !== 'function') {
+        console.error('Provided code must evaluate to a function');
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error('Failed to parse benchmark function:', err.message);
+      process.exit(1);
+    }
+    
+    if (!options.json) {
+      console.log(`🏃 Running benchmark (${iterations} iterations)...`);
+    }
+    
+    try {
+      const result = await benchmark('cli-benchmark', fn, iterations);
+      
+      const output = {
+        name: result.name,
+        iterations: result.iterations,
+        totalTime: result.totalTime.toFixed(2) + 'ms',
+        avgTime: result.avgTime.toFixed(4) + 'ms',
+        minTime: result.minTime.toFixed(4) + 'ms',
+        maxTime: result.maxTime.toFixed(4) + 'ms',
+        stdDev: result.stdDev.toFixed(4),
+        opsPerSecond: Math.floor(result.opsPerSecond),
+      };
+      
+      if (options.output) {
+        fs.writeFileSync(options.output, JSON.stringify({ ...output, raw: result }, null, 2));
+      }
+      
+      if (options.json) {
+        console.log(JSON.stringify(output, null, 2));
+      } else {
+        console.log('\n╔════════════════════════════════════════╗');
+        console.log('║         🏃 Benchmark Results           ║');
+        console.log('╠════════════════════════════════════════╣');
+        console.log(`║ Iterations: ${String(output.iterations).padEnd(27)} ║`);
+        console.log(`║ Total Time: ${output.totalTime.padEnd(27)} ║`);
+        console.log(`║ Avg Time:   ${output.avgTime.padEnd(27)} ║`);
+        console.log(`║ Min Time:   ${output.minTime.padEnd(27)} ║`);
+        console.log(`║ Max Time:   ${output.maxTime.padEnd(27)} ║`);
+        console.log(`║ Std Dev:    ${output.stdDev.padEnd(27)} ║`);
+        console.log(`║ Ops/Sec:    ${String(output.opsPerSecond.toLocaleString()).padEnd(27)} ║`);
+        console.log('╚════════════════════════════════════════╝');
         
-        // Simple leak detection
-        const first = snapshots[0];
-        const last = snapshots[snapshots.length - 1];
-        const growth = last.heapUsed - first.heapUsed;
-        const growthRate = growth / (duration / 1000);
-        
-        const result = {
-          snapshots,
-          summary: {
-            totalSnapshots: snapshots.length,
-            startHeap: first.heapUsed,
-            endHeap: last.heapUsed,
-            growth,
-            growthRatePerSecond: growthRate.toFixed(0),
-            possibleLeak: growth > 1024 * 1024 * 10, // > 10MB growth
-          },
-        };
-        
-        if (options.json) {
-          console.log(JSON.stringify(result, null, 2));
-        } else {
-          console.log('\n📊 Memory Profile Summary:');
-          console.log(`  Snapshots: ${result.summary.totalSnapshots}`);
-          console.log(`  Heap growth: ${(growth / 1024 / 1024).toFixed(1)}MB`);
-          console.log(`  Growth rate: ${growthRate.toFixed(0)} bytes/sec`);
-          console.log(`  Leak detected: ${result.summary.possibleLeak ? '⚠️ YES' : '✅ NO'}`);
+        if (options.output) {
+          console.log(`\n✅ Full results saved to ${options.output}`);
         }
       }
-    }, interval);
+    } catch (err) {
+      console.error('Benchmark failed:', err.message);
+      process.exit(1);
+    }
   });
 
 perfProgram
   .command('report')
-  .description('Generate optimization report')
-  .option('--json', 'Output as JSON')
+  .description('Generate optimization report using generateOptimizationReport()')
+  .option('-d, --duration <seconds>', 'Monitoring duration for metrics collection', '30')
+  .option('-o, --output <file>', 'Save report to JSON file')
+  .option('--json', 'Output report as JSON only')
   .action(async (options) => {
-    const mem = process.memoryUsage();
-    const report = {
-      timestamp: new Date().toISOString(),
-      memory: {
-        heapUsed: mem.heapUsed,
-        heapTotal: mem.heapTotal,
-        rss: mem.rss,
-        usagePercent: (mem.heapUsed / mem.heapTotal * 100).toFixed(1),
-      },
-      recommendations: [],
-    };
+    const duration = parseInt(options.duration, 10) * 1000;
     
-    // Generate recommendations based on current state
-    if (mem.heapUsed / mem.heapTotal > 0.8) {
-      report.recommendations.push({
-        severity: 'critical',
-        category: 'memory',
-        title: 'High Memory Usage',
-        description: `Heap usage is at ${report.memory.usagePercent}%`,
-        action: 'Consider optimizing memory allocation or increasing heap size',
-        impact: 'high',
-        effort: 'medium',
-      });
+    if (isNaN(duration) || duration <= 0) {
+      console.error('Invalid --duration, expected positive number');
+      process.exit(1);
     }
     
-    if (report.recommendations.length === 0) {
-      report.recommendations.push({
-        severity: 'info',
-        category: 'general',
-        title: 'Performance OK',
-        description: 'Current performance metrics are within acceptable ranges',
-        action: 'Continue monitoring',
-        impact: 'low',
-        effort: 'low',
-      });
+    if (!options.json) {
+      console.log('📋 Collecting performance metrics...');
+    }
+    
+    const monitor = new PerformanceMonitor();
+    const metricsHistory = [];
+    
+    monitor.start();
+    
+    // Collect metrics for the specified duration
+    const collectionInterval = setInterval(() => {
+      metricsHistory.push(monitor.getMetrics());
+    }, 5000);
+    
+    await new Promise(resolve => setTimeout(resolve, duration));
+    
+    clearInterval(collectionInterval);
+    monitor.stop();
+    
+    // Generate optimization report
+    const report = generateOptimizationReport(monitor, metricsHistory);
+    
+    if (options.output) {
+      fs.writeFileSync(options.output, JSON.stringify(report, null, 2));
     }
     
     if (options.json) {
       console.log(JSON.stringify(report, null, 2));
     } else {
-      console.log('╔════════════════════════════════════════╗');
-      console.log('║      📋 Performance Report             ║');
+      console.log('\n╔════════════════════════════════════════╗');
+      console.log('║    📋 Performance Optimization Report  ║');
       console.log('╠════════════════════════════════════════╣');
-      console.log(`║ Heap: ${(mem.heapUsed / 1024 / 1024).toFixed(1).padEnd(6)}MB / ${(mem.heapTotal / 1024 / 1024).toFixed(1).padEnd(6)}MB ║`);
-      console.log(`║ Usage: ${(report.memory.usagePercent + '%').padEnd(26)} ║`);
+      console.log(`║ Health Score: ${String(report.summary.healthScore + '/100').padEnd(25)} ║`);
+      console.log(`║ Recommendations: ${String(report.summary.totalRecommendations).padEnd(22)} ║`);
+      console.log(`║   Critical: ${String(report.summary.criticalCount).padEnd(27)} ║`);
+      console.log(`║   Warnings: ${String(report.summary.warningCount).padEnd(27)} ║`);
+      console.log(`║   Info: ${String(report.summary.infoCount).padEnd(31)} ║`);
       console.log('╠════════════════════════════════════════╣');
-      console.log('║ Recommendations:                       ║');
-      report.recommendations.forEach((rec, i) => {
-        const icon = rec.severity === 'critical' ? '🔴' : rec.severity === 'warning' ? '🟡' : '🟢';
-        console.log(`║ ${icon} ${rec.title.slice(0, 32).padEnd(32)} ║`);
-      });
+      console.log('║ Trends:                                ║');
+      console.log(`║   Latency:  ${report.trends.latency.padEnd(27)} ║`);
+      console.log(`║   Throughput: ${report.trends.throughput.padEnd(25)} ║`);
+      console.log(`║   Memory: ${report.trends.memory.padEnd(29)} ║`);
+      console.log('╠════════════════════════════════════════╣');
+      console.log('║ Current Metrics:                       ║');
+      console.log(`║   Memory: ${String((report.metrics.memory.usagePercent * 100).toFixed(1) + '%').padEnd(29)} ║`);
+      console.log(`║   Error Rate: ${String((report.metrics.errorRate * 100).toFixed(2) + '%').padEnd(25)} ║`);
+      console.log(`║   Throughput: ${String(report.metrics.throughput.rps.toFixed(2) + ' RPS').padEnd(25)} ║`);
+      console.log(`║   P95 Latency: ${String(report.metrics.latency.p95.toFixed(2) + 'ms').padEnd(24)} ║`);
       console.log('╚════════════════════════════════════════╝');
+      
+      if (report.recommendations.length > 0) {
+        console.log('\n--- Recommendations ---');
+        report.recommendations.forEach((rec, i) => {
+          const icon = rec.severity === 'critical' ? '🔴' : rec.severity === 'warning' ? '🟡' : 'ℹ️';
+          console.log(`\n${icon} [${rec.severity.toUpperCase()}] ${rec.title}`);
+          console.log(`   Category: ${rec.category} | Impact: ${rec.impact} | Effort: ${rec.effort}`);
+          console.log(`   ${rec.description}`);
+          console.log(`   Action: ${rec.action}`);
+        });
+      }
+      
+      if (options.output) {
+        console.log(`\n✅ Full report saved to ${options.output}`);
+      }
+    }
+  });
+
+perfProgram
+  .command('memory')
+  .description('Capture memory snapshots and detect leaks using trackMemory()')
+  .option('-d, --duration <seconds>', 'Monitoring duration in seconds', '60')
+  .option('-i, --interval <ms>', 'Snapshot interval in milliseconds', '5000')
+  .option('-o, --output <file>', 'Save snapshots to JSON file')
+  .option('--json', 'Output results as JSON only')
+  .action(async (options) => {
+    const duration = parseInt(options.duration, 10) * 1000;
+    const interval = parseInt(options.interval, 10);
+    
+    if (isNaN(duration) || duration <= 0) {
+      console.error('Invalid --duration, expected positive number');
+      process.exit(1);
+    }
+    
+    if (isNaN(interval) || interval < 1000) {
+      console.error('Invalid --interval, expected at least 1000ms');
+      process.exit(1);
+    }
+    
+    const monitor = new PerformanceMonitor({
+      enableLeakDetection: true,
+      leakDetectionIntervalMs: interval,
+    });
+    
+    const snapshots = [];
+    
+    if (!options.json) {
+      console.log('🧠 Starting memory profiler...');
+      console.log(`Duration: ${options.duration}s | Interval: ${interval}ms`);
+      console.log('Press Ctrl+C to stop early\n');
+      console.log('Time (s) | Heap Used (MB) | Heap Total (MB) | Usage %');
+      console.log('-'.repeat(60));
+    }
+    
+    const startTime = Date.now();
+    
+    const snapshotInterval = setInterval(() => {
+      const snapshot = monitor.recordMemory();
+      snapshots.push(snapshot);
+      
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      const heapUsed = (snapshot.heapUsed / 1024 / 1024).toFixed(2);
+      const heapTotal = (snapshot.heapTotal / 1024 / 1024).toFixed(2);
+      const usage = (snapshot.usagePercent * 100).toFixed(1);
+      
+      if (!options.json) {
+        console.log(`${elapsed.padStart(8)} | ${heapUsed.padStart(14)} | ${heapTotal.padStart(15)} | ${usage.padStart(6)}`);
+      }
+    }, interval);
+    
+    await new Promise(resolve => setTimeout(resolve, duration));
+    
+    clearInterval(snapshotInterval);
+    
+    // Run leak detection on collected snapshots
+    const leakResult = monitor.detectMemoryLeak();
+    
+    const result = {
+      duration: options.duration + 's',
+      interval: interval + 'ms',
+      snapshots: snapshots.length,
+      leakDetection: leakResult,
+      finalSnapshot: snapshots[snapshots.length - 1],
+      memoryGrowth: snapshots.length >= 2 ? {
+        startMB: snapshots[0].heapUsed / 1024 / 1024,
+        endMB: snapshots[snapshots.length - 1].heapUsed / 1024 / 1024,
+        diffMB: (snapshots[snapshots.length - 1].heapUsed - snapshots[0].heapUsed) / 1024 / 1024,
+      } : null,
+    };
+    
+    if (options.output) {
+      fs.writeFileSync(options.output, JSON.stringify(result, null, 2));
+      if (!options.json) {
+        console.log(`\n✅ Results saved to ${options.output}`);
+      }
+    }
+    
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log('\n╔════════════════════════════════════════╗');
+      console.log('║         🧠 Memory Analysis             ║');
+      console.log('╠════════════════════════════════════════╣');
+      
+      if (result.memoryGrowth) {
+        console.log(`║ Start Memory: ${String(result.memoryGrowth.startMB.toFixed(2) + ' MB').padEnd(23)} ║`);
+        console.log(`║ End Memory: ${String(result.memoryGrowth.endMB.toFixed(2) + ' MB').padEnd(25)} ║`);
+        console.log(`║ Growth: ${String(result.memoryGrowth.diffMB.toFixed(2) + ' MB').padEnd(29)} ║`);
+      }
+      
+      console.log('╠════════════════════════════════════════╣');
+      console.log('║ Leak Detection:                        ║');
+      console.log(`║   Potential Leak: ${String(leakResult.hasLeak ? 'YES ⚠️' : 'No ✅').padEnd(21)} ║`);
+      console.log(`║   Confidence: ${String(leakResult.confidence.toFixed(1) + '%').padEnd(25)} ║`);
+      console.log('╚════════════════════════════════════════╝');
+      
+      if (leakResult.hasLeak) {
+        console.log(`\n⚠️  Potential memory leak detected!`);
+        console.log(`Growth Rate: ${(leakResult.growthRate / 1024 / 1024).toFixed(2)} MB/min`);
+        console.log('\nSuspected Sources:');
+        leakResult.suspectedSources.forEach(source => {
+          console.log(`  - ${source}`);
+        });
+        console.log(`\n💡 Recommendation: ${leakResult.recommendation}`);
+      } else {
+        console.log('\n✅ No significant memory leak patterns detected.');
+      }
     }
   });
 

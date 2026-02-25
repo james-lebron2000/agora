@@ -33,6 +33,7 @@ export interface PerformanceMetrics {
     external: number;
     rss: number;
     arrayBuffers: number;
+    usagePercent?: number;
   };
   errorRate: number;
   errorCount: number;
@@ -773,26 +774,27 @@ export function generateOptimizationReport(
     warningCount++;
   }
   
-  if (metrics.memory.usagePercent > 0.85) {
+  const usagePercent = metrics.memory.usagePercent ?? 0;
+  if (usagePercent > 0.85) {
     recommendations.push({
       id: randomUUID(),
       severity: 'critical',
       category: 'memory',
       title: 'High Memory Usage',
-      description: `Memory usage is \${(metrics.memory.usagePercent * 100).toFixed(1)}%`,
+      description: `Memory usage is \${(usagePercent * 100).toFixed(1)}%`,
       action: 'Optimize data structures, implement pagination, add memory limits',
       impact: 'Prevent out-of-memory crashes',
       effort: 'high',
     });
     healthScore -= 25;
     criticalCount++;
-  } else if (metrics.memory.usagePercent > 0.7) {
+  } else if (usagePercent > 0.7) {
     recommendations.push({
       id: randomUUID(),
       severity: 'warning',
       category: 'memory',
       title: 'Elevated Memory Usage',
-      description: `Memory usage is \${(metrics.memory.usagePercent * 100).toFixed(1)}%`,
+      description: `Memory usage is \${(usagePercent * 100).toFixed(1)}%`,
       action: 'Review memory-intensive operations and consider streaming',
       impact: 'Better resource utilization',
       effort: 'medium',
@@ -855,9 +857,11 @@ export function generateOptimizationReport(
       trends.throughput = 'degrading';
     }
     
-    if (last.memory.usagePercent > first.memory.usagePercent * 1.1) {
+    const lastUsagePercent = last.memory.usagePercent ?? 0;
+    const firstUsagePercent = first.memory.usagePercent ?? 0;
+    if (lastUsagePercent > firstUsagePercent * 1.1) {
       trends.memory = 'degrading';
-    } else if (last.memory.usagePercent < first.memory.usagePercent * 0.9) {
+    } else if (lastUsagePercent < firstUsagePercent * 0.9) {
       trends.memory = 'improving';
     }
   }

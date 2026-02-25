@@ -528,6 +528,7 @@ export default function BridgeScreen({ navigation }: BridgeScreenProps) {
       {/* Chain Selector Modal */}
       {renderChainSelector()}
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -535,6 +536,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,

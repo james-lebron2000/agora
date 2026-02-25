@@ -83,5 +83,173 @@ Scan failed for NVDA: 'str' object has no attribute 'get'
   Conviction: 0, State: None
 [2026-02-26 04:08:19.527882] Scanning NVDA
   Conviction: 0, State: None
-[Thu Feb 26 04:08:20 CST 2026] Tasks completed, sleeping 15 minutes...
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL
+Failed to fetch earnings for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/AAPL
+Failed to fetch options for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/AAPL')
+Scan failed for AAPL: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA
+Failed to fetch earnings for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/TSLA
+Failed to fetch options for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/TSLA')
+Scan failed for TSLA: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA
+Failed to fetch earnings for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/NVDA
+Failed to fetch options for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/NVDA')
+Scan failed for NVDA: 'str' object has no attribute 'get'
+[2026-02-26 04:23:21.146998] Scanning AAPL
+  Conviction: 0, State: None
+[2026-02-26 04:23:22.135609] Scanning TSLA
+  Conviction: 0, State: None
+[2026-02-26 04:23:23.229109] Scanning NVDA
+  Conviction: 0, State: None
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL
+Failed to fetch earnings for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/AAPL
+Failed to fetch options for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/AAPL')
+Scan failed for AAPL: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA
+Failed to fetch earnings for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/TSLA
+Failed to fetch options for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/TSLA')
+Scan failed for TSLA: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA
+Failed to fetch earnings for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/NVDA
+Failed to fetch options for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/NVDA')
+Scan failed for NVDA: 'str' object has no attribute 'get'
+[2026-02-26 04:38:24.669600] Scanning AAPL
+  Conviction: 0, State: None
+[2026-02-26 04:38:25.808736] Scanning TSLA
+  Conviction: 0, State: None
+[2026-02-26 04:38:26.855453] Scanning NVDA
+  Conviction: 0, State: None
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL
+Failed to fetch earnings for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/AAPL
+Failed to fetch options for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/AAPL')
+Scan failed for AAPL: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA
+Failed to fetch earnings for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/TSLA
+Failed to fetch options for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/TSLA')
+Scan failed for TSLA: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA
+Failed to fetch earnings for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/NVDA
+Failed to fetch options for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/NVDA')
+Scan failed for NVDA: 'str' object has no attribute 'get'
+[2026-02-26 04:53:28.494555] Scanning AAPL
+  Conviction: 0, State: None
+[2026-02-26 04:53:29.455765] Scanning TSLA
+  Conviction: 0, State: None
+[2026-02-26 04:53:30.430010] Scanning NVDA
+  Conviction: 0, State: None
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL
+Failed to fetch earnings for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/AAPL
+Failed to fetch options for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/AAPL')
+Scan failed for AAPL: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA
+Failed to fetch earnings for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/TSLA
+Failed to fetch options for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/TSLA')
+Scan failed for TSLA: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA
+Failed to fetch earnings for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/NVDA
+Failed to fetch options for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/NVDA')
+Scan failed for NVDA: 'str' object has no attribute 'get'
+[2026-02-26 05:08:31.841757] Scanning AAPL
+  Conviction: 0, State: None
+[2026-02-26 05:08:32.943092] Scanning TSLA
+  Conviction: 0, State: None
+[2026-02-26 05:08:33.991242] Scanning NVDA
+  Conviction: 0, State: None
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL
+Failed to fetch earnings for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/AAPL
+Failed to fetch options for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/AAPL')
+Scan failed for AAPL: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA
+Failed to fetch earnings for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/TSLA
+Failed to fetch options for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/TSLA')
+Scan failed for TSLA: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA
+Failed to fetch earnings for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/NVDA
+Failed to fetch options for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/NVDA')
+Scan failed for NVDA: 'str' object has no attribute 'get'
+[2026-02-26 05:23:35.605237] Scanning AAPL
+  Conviction: 0, State: None
+[2026-02-26 05:23:36.519120] Scanning TSLA
+  Conviction: 0, State: None
+[2026-02-26 05:23:37.554676] Scanning NVDA
+  Conviction: 0, State: None
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL
+Failed to fetch earnings for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/AAPL
+Failed to fetch options for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/AAPL')
+Scan failed for AAPL: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA
+Failed to fetch earnings for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/TSLA
+Failed to fetch options for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/TSLA')
+Scan failed for TSLA: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA
+Failed to fetch earnings for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/NVDA
+Failed to fetch options for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/NVDA')
+Scan failed for NVDA: 'str' object has no attribute 'get'
+[2026-02-26 05:38:38.869600] Scanning AAPL
+  Conviction: 0, State: None
+[2026-02-26 05:38:39.974366] Scanning TSLA
+  Conviction: 0, State: None
+[2026-02-26 05:38:41.021155] Scanning NVDA
+  Conviction: 0, State: None
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL
+Failed to fetch earnings for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/AAPL
+Failed to fetch options for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/AAPL')
+Scan failed for AAPL: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA
+Failed to fetch earnings for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/TSLA
+Failed to fetch options for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/TSLA')
+Scan failed for TSLA: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA
+Failed to fetch earnings for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/NVDA
+Failed to fetch options for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/NVDA')
+Scan failed for NVDA: 'str' object has no attribute 'get'
+[2026-02-26 05:53:42.405801] Scanning AAPL
+  Conviction: 0, State: None
+[2026-02-26 05:53:43.649921] Scanning TSLA
+  Conviction: 0, State: None
+[2026-02-26 05:53:44.510425] Scanning NVDA
+  Conviction: 0, State: None
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL
+Failed to fetch earnings for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=AAPL')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/AAPL
+Failed to fetch options for AAPL: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/AAPL')
+Scan failed for AAPL: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA
+Failed to fetch earnings for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=TSLA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/TSLA
+Failed to fetch options for TSLA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/TSLA')
+Scan failed for TSLA: 'str' object has no attribute 'get'
+HTTP 429 for https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA
+Failed to fetch earnings for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v1/finance/calendar/earnings?symbol=NVDA')
+HTTP 429 for https://query2.finance.yahoo.com/v7/finance/options/NVDA
+Failed to fetch options for NVDA: ('Yahoo Finance HTTP 429', 'https://query2.finance.yahoo.com/v7/finance/options/NVDA')
+Scan failed for NVDA: 'str' object has no attribute 'get'
+[2026-02-26 06:08:46.020295] Scanning AAPL
+  Conviction: 0, State: None
+[2026-02-26 06:08:47.152701] Scanning TSLA
+  Conviction: 0, State: None
+[2026-02-26 06:08:48.203961] Scanning NVDA
+  Conviction: 0, State: None
+[Thu Feb 26 06:08:49 CST 2026] Tasks completed, sleeping 15 minutes...
 ---

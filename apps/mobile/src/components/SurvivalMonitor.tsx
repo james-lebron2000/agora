@@ -7,10 +7,21 @@ import {
   ScrollView,
   RefreshControl,
   ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  scale,
+  verticalScale,
+  moderateScale,
+  responsiveFontSize,
+  spacing,
+} from '../utils/responsive';
 import { useSurvivalSDK } from '../hooks/useSDK';
 import type { Address } from 'viem';
+
+// Get screen dimensions for responsive layout
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // Health status type - matches SDK's AgentHealthStatus plus UI-specific statuses
  type HealthStatus = 'healthy' | 'stable' | 'degraded' | 'critical' | 'dying' | 'dead';

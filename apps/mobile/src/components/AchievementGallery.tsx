@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  scale,
+  verticalScale,
+  moderateScale,
+  responsiveFontSize,
+  spacing,
+  SCREEN_WIDTH,
+} from '../utils/responsive';
 
 export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
 
@@ -25,7 +33,8 @@ interface AchievementGalleryProps {
   achievements: Achievement[];
 }
 
-const { width: screenWidth } = Dimensions.get('window');
+// Use responsive screen width
+const screenWidth = SCREEN_WIDTH;
 
 const tierConfig: Record<AchievementTier, { color: string; bg: string; icon: keyof typeof Ionicons.glyphMap }> = {
   bronze: { color: '#b45309', bg: '#fef3c7', icon: 'trophy-outline' },
