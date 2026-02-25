@@ -108,45 +108,6 @@ async function fetchAgent(agentId: string): Promise<Agent> {
 }
 
 /**
- * Fetch agent stats from the relay/API
- */
-async function fetchAgentStats(agentId: string): Promise<Partial<Agent>> {
-  const relayUrl = resolveRelayUrl();
-  
-  try {
-    // For now, stats are included in the agents endpoint
-    // In the future, this could be a separate endpoint
-    const response = await fetch(`${relayUrl}/v1/agents`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-    
-    if (!result.ok || !Array.isArray(result.agents)) {
-      throw new Error('Invalid API response');
-    }
-
-    const agentData = result.agents.find((a: any) => a.id === agentId);
-    
-    if (!agentData) {
-      throw new Error(`Agent ${agentId} not found`);
-    }
-
-    return transformAgentData(agentData);
-  } catch (error) {
-    console.error('[useAgent] Failed to fetch agent stats:', error);
-    throw error;
-  }
-}
-
-/**
  * Fetch agent activity history
  */
 async function fetchAgentActivity(agentId: string): Promise<AgentActivity[]> {

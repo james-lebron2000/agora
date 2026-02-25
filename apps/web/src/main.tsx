@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client'
 import '@rainbow-me/rainbowkit/styles.css'
 import './index.css'
 import App from './App.tsx'
+import { initPerformanceMonitoring } from './utils/performance'
+
+// Initialize performance monitoring
+initPerformanceMonitoring()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
