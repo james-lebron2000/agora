@@ -734,6 +734,17 @@ export declare const SUPPORTED_CHAINS: {
 };
 export type SupportedChain = keyof typeof SUPPORTED_CHAINS;
 export declare const USDC_ADDRESSES: Record<SupportedChain, Address>;
+export declare const LAYERZERO_ENDPOINTS: Record<SupportedChain, Address>;
+export declare const LAYERZERO_CHAIN_IDS: Record<SupportedChain, number>;
+export interface BridgeQuote {
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    token: string;
+    amount: string;
+    estimatedFee: string;
+    estimatedTime: number;
+    path?: string[];
+}
 export declare const RPC_URLS: Record<SupportedChain, string[]>;
 export interface ChainBalance {
     chain: SupportedChain;
@@ -5128,15 +5139,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blobGasUsed: bigint;
         difficulty: bigint;
         excessBlobGas: bigint;
-        extraData: Hex;
+        extraData: import("viem").Hex;
         gasLimit: bigint;
         gasUsed: bigint;
-        miner: Address;
+        miner: import("abitype").Address;
         mixHash: import("viem").Hash;
-        parentBeaconBlockRoot?: `0x${string}` | undefined;
+        parentBeaconBlockRoot?: `0x${string}` | undefined | undefined;
         parentHash: import("viem").Hash;
-        receiptsRoot: Hex;
-        sealFields: Hex[];
+        receiptsRoot: import("viem").Hex;
+        sealFields: import("viem").Hex[];
         sha3Uncles: import("viem").Hash;
         size: bigint;
         stateRoot: import("viem").Hash;
@@ -5144,8 +5155,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         totalDifficulty: bigint | null;
         transactionsRoot: import("viem").Hash;
         uncles: import("viem").Hash[];
-        withdrawals?: import("viem").Withdrawal[] | undefined | undefined;
-        withdrawalsRoot?: `0x${string}` | undefined;
+        withdrawals?: import("viem").Withdrawal[] | undefined | undefined | undefined;
+        withdrawalsRoot?: `0x${string}` | undefined | undefined;
         transactions: includeTransactions extends true ? ({
             type: "legacy";
             yParity?: undefined | undefined;
@@ -21800,6 +21811,16 @@ export declare function getNativeBalance(address: Address, chain: SupportedChain
  */
 export declare function getAllBalances(address: Address): Promise<ChainBalance[]>;
 /**
+ * Get bridge quote for cross-chain transfer
+ * Uses LayerZero for cross-chain messaging fee estimation
+ */
+export declare function getBridgeQuote(params: {
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    token: 'USDC' | 'ETH';
+    amount: string;
+}, senderAddress: Address): Promise<BridgeQuote>;
+/**
  * Find cheapest chain for operation
  */
 export declare function findCheapestChain(operation: 'send' | 'swap' | 'contract', excludeChains?: SupportedChain[]): Promise<{
@@ -21818,6 +21839,20 @@ export declare class CrossChainBridge {
         chain: SupportedChain;
         estimatedCost: string;
     }>;
+    /**
+     * Get bridge quote for cross-chain transfer
+     * Instance method wrapper around getBridgeQuote function
+     */
+    getQuote(destinationChain: SupportedChain, token: 'USDC' | 'ETH', amount: string, sourceChain?: SupportedChain): Promise<BridgeQuote>;
+    /**
+     * Bridge USDC using LayerZero protocol
+     * Supports Base ↔ Optimism ↔ Arbitrum transfers
+     * @param destinationChain - Target chain
+     * @param amount - Amount to bridge
+     * @param sourceChain - Source chain (defaults to defaultChain)
+     * @returns BridgeResult with transaction details
+     */
+    bridgeUSDC(destinationChain: SupportedChain, amount: string, sourceChain?: SupportedChain): Promise<BridgeResult>;
 }
 export default CrossChainBridge;
 //# sourceMappingURL=bridge.d.ts.map

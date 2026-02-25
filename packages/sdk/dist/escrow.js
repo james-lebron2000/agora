@@ -42,6 +42,20 @@ export const ESCROW_ABI = [
     },
     {
         type: 'function',
+        name: 'batchRelease',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: 'requestIds', type: 'bytes32[]' }],
+        outputs: [],
+    },
+    {
+        type: 'function',
+        name: 'batchRefund',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: 'requestIds', type: 'bytes32[]' }],
+        outputs: [],
+    },
+    {
+        type: 'function',
         name: 'escrows',
         stateMutability: 'view',
         inputs: [{ name: 'requestId', type: 'bytes32' }],
@@ -82,6 +96,25 @@ export const ESCROW_ABI = [
             { name: 'requestId', type: 'bytes32', indexed: true },
             { name: 'buyer', type: 'address', indexed: true },
             { name: 'amount', type: 'uint256', indexed: false },
+        ],
+        anonymous: false,
+    },
+    {
+        type: 'event',
+        name: 'BatchReleased',
+        inputs: [
+            { name: 'requestIds', type: 'bytes32[]', indexed: false },
+            { name: 'totalAmount', type: 'uint256', indexed: false },
+            { name: 'totalFee', type: 'uint256', indexed: false },
+        ],
+        anonymous: false,
+    },
+    {
+        type: 'event',
+        name: 'BatchRefunded',
+        inputs: [
+            { name: 'requestIds', type: 'bytes32[]', indexed: false },
+            { name: 'totalAmount', type: 'uint256', indexed: false },
         ],
         anonymous: false,
     },
@@ -201,6 +234,34 @@ export async function refund(options) {
         account,
     });
 }
+export async function batchRelease(options) {
+    const { walletClient, account, escrowAddress } = createClients(options);
+    if (!walletClient || !account) {
+        throw new Error('privateKey is required for batch release');
+    }
+    const requestIds = options.requestIds.map(encodeRequestId);
+    return walletClient.writeContract({
+        address: escrowAddress,
+        abi: ESCROW_ABI,
+        functionName: 'batchRelease',
+        args: [requestIds],
+        account,
+    });
+}
+export async function batchRefund(options) {
+    const { walletClient, account, escrowAddress } = createClients(options);
+    if (!walletClient || !account) {
+        throw new Error('privateKey is required for batch refund');
+    }
+    const requestIds = options.requestIds.map(encodeRequestId);
+    return walletClient.writeContract({
+        address: escrowAddress,
+        abi: ESCROW_ABI,
+        functionName: 'batchRefund',
+        args: [requestIds],
+        account,
+    });
+}
 export async function getEscrowStatus(options) {
     const { publicClient, escrowAddress } = createClients(options);
     const requestId = encodeRequestId(options.requestId);
@@ -262,6 +323,32 @@ export function watchEscrowEvents(options) {
                 logs.forEach((log) => {
                     const args = log.args;
                     options.onRefunded?.(args);
+                });
+            },
+        }));
+    }
+    if (options.onBatchReleased) {
+        unwatchers.push(publicClient.watchContractEvent({
+            address: escrowAddress,
+            abi: ESCROW_ABI,
+            eventName: 'BatchReleased',
+            onLogs: (logs) => {
+                logs.forEach((log) => {
+                    const args = log.args;
+                    options.onBatchReleased?.(args);
+                });
+            },
+        }));
+    }
+    if (options.onBatchRefunded) {
+        unwatchers.push(publicClient.watchContractEvent({
+            address: escrowAddress,
+            abi: ESCROW_ABI,
+            eventName: 'BatchRefunded',
+            onLogs: (logs) => {
+                logs.forEach((log) => {
+                    const args = log.args;
+                    options.onBatchRefunded?.(args);
                 });
             },
         }));

@@ -13,19 +13,25 @@ export {
   type BatchEscrowOptions
 } from './escrow.js';
 
-// Echo Survival mechanism (v1.3)
+// Echo Survival mechanism (v1.4)
 export {
   EchoSurvivalManager,
   getOrCreateSurvivalManager,
   getSurvivalManager,
   removeSurvivalManager,
   DEFAULT_SURVIVAL_CONFIG,
+  formatSurvivalReport,
+  shouldAcceptTask,
   type AgentHealth,
   type AgentEconomics,
   type SurvivalCheckResult,
   type HeartbeatRecord,
   type SurvivalConfig,
-  type AgentHealthStatus
+  type AgentHealthStatus,
+  type SurvivalSnapshot,
+  type TaskDecision,
+  type SurvivalEventType,
+  type SurvivalEventCallback
 } from './survival.js';
 
 // Wallet management (v1.1)
