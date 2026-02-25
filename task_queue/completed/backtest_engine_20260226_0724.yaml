@@ -1,0 +1,23 @@
+project: stock_stalker
+type: FEATURE
+priority: P2
+description: 添加回测引擎模块，支持策略回测和性能评估
+details: |
+  完成功能:
+  1. BacktestEngine 核心引擎
+  2. BacktestResult 结果分析
+  3. Trade 交易记录
+  4. 两个示例策略：简单均线策略、RSI均值回归策略
+  5. 风险指标计算：最大回撤、夏普比率、胜率
+  6. 完整测试用例
+  
+  文件:
+  - analysis/backtest.py (13,905 lines)
+  - tests/test_backtest.py (3,676 lines)
+  - 更新 analysis/__init__.py
+  
+  测试结果: 全部通过
+  - MA策略回测: +10163.27% (示例数据)
+  - RSI策略回测: +0.17% (示例数据)
+  - 胜率、夏普比率、最大回撤计算正常
+completed_at: $(date -Iseconds)

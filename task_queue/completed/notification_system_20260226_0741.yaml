@@ -1,0 +1,24 @@
+project: stock_stalker
+type: FEATURE
+priority: P2
+description: 添加通知系统，支持交易信号提醒
+details: |
+  完成功能:
+  1. NotificationManager - 多通道通知管理
+  2. ConsoleNotifier - 控制台通知
+  3. EmailNotifier - 邮件通知
+  4. SlackNotifier - Slack webhook
+  5. DingTalkNotifier - 钉钉 webhook
+  6. 交易信号专用通知方法
+  7. 通知历史追踪
+  
+  文件:
+  - core/notifications.py (11,243 lines)
+  - tests/test_notifications.py (3,030 lines)
+  
+  测试结果: 全部通过
+  - 控制台通知: ✅
+  - 多优先级支持: ✅
+  - 交易信号通知: ✅
+  - 历史记录: ✅
+completed_at: $(date -Iseconds)
