@@ -135,7 +135,7 @@ export default function HomeScreen() {
       <View style={styles.actionsSection}>
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => navigation.navigate('TaskPost')}
+          onPress={() => navigation.navigate({ name: 'TaskPost', params: {} })}
         >
           <View style={[styles.actionIcon, { backgroundColor: '#6366f1' }]}>
             <Ionicons name="add-circle" size={24} color="white" />
@@ -183,7 +183,7 @@ export default function HomeScreen() {
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Tasks</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('TaskPost')}>
+          <TouchableOpacity onPress={() => navigation.navigate({ name: 'TaskPost', params: {} })}>
             <Text style={styles.seeAll}>Post New</Text>
           </TouchableOpacity>
         </View>
