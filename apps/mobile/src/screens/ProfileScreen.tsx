@@ -7,12 +7,28 @@ import {
   TouchableOpacity,
   Alert,
   Image,
+  Dimensions,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Rect, Text as SvgText, Line } from 'react-native-svg';
 
-import { MultiChainBalance, ProfileEditModal, AchievementBadge } from '../components';
+import {
+  MultiChainBalance,
+  ProfileEditModal,
+  AchievementBadge,
+  AgentAvatar,
+  ActivityHeatmap,
+  ActivityHeatmapCompact,
+  AgentLevelProgress,
+  AgentLeaderboard,
+  ShareProfile,
+  generateActivityData,
+  calculateLevel,
+  type TimePeriod,
+  type SortMetric,
+  type LeaderboardEntry,
+} from '../components';
 import { useWalletStore } from '../store/walletStore';
 import { useTasks, useSurvival, useProfileApi } from '../hooks/useApi';
 import type { Task } from '../types/navigation';
@@ -21,6 +37,8 @@ import type { Task } from '../types/navigation';
  type NavigationProp = any;
 
 type SurvivalStatus = 'healthy' | 'stable' | 'degraded' | 'critical' | 'dying';
+
+const { width: screenWidth } = Dimensions.get('window');
 
 const statusMeta: Record<SurvivalStatus, { color: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = {
   healthy: { color: '#10b981', label: 'Healthy', icon: 'checkmark-circle' },
@@ -51,7 +69,7 @@ const MiniTaskChart: React.FC<{ posted: number; completed: number; inProgress: n
   inProgress,
   cancelled,
 }) => {
-  const width = 320;
+  const width = screenWidth - 80;
   const height = 170;
   const chartHeight = 110;
   const maxValue = Math.max(posted, completed, inProgress, cancelled, 1);
@@ -64,12 +82,12 @@ const MiniTaskChart: React.FC<{ posted: number; completed: number; inProgress: n
 
   return (
     <View style={styles.chartContainer}>
-      <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+      <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
         <Line x1={18} y1={chartHeight + 18} x2={width - 10} y2={chartHeight + 18} stroke="#cbd5e1" strokeWidth={1} />
 
         {data.map((item, index) => {
-          const barWidth = 48;
-          const gap = 28;
+          const barWidth = (width - 60) / data.length - 10;
+          const gap = 10;
           const x = 28 + index * (barWidth + gap);
           const barHeight = (item.value / maxValue) * chartHeight;
           const y = chartHeight + 18 - barHeight;
@@ -91,6 +109,72 @@ const MiniTaskChart: React.FC<{ posted: number; completed: number; inProgress: n
   );
 };
 
+/**
+ * Generate mock leaderboard data
+ */
+function generateMockLeaderboard(
+  period: TimePeriod,
+  sortBy: SortMetric,
+  currentUserId?: string
+): LeaderboardEntry[] {
+  const mockAgents = [
+    { id: 'agent-alpha-001', name: 'Alpha Trader', level: 42 },
+    { id: 'agent-beta-002', name: 'Beta Scout', level: 38 },
+    { id: 'agent-gamma-003', name: 'Gamma Analyst', level: 35 },
+    { id: 'agent-delta-004', name: 'Delta Guardian', level: 33 },
+    { id: 'agent-echo-001', name: 'Echo Sentinel', level: 28 },
+    { id: 'agent-zeta-005', name: 'Zeta Explorer', level: 25 },
+    { id: 'agent-eta-006', name: 'Eta Collector', level: 22 },
+    { id: 'agent-theta-007', name: 'Theta Pioneer', level: 20 },
+  ];
+
+  const periodMultiplier = {
+    '24h': 0.1,
+    '7d': 0.3,
+    '30d': 0.7,
+    'all-time': 1.0,
+  }[period];
+
+  let entries: LeaderboardEntry[] = mockAgents.map((agent, index) => {
+    const baseEarnings = (mockAgents.length - index) * 1000 + Math.random() * 500;
+    const baseTasks = Math.floor((mockAgents.length - index) * 50 + Math.random() * 25);
+    const baseSurvival = Math.min(100, 95 - index * 3 + Math.random() * 10);
+
+    return {
+      rank: index + 1,
+      agentId: agent.id,
+      name: agent.name,
+      level: agent.level,
+      earnings: Math.floor(baseEarnings * periodMultiplier),
+      tasksCompleted: Math.floor(baseTasks * periodMultiplier),
+      survivalScore: Math.round(baseSurvival),
+      isCurrentUser: agent.id === currentUserId,
+    };
+  });
+
+  entries.sort((a, b) => {
+    switch (sortBy) {
+      case 'earnings':
+        return b.earnings - a.earnings;
+      case 'tasks':
+        return b.tasksCompleted - a.tasksCompleted;
+      case 'survival':
+        return b.survivalScore - a.survivalScore;
+      case 'level':
+        return b.level - a.level;
+      default:
+        return b.earnings - a.earnings;
+    }
+  });
+
+  entries = entries.map((entry, index) => ({
+    ...entry,
+    rank: index + 1,
+  }));
+
+  return entries;
+}
+
 export default function ProfileScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { address, disconnect } = useWalletStore();
@@ -106,6 +190,22 @@ export default function ProfileScreen() {
   } = useProfileApi(address);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [leaderboardPeriod, setLeaderboardPeriod] = useState<TimePeriod>('all-time');
+  const [leaderboardSort, setLeaderboardSort] = useState<SortMetric>('earnings');
+
+  // Generate activity data
+  const activityData = useMemo(() => generateActivityData(90), []);
+
+  // Calculate agent level from stats
+  const agentLevel = useMemo(() => {
+    const totalXP = (stats?.completedTasks ?? 0) * 100 + (stats?.totalEarnings ?? 0);
+    return calculateLevel(totalXP);
+  }, [stats]);
+
+  // Generate leaderboard entries
+  const leaderboardEntries = useMemo(() => {
+    return generateMockLeaderboard(leaderboardPeriod, leaderboardSort, address ?? undefined);
+  }, [leaderboardPeriod, leaderboardSort, address]);
 
   const myTasks = useMemo(
     () => tasks.filter((t: Task) => t.creator?.walletAddress === address),
@@ -185,23 +285,30 @@ export default function ProfileScreen() {
   const displayName = profile?.username || (address ? `User ${address.slice(0, 6)}` : 'Guest');
   const nickname = profile?.nickname || 'Echo Agent';
   const avatarUri = profile?.avatarUrl;
+  const agentId = address || 'unknown-agent';
 
   return (
     <>
-      <ScrollView style={styles.container}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        {/* Enhanced Header with AgentAvatar */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.editPill} onPress={() => setIsEditOpen(true)}>
             <Ionicons name="create-outline" size={14} color="#4f46e5" />
             <Text style={styles.editPillText}>Edit</Text>
           </TouchableOpacity>
 
-          {avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
-          ) : (
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{displayName.slice(0, 1).toUpperCase()}</Text>
-            </View>
-          )}
+          <View style={styles.avatarWrapper}>
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+            ) : (
+              <AgentAvatar
+                agentId={agentId}
+                agentName={displayName}
+                size="lg"
+                status={survivalStatus === 'healthy' ? 'online' : 'busy'}
+              />
+            )}
+          </View>
 
           <Text style={styles.userName}>{displayName}</Text>
           <Text style={styles.nickname}>@{nickname}</Text>
@@ -209,22 +316,41 @@ export default function ProfileScreen() {
           <Text style={styles.walletAddress}>
             {address ? `${address.slice(0, 8)}...${address.slice(-8)}` : 'Not connected'}
           </Text>
+
+          {/* Share Button */}
+          {address && (
+            <ShareProfile
+              agentId={agentId}
+              agentName={displayName}
+              style={styles.shareButton}
+            />
+          )}
         </View>
 
+        {/* Agent Level Progress */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Agent Level</Text>
+          <AgentLevelProgress level={agentLevel} compact />
+        </View>
+
+        {/* Survival Card */}
         <View style={styles.survivalCard}>
-          <View>
-            <Text style={styles.cardTitle}>Echo Survival</Text>
-            <Text style={styles.cardSubTitle}>Real-time economic self-preservation status</Text>
-          </View>
-          <View style={[styles.survivalStatus, { backgroundColor: `${statusMeta[survivalStatus].color}20` }]}>
-            <Ionicons name={statusMeta[survivalStatus].icon} size={16} color={statusMeta[survivalStatus].color} />
-            <Text style={[styles.survivalStatusText, { color: statusMeta[survivalStatus].color }]}>
-              {statusMeta[survivalStatus].label}
-            </Text>
+          <View style={styles.survivalHeader}>
+            <View>
+              <Text style={styles.cardTitle}>Echo Survival</Text>
+              <Text style={styles.cardSubTitle}>Real-time economic self-preservation</Text>
+            </View>
+            <View style={[styles.survivalStatus, { backgroundColor: `${statusMeta[survivalStatus].color}20` }]}>
+              <Ionicons name={statusMeta[survivalStatus].icon} size={16} color={statusMeta[survivalStatus].color} />
+              <Text style={[styles.survivalStatusText, { color: statusMeta[survivalStatus].color }]}>
+                {statusMeta[survivalStatus].label}
+              </Text>
+            </View>
           </View>
           <Text style={styles.survivalScore}>{survivalScore}/100</Text>
         </View>
 
+        {/* Stats Container */}
         <View style={styles.statsContainer}>
           <View style={styles.stat}>
             <Text style={styles.statValue}>{postedCount}</Text>
@@ -242,6 +368,12 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Activity Heatmap */}
+        <View style={styles.section}>
+          <ActivityHeatmap data={activityData} title="Contribution Activity" />
+        </View>
+
+        {/* Task Statistics */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Task Statistics</Text>
           <MiniTaskChart
@@ -252,6 +384,19 @@ export default function ProfileScreen() {
           />
         </View>
 
+        {/* Leaderboard */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Leaderboard</Text>
+          <AgentLeaderboard
+            entries={leaderboardEntries}
+            period={leaderboardPeriod}
+            sortBy={leaderboardSort}
+            onPeriodChange={setLeaderboardPeriod}
+            onSortChange={setLeaderboardSort}
+          />
+        </View>
+
+        {/* Multi-Chain Wallet */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Multi-Chain Wallet</Text>
           <Text style={styles.sectionHint}>Track balances across Ethereum, Base, Optimism, and Arbitrum</Text>
@@ -260,6 +405,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Achievement Badges */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Achievement Badges</Text>
           {achievements.length === 0 ? (
@@ -279,6 +425,7 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* My Tasks */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>My Tasks</Text>
@@ -306,12 +453,13 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* Disconnect Button */}
         <TouchableOpacity style={styles.disconnectButton} onPress={handleDisconnect}>
           <Ionicons name="log-out-outline" size={22} color="#ef4444" />
           <Text style={styles.disconnectText}>Disconnect Wallet</Text>
         </TouchableOpacity>
 
-        <Text style={styles.version}>Agora Mobile v1.1.0</Text>
+        <Text style={styles.version}>Agora Mobile v1.2.0</Text>
       </ScrollView>
 
       <ProfileEditModal
@@ -357,26 +505,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#4f46e5',
   },
-  avatar: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: '#6366f1',
-    justifyContent: 'center',
-    alignItems: 'center',
+  avatarWrapper: {
     marginBottom: 12,
   },
   avatarImage: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    marginBottom: 12,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     backgroundColor: '#e2e8f0',
-  },
-  avatarText: {
-    color: 'white',
-    fontSize: 34,
-    fontWeight: 'bold',
   },
   userName: {
     fontSize: 22,
@@ -400,6 +536,9 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     fontFamily: 'monospace',
   },
+  shareButton: {
+    marginTop: 16,
+  },
   survivalCard: {
     backgroundColor: 'white',
     marginHorizontal: 16,
@@ -412,6 +551,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  survivalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
   cardTitle: {
     fontSize: 16,
     color: '#0f172a',
@@ -421,15 +565,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748b',
     marginTop: 3,
-    marginBottom: 10,
   },
   survivalStatus: {
-    alignSelf: 'flex-start',
     borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 5,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
   },
   survivalStatusText: {
     fontSize: 12,
@@ -479,6 +622,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 16,
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -490,7 +638,7 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: '#1e293b',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   sectionHint: {
     fontSize: 12,
