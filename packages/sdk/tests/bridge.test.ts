@@ -29,8 +29,8 @@ import {
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import type { Hex, Address } from 'viem';
 
-// Test wallet address (a known address with some activity)
-const TEST_ADDRESS: Address = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb'; // Random test address
+// Test wallet address (Vitalik's address - a known valid address)
+const TEST_ADDRESS: Address = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'; // Valid checksummed address
 
 describe('Cross-Chain Bridge', () => {
   let bridge: CrossChainBridge;
@@ -67,7 +67,12 @@ describe('Cross-Chain Bridge', () => {
         const client = createChainPublicClient(chain);
         expect(client).toBeDefined();
         expect(client.chain).toBeDefined();
-        expect(client.chain?.name.toLowerCase()).toContain(chain === 'ethereum' ? 'ethereum' : chain);
+        const chainName = client.chain?.name.toLowerCase() || '';
+        if (chain === 'optimism') {
+          expect(chainName).toContain('op');
+        } else {
+          expect(chainName).toContain(chain === 'ethereum' ? 'ethereum' : chain);
+        }
       }
     });
   });
