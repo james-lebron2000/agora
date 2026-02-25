@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useWallet } from '../hooks/useWallet'
 
 // Simplified for AR: polling only latest message

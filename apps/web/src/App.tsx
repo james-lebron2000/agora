@@ -5,12 +5,14 @@ import { Hero } from './components/Hero'
 import { AnalyticsDashboard } from './components/AnalyticsDashboard'
 import { NetworkStats, type NetworkMetrics } from './components/NetworkStats'
 import { UseCaseShowcase } from './components/UseCaseShowcase'
+import { BridgeCard } from './components/BridgeCard'
+import { BridgeStatus } from './components/BridgeStatus'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 import { Echo } from './pages/Echo'
 import { Analytics as Tokenomics } from './pages/Analytics'
 import { ARHud } from './pages/ARHud'
-import { AgentChat } from './components/AgentChat'
+// import { AgentChat } from './components/AgentChat'
 
 type EventsResp = { ok: boolean; events: AgoraEvent[]; lastTs: string | null }
 type AgentResp = { ok: boolean; agents: AgentSummary[] }
@@ -48,7 +50,7 @@ const MOCK_METRICS: NetworkMetrics = {
   volume24h: 12450,
 }
 
-type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'agentChat' | 'ar'
+type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge'
 
 const FALLBACK_AGENTS: AgentSummary[] = [
   {
@@ -131,9 +133,9 @@ function formatPricing(pricing?: AgentPricing): string {
 function useRoute(): { route: Route; navigate: (route: Route) => void } {
   const getRoute = () => {
     if (window.location.pathname === '/ar') return 'ar'
-    if (window.location.pathname === '/agent-chat') return 'agentChat'
     if (window.location.pathname === '/echo') return 'echo'
     if (window.location.pathname === '/tokenomics') return 'tokenomics'
+    if (window.location.pathname === '/bridge') return 'bridge'
     if (window.location.pathname.startsWith('/analytics')) return 'analytics'
     return 'home'
   }
@@ -153,10 +155,10 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
           ? '/tokenomics'
           : next === 'echo'
             ? '/echo'
-            : next === 'agentChat'
-              ? '/agent-chat'
-              : next === 'ar'
-                ? '/ar'
+            : next === 'ar'
+              ? '/ar'
+              : next === 'bridge'
+                ? '/bridge'
                 : '/'
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path)
@@ -565,16 +567,16 @@ function AppContent() {
         onClick={() => navigate('echo')}
       />
       <NavLink
-        label="Agent Chat"
-        href="/agent-chat"
-        active={route === 'agentChat'}
-        onClick={() => navigate('agentChat')}
-      />
-      <NavLink
         label="AR HUD"
         href="/ar"
         active={route === 'ar'}
         onClick={() => navigate('ar')}
+      />
+      <NavLink
+        label="Bridge"
+        href="/bridge"
+        active={route === 'bridge'}
+        onClick={() => navigate('bridge')}
       />
     </>
   )
@@ -588,8 +590,27 @@ function AppContent() {
     return <Tokenomics />
   }
 
-  if (route === 'agentChat') {
-    return <AgentChat />
+  if (route === 'bridge') {
+    return (
+      <WalletProvider>
+        <div className="min-h-screen bg-agora-50">
+          <div className="max-w-7xl mx-auto px-4 py-8">
+            <div className="mb-6">
+              <h1 className="text-3xl font-bold text-agora-900">Cross-Chain Bridge</h1>
+              <p className="text-agora-600 mt-2">Bridge USDC and ETH across Base, Optimism, Arbitrum, and Ethereum</p>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <BridgeCard />
+              </div>
+              <div>
+                <BridgeStatus />
+              </div>
+            </div>
+          </div>
+        </div>
+      </WalletProvider>
+    )
   }
   
   if (route === 'ar') {

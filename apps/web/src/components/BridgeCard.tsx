@@ -1,6 +1,17 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useWallet } from '../hooks/useWallet'
-import type { SupportedChain, BridgeQuote } from '@agora/sdk'
+import type { SupportedChain } from '@agora/sdk'
+
+// Local BridgeQuote type (mirror of SDK)
+interface BridgeQuote {
+  sourceChain: SupportedChain
+  destinationChain: SupportedChain
+  token: string
+  amount: string
+  estimatedFee: string
+  estimatedTime: string
+  nativeFee: bigint
+}
 
 // Chain metadata for UI display
 const CHAIN_METADATA: Record<SupportedChain, { name: string; icon: string; color: string; nativeToken: string }> = {
