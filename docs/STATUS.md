@@ -88,6 +88,7 @@
 
 ## 🧪 Testing Coverage
 
+### SDK Tests
 | Module | Test File | Status |
 |--------|-----------|--------|
 | Bridge | `sdk/src/__tests__/bridge.test.ts` | ✅ Comprehensive |
@@ -95,7 +96,13 @@
 | Profile | `sdk/src/__tests__/profile.test.ts` | ✅ Comprehensive |
 | Performance | `sdk/src/__tests__/performance.test.ts` | ✅ Comprehensive |
 
-**Total Tests:** 356 passing
+### Mobile Tests
+| Module | Test File | Status |
+|--------|-----------|--------|
+| Responsive Utils | `mobile/src/__tests__/responsive.test.ts` | ✅ Comprehensive |
+| Components | `mobile/src/__tests__/components.test.tsx` | ✅ Basic |
+
+**Total Tests:** 356+ SDK tests, 15+ Mobile tests
 
 ---
 
