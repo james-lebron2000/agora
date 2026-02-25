@@ -123,12 +123,22 @@ export default function HomeScreen() {
 
       {/* Echo Survival Monitor */}
       <View style={styles.survivalSection}>
-        <Text style={styles.sectionTitle}>Agent Health</Text>
-        <SurvivalMonitor 
-          agentId={address || null}
-          showHeader={false}
-          compact={true}
-        />
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Agent Health</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Echo', { agentId: address || undefined })}>
+            <Text style={styles.seeAll}>View Details →</Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity 
+          onPress={() => navigation.navigate('Echo', { agentId: address || undefined })}
+          activeOpacity={0.8}
+        >
+          <SurvivalMonitor 
+            agentId={address || null}
+            showHeader={false}
+            compact={true}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Quick Actions */}

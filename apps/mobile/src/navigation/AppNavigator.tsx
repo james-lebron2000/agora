@@ -14,6 +14,7 @@ import BridgeScreen from '../screens/BridgeScreen';
 import TaskPostScreen from '../screens/TaskPostScreen';
 import TaskDetailScreen from '../screens/TaskDetailScreen';
 import ConnectWalletScreen from '../screens/ConnectWalletScreen';
+import EchoScreen from '../screens/EchoScreen';
 
 // Hooks
 import { useWalletStore } from '../store/walletStore';
@@ -139,6 +140,15 @@ export default function AppNavigator() {
               options={{ 
                 headerShown: true,
                 title: 'Bridge',
+                presentation: 'modal'
+              }}
+            />
+            <Stack.Screen 
+              name="Echo" 
+              component={EchoScreen}
+              options={{ 
+                headerShown: true,
+                title: 'Echo Survival',
                 presentation: 'modal'
               }}
             />
