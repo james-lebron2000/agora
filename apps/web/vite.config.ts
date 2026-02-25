@@ -24,26 +24,47 @@ export default defineConfig(({ mode }) => ({
     chunkSizeWarningLimit: 500,
     rollupOptions: {
       output: {
-        // Optimize manual chunks with better splitting
+        // Optimize manual chunks with better splitting strategy
         manualChunks(id) {
-          // React ecosystem
-          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
-            return 'react-vendor'
+          // React ecosystem - core framework
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/scheduler')) {
+            return 'react-core'
           }
-          // Web3 / Wallet libraries
+          // React Query - data fetching
+          if (id.includes('node_modules/@tanstack/react-query') || id.includes('node_modules/@tanstack/query-core')) {
+            return 'query-vendor'
+          }
+          // Web3 / Wallet libraries - split into smaller chunks
+          if (id.includes('node_modules/viem')) {
+            return 'web3-viem'
+          }
+          if (id.includes('node_modules/wagmi')) {
+            return 'web3-wagmi'
+          }
+          if (id.includes('node_modules/@reown')) {
+            return 'web3-reown'
+          }
+          if (id.includes('node_modules/@walletconnect')) {
+            return 'web3-walletconnect'
+          }
+          if (id.includes('node_modules/@coinbase')) {
+            return 'web3-coinbase'
+          }
+          if (id.includes('node_modules/@rainbow-me')) {
+            return 'web3-rainbow'
+          }
+          // Other web3 related libraries
           if (
-            id.includes('node_modules/viem') ||
-            id.includes('node_modules/wagmi') ||
-            id.includes('node_modules/@reown') ||
-            id.includes('node_modules/@walletconnect') ||
-            id.includes('node_modules/@coinbase')
+            id.includes('node_modules/@metamask') ||
+            id.includes('node_modules/metamask')
           ) {
-            return 'web3-vendor'
+            return 'web3-metamask'
           }
           // UI libraries
           if (
             id.includes('node_modules/lucide-react') ||
-            id.includes('node_modules/@tailwindcss')
+            id.includes('node_modules/@tailwindcss') ||
+            id.includes('node_modules/recharts')
           ) {
             return 'ui-vendor'
           }
@@ -51,9 +72,36 @@ export default defineConfig(({ mode }) => ({
           if (
             id.includes('node_modules/zod') ||
             id.includes('node_modules/axios') ||
-            id.includes('node_modules/lodash')
+            id.includes('node_modules/lodash') ||
+            id.includes('node_modules/date-fns')
           ) {
             return 'utils-vendor'
+          }
+          // Charts and data visualization
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3')) {
+            return 'charts-vendor'
+          }
+          // App components - split by feature
+          if (id.includes('/src/components/')) {
+            // Split large components into their own chunks
+            if (id.includes('AgentProfile') || id.includes('BridgeCard') || id.includes('BridgeStatus')) {
+              return 'feature-bridge'
+            }
+            if (id.includes('Echo') || id.includes('Chat')) {
+              return 'feature-echo'
+            }
+            if (id.includes('Analytics') || id.includes('Stats')) {
+              return 'feature-analytics'
+            }
+            return 'app-components'
+          }
+          // App pages - code split by route
+          if (id.includes('/src/pages/')) {
+            return 'app-pages'
+          }
+          // Hooks - can be shared
+          if (id.includes('/src/hooks/')) {
+            return 'app-hooks'
           }
         },
         // Optimize asset file names
@@ -104,5 +152,14 @@ export default defineConfig(({ mode }) => ({
       '@reown/appkit-adapter-wagmi',
     ],
     exclude: [],
+  },
+  // CSS configuration
+  css: {
+    // Enable CSS modules
+    modules: {
+      localsConvention: 'camelCaseOnly',
+    },
+    // Enable dev sourcemaps
+    devSourcemap: mode === 'development',
   },
 }))

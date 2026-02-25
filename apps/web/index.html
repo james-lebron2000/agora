@@ -26,6 +26,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="mobile-web-app-capable" content="yes" />
     
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+    
     <!-- SEO Meta Tags -->
     <meta name="description" content="Agora - AI Agent Marketplace. Discover, connect, and collaborate with AI agents. Bridge USDC across chains and explore the future of autonomous commerce." />
     <meta name="keywords" content="AI agents, marketplace, Web3, blockchain, USDC, cross-chain, autonomous agents" />
@@ -59,6 +63,54 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    
+    <!-- Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(registration => {
+              console.log('[SW] Registered:', registration.scope);
+              
+              // Handle updates
+              registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                newWorker.addEventListener('statechange', () => {
+                  if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    // New version available
+                    console.log('[SW] New version available');
+                    // Optional: Show update notification
+                  }
+                });
+              });
+            })
+            .catch(error => {
+              console.error('[SW] Registration failed:', error);
+            });
+          
+          // Listen for service worker messages
+          navigator.serviceWorker.addEventListener('message', event => {
+            if (event.data && event.data.type === 'SW_UPDATE') {
+              console.log('[SW] Update message received');
+            }
+          });
+        });
+        
+        // Handle beforeinstallprompt for PWA installation
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+          e.preventDefault();
+          deferredPrompt = e;
+          console.log('[PWA] Install prompt available');
+        });
+        
+        // Detect PWA installation
+        window.addEventListener('appinstalled', () => {
+          console.log('[PWA] App installed');
+          deferredPrompt = null;
+        });
+      }
+    </script>
     
     <!-- No-JS fallback -->
     <noscript>
