@@ -143,3 +143,20 @@ export {
   type PerformanceMonitorConfig,
   type PerformanceAlert,
 } from './performance.js';
+
+// Agent Profile module (v1.0)
+export {
+  ProfileManager,
+  createProfileManager,
+  calculateLevel,
+  xpForNextLevel,
+  levelProgress,
+  getTierColor,
+  getDefaultAchievements,
+  type AgentProfile,
+  type AchievementTier,
+  type Achievement,
+  type ProfileStats,
+  type UpdateProfileRequest,
+  type ReputationHistoryEntry,
+} from './profile.js';

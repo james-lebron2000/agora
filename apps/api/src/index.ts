@@ -19,6 +19,7 @@ import paymentsRoutes from './routes/payments';
 import healthRoutes from './routes/health';
 import bridgeRoutes from './routes/bridge';
 import survivalRoutes from './routes/survival';
+import profileRoutes from './routes/profile';
 
 import { webSocketService } from './services/websocket';
 import { redisService } from './services/redis';
@@ -92,6 +93,7 @@ app.use('/tasks', tasksRoutes);
 app.use('/payments', paymentsRoutes);
 app.use('/bridge', bridgeRoutes);
 app.use('/survival', survivalRoutes);
+app.use('/profiles', profileRoutes);
 
 // API documentation endpoint
 app.get('/', (req, res) => {
