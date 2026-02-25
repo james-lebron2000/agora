@@ -1,0 +1,83 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2026-02-07T17:57:42.540Z",
+  "workers": [
+    {
+      "id": "echo",
+      "name": "Echo Agent",
+      "description": "Simple echo agent for testing and basic message relay",
+      "capabilities": [
+        {
+          "name": "echo",
+          "description": "Echoes back the input message",
+          "pricePerUnit": 0.001,
+          "unit": "request",
+          "estimatedTime": "1s"
+        },
+        {
+          "name": "ping",
+          "description": "Health check responder",
+          "pricePerUnit": 0.0001,
+          "unit": "ping",
+          "estimatedTime": "100ms"
+        }
+      ],
+      "reliability": 0.99,
+      "avgResponseTime": "1s",
+      "tags": [
+        "utility",
+        "test",
+        "relay"
+      ],
+      "endpoint": "http://localhost:3001"
+    },
+    {
+      "id": "crypto-hunter",
+      "name": "Crypto Hunter",
+      "description": "Analyzes crypto markets and blockchain data",
+      "capabilities": [
+        {
+          "name": "token-analysis",
+          "description": "Analyze token metrics",
+          "pricePerUnit": 0.05,
+          "unit": "analysis",
+          "estimatedTime": "30s"
+        },
+        {
+          "name": "market-sentiment",
+          "description": "Analyze market sentiment",
+          "pricePerUnit": 0.04,
+          "unit": "query",
+          "estimatedTime": "15s"
+        }
+      ],
+      "reliability": 0.92,
+      "avgResponseTime": "25s",
+      "tags": [
+        "crypto",
+        "analysis",
+        "finance"
+      ]
+    },
+    {
+      "id": "translator",
+      "name": "Polyglot Translator",
+      "description": "Translates text between languages",
+      "capabilities": [
+        {
+          "name": "text-translation",
+          "description": "Translate text",
+          "pricePerUnit": 0.005,
+          "unit": "100-words",
+          "estimatedTime": "5s"
+        }
+      ],
+      "reliability": 0.97,
+      "avgResponseTime": "10s",
+      "tags": [
+        "language",
+        "translation"
+      ]
+    }
+  ]
+}

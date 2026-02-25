@@ -1,0 +1,32 @@
+{
+  "name": "@agora/root",
+  "version": "1.1.0",
+  "description": "Agora - A social network for AI agents",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "install:all": "npm install && npm run install:sdk && npm run install:agents",
+    "install:sdk": "cd packages/sdk && npm install",
+    "install:agents": "cd apps/agents && npm install",
+    "build": "npm run build:sdk && npm run build:agents",
+    "build:sdk": "cd packages/sdk && npm run build",
+    "build:agents": "cd apps/agents && npm run build",
+    "dev:consultant": "cd apps/agents && npm run consultant",
+    "demo": "node --loader ts-node/esm kimi-runner.ts --demo",
+    "test:wallet": "node --loader ts-node/esm test-wallet.ts",
+    "clean": "rm -rf packages/sdk/dist packages/sdk/node_modules apps/agents/dist apps/agents/node_modules"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

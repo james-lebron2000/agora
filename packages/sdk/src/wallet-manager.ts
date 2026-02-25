@@ -1,14 +1,26 @@
 /**
  * Wallet Manager for Agora Agents
  * Handles EVM wallet generation, encryption, and persistence
+ * Supports multi-chain operations across Base, Optimism, and Arbitrum
  */
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { createWalletClient, http, publicActions, type WalletClient, type Hex } from 'viem';
-import { mainnet } from 'viem/chains';
+import { createWalletClient, http, publicActions, createPublicClient, type Hex, type Address } from 'viem';
+import type { WalletClient, PublicClient } from 'viem';
+import { mainnet, base, optimism, arbitrum } from 'viem/chains';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { createHash } from 'crypto';
+
+// Multi-chain imports
+import {
+  type SupportedChain,
+  SUPPORTED_CHAINS,
+  RPC_URLS,
+  getUSDCBalance,
+  getNativeBalance,
+  type ChainBalance
+} from './bridge.js';
 
 // Wallet storage configuration
 const AGORA_DIR = path.join(os.homedir(), '.agora');
@@ -50,6 +62,29 @@ export interface AgentWallet {
   address: string;
   privateKey: Hex;
   walletClient: WalletClient;
+}
+
+/**
+ * Multi-chain wallet with clients for each supported chain
+ */
+export interface MultiChainWallet {
+  address: Address;
+  privateKey: Hex;
+  clients: Record<SupportedChain, {
+    walletClient: any; // Simplified to avoid viem type issues
+    publicClient: any;
+  }>;
+  balances: ChainBalance[];
+  lastUpdated: string;
+}
+
+/**
+ * Chain configuration for wallet operations
+ */
+export interface ChainConfig {
+  chain: SupportedChain;
+  rpcUrl?: string;
+  priority?: number; // Lower is higher priority
 }
 
 /**
@@ -203,3 +238,317 @@ export function getWalletPath(): string {
 
 // Export wallet path for external use
 export { WALLET_FILE, AGORA_DIR };
+
+/**
+ * Create a multi-chain wallet client for a specific chain
+ * @param privateKey - The wallet's private key
+ * @param chain - The target chain
+ * @returns Wallet client and public client for the chain
+ */
+export function createMultiChainClient(
+  privateKey: Hex,
+  chain: SupportedChain
+): { walletClient: any; publicClient: any } {
+  const account = privateKeyToAccount(privateKey);
+  const urls = RPC_URLS[chain];
+
+  const walletClient = createWalletClient({
+    account,
+    chain: SUPPORTED_CHAINS[chain],
+    transport: http(urls[0])
+  }).extend(publicActions);
+
+  const publicClient = createPublicClient({
+    chain: SUPPORTED_CHAINS[chain],
+    transport: http(urls[0])
+  });
+
+  return { walletClient, publicClient };
+}
+
+/**
+ * Create a multi-chain wallet with clients for all supported chains
+ * @param privateKey - The wallet's private key
+ * @returns MultiChainWallet with clients for Base, Optimism, Arbitrum, and Ethereum
+ */
+export function createMultiChainWallet(privateKey: Hex): MultiChainWallet {
+  const account = privateKeyToAccount(privateKey);
+  const chains: SupportedChain[] = ['ethereum', 'base', 'optimism', 'arbitrum'];
+  
+  const clients = {} as Record<SupportedChain, {
+    walletClient: WalletClient;
+    publicClient: PublicClient;
+  }>;
+  
+  for (const chain of chains) {
+    clients[chain] = createMultiChainClient(privateKey, chain);
+  }
+  
+  return {
+    address: account.address,
+    privateKey,
+    clients,
+    balances: [],
+    lastUpdated: new Date().toISOString()
+  };
+}
+
+/**
+ * Load or create a multi-chain wallet
+ * @param password - Password for encryption/decryption
+ * @returns MultiChainWallet with all chain clients
+ */
+export function loadOrCreateMultiChainWallet(
+  password: string = 'agora-default-password'
+): MultiChainWallet {
+  // Try to load existing wallet
+  const existingWallet = loadWallet(password);
+  
+  let privateKey: Hex;
+  let address: string;
+  
+  if (existingWallet) {
+    console.log(`[Wallet] Loading existing wallet for multi-chain: ${existingWallet.address}`);
+    privateKey = existingWallet.privateKey;
+    address = existingWallet.address;
+  } else {
+    // Generate new wallet
+    console.log('[Wallet] Creating new multi-chain wallet...');
+    const newWallet = generateWallet();
+    saveEncryptedWallet(newWallet, password);
+    privateKey = newWallet.privateKey;
+    address = newWallet.address;
+    console.log(`[Wallet] New multi-chain wallet created: ${address}`);
+  }
+  
+  return createMultiChainWallet(privateKey);
+}
+
+/**
+ * Refresh balances across all chains for a multi-chain wallet
+ * @param wallet - The multi-chain wallet
+ * @returns Updated wallet with fresh balances
+ */
+export async function refreshBalances(
+  wallet: MultiChainWallet
+): Promise<MultiChainWallet> {
+  console.log(`[Wallet] Refreshing balances for ${wallet.address}...`);
+  
+  const chains: SupportedChain[] = ['ethereum', 'base', 'optimism', 'arbitrum'];
+  const balances: ChainBalance[] = [];
+  
+  for (const chain of chains) {
+    try {
+      const [nativeBalance, usdcBalance] = await Promise.all([
+        getNativeBalance(wallet.address, chain),
+        getUSDCBalance(wallet.address, chain)
+      ]);
+      
+      balances.push({
+        chain,
+        nativeBalance,
+        usdcBalance
+      });
+      
+      console.log(`[Wallet] ${chain}: ${nativeBalance} ETH, ${usdcBalance} USDC`);
+    } catch (error) {
+      console.error(`[Wallet] Failed to get balance for ${chain}:`, error);
+      balances.push({
+        chain,
+        nativeBalance: '0',
+        usdcBalance: '0'
+      });
+    }
+  }
+  
+  return {
+    ...wallet,
+    balances,
+    lastUpdated: new Date().toISOString()
+  };
+}
+
+/**
+ * Get total USDC balance across all chains
+ * @param wallet - The multi-chain wallet
+ * @returns Total USDC balance as a string
+ */
+export function getTotalUSDCBalance(wallet: MultiChainWallet): string {
+  const total = wallet.balances.reduce((sum, b) => {
+    return sum + parseFloat(b.usdcBalance);
+  }, 0);
+  
+  return total.toFixed(6);
+}
+
+/**
+ * Get the chain with the highest USDC balance
+ * @param wallet - The multi-chain wallet
+ * @returns The chain with the most USDC, or null if no balance
+ */
+export function getChainWithHighestBalance(
+  wallet: MultiChainWallet
+): { chain: SupportedChain; balance: string } | null {
+  if (wallet.balances.length === 0) return null;
+  
+  const sorted = [...wallet.balances].sort((a, b) => {
+    return parseFloat(b.usdcBalance) - parseFloat(a.usdcBalance);
+  });
+  
+  const highest = sorted[0];
+  return {
+    chain: highest.chain,
+    balance: highest.usdcBalance
+  };
+}
+
+/**
+ * Get the chain with the lowest gas costs
+ * Useful for selecting where to execute transactions
+ * @returns The cheapest chain for operations
+ */
+export function getCheapestChainForOperations(): SupportedChain {
+  // Based on typical L2 gas costs: Base < Optimism < Arbitrum
+  // This is a simplified heuristic - production would use real gas oracles
+  const gasCosts: Record<SupportedChain, number> = {
+    ethereum: 100,  // Baseline (expensive)
+    base: 1,        // Cheapest
+    optimism: 2,    // Moderate
+    arbitrum: 3     // Higher but still cheap
+  };
+  
+  const chains: SupportedChain[] = ['base', 'optimism', 'arbitrum'];
+  let cheapest = chains[0];
+  let lowestCost = gasCosts[cheapest];
+  
+  for (const chain of chains) {
+    if (gasCosts[chain] < lowestCost) {
+      lowestCost = gasCosts[chain];
+      cheapest = chain;
+    }
+  }
+  
+  return cheapest;
+}
+
+/**
+ * Check if wallet has sufficient balance on a specific chain
+ * @param wallet - The multi-chain wallet
+ * @param chain - The chain to check
+ * @param minUSDC - Minimum USDC required
+ * @param minNative - Minimum native token required (in ETH)
+ * @returns True if wallet has sufficient balance
+ */
+export function hasSufficientBalance(
+  wallet: MultiChainWallet,
+  chain: SupportedChain,
+  minUSDC: string = '0',
+  minNative: string = '0'
+): boolean {
+  const balance = wallet.balances.find(b => b.chain === chain);
+  if (!balance) return false;
+  
+  const usdcOk = parseFloat(balance.usdcBalance) >= parseFloat(minUSDC);
+  const nativeOk = parseFloat(balance.nativeBalance) >= parseFloat(minNative);
+  
+  return usdcOk && nativeOk;
+}
+
+/**
+ * Select the best chain for a transaction based on balance and cost
+ * @param wallet - The multi-chain wallet
+ * @param requiredUSDC - USDC required for the operation
+ * @param preferredChain - Optional preferred chain
+ * @returns The best chain to use
+ */
+export function selectOptimalChain(
+  wallet: MultiChainWallet,
+  requiredUSDC: string = '0',
+  preferredChain?: SupportedChain
+): SupportedChain {
+  // If preferred chain has sufficient balance, use it
+  if (preferredChain && hasSufficientBalance(wallet, preferredChain, requiredUSDC, '0.001')) {
+    return preferredChain;
+  }
+  
+  // Otherwise, find the cheapest chain with sufficient balance
+  const chains: SupportedChain[] = ['base', 'optimism', 'arbitrum'];
+  
+  for (const chain of chains) {
+    if (hasSufficientBalance(wallet, chain, requiredUSDC, '0.001')) {
+      return chain;
+    }
+  }
+  
+  // Default to the chain with highest balance if none meet criteria
+  const highest = getChainWithHighestBalance(wallet);
+  return highest?.chain || 'base';
+}
+
+/**
+ * MultiChainWalletManager class for easy integration
+ */
+export class MultiChainWalletManager {
+  private wallet: MultiChainWallet;
+  
+  constructor(password?: string) {
+    this.wallet = loadOrCreateMultiChainWallet(password);
+  }
+  
+  /**
+   * Get the wallet address
+   */
+  getAddress(): Address {
+    return this.wallet.address;
+  }
+  
+  /**
+   * Get wallet clients for a specific chain
+   */
+  getChainClients(chain: SupportedChain) {
+    return this.wallet.clients[chain];
+  }
+  
+  /**
+   * Refresh and get latest balances
+   */
+  async refreshBalances(): Promise<ChainBalance[]> {
+    this.wallet = await refreshBalances(this.wallet);
+    return this.wallet.balances;
+  }
+  
+  /**
+   * Get current balances (may be stale)
+   */
+  getBalances(): ChainBalance[] {
+    return this.wallet.balances;
+  }
+  
+  /**
+   * Get total USDC across all chains
+   */
+  getTotalUSDC(): string {
+    return getTotalUSDCBalance(this.wallet);
+  }
+  
+  /**
+   * Get chain with highest USDC balance
+   */
+  getHighestBalanceChain() {
+    return getChainWithHighestBalance(this.wallet);
+  }
+  
+  /**
+   * Select optimal chain for transaction
+   */
+  selectChain(requiredUSDC?: string, preferredChain?: SupportedChain): SupportedChain {
+    return selectOptimalChain(this.wallet, requiredUSDC, preferredChain);
+  }
+  
+  /**
+   * Get the underlying multi-chain wallet
+   */
+  getWallet(): MultiChainWallet {
+    return this.wallet;
+  }
+}

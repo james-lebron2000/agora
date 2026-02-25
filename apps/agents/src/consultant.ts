@@ -1,312 +1,662 @@
-import express, { Request, Response } from 'express';
-import { createPublicClient, http, formatUnits, parseUnits } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
-import { baseSepolia } from 'viem/chains';
-import * as fs from 'fs';
-import * as path from 'path';
+/**
+ * Consultant Agent - Master Agent for A2A Economy
+ * 
+ * The Consultant Agent receives complex tasks from humans and delegates them
+ * to specialized worker agents. It manages the A2A (Agent-to-Agent) economy
+ * by:
+ * - Taking a 20% margin on all transactions
+ * - Paying workers 80% of the task value
+ * - Selecting optimal agents based on capability and reliability
+ * - Aggregating results from multiple agents when needed
+ * - Supporting multi-chain operations across Base, Optimism, and Arbitrum
+ * - Auto-selecting the cheapest chain for execution
+ * 
+ * @module consultant
+ */
 
-const app = express();
-app.use(express.json());
+import { loadAgentPortfolio, findAgentsByCapability, getBestAgentForCapability, type AgentWorker, type AgentCapability } from './agent-portfolio.js';
+import { 
+  loadOrCreateWallet, 
+  loadOrCreateMultiChainWallet,
+  refreshBalances,
+  selectOptimalChain,
+  getCheapestChainForOperations,
+  MultiChainWalletManager,
+  CrossChainBridge,
+  type AgentWallet,
+  type MultiChainWallet,
+  type SupportedChain,
+  type ChainBalance
+} from '@agora/sdk';
 
-const USDC_ADDRESS = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
-const ESCROW_CONTRACT = '0x19c368E0799793237893630f9247833072234559';
-
-// Load agent portfolio
-function loadAgentPortfolio() {
-  const portfolioPath = path.join(__dirname, '../data/agent-portfolio.json');
-  if (fs.existsSync(portfolioPath)) {
-    return JSON.parse(fs.readFileSync(portfolioPath, 'utf8'));
-  }
-  return { agents: [] };
+// Agora protocol types
+interface AgoraMessage {
+  protocol: 'agora/1.0';
+  id: string;
+  timestamp: string;
+  sender: {
+    id: string;
+    signature: string;
+  };
+  type: 'REQUEST' | 'OFFER' | 'ACCEPT' | 'RESULT' | 'STATUS' | 'ERROR';
+  payload: Record<string, any>;
 }
 
-// Consultant Agent - The Master Agent that hires other agents
-class ConsultantAgent {
-  private name = 'AgoraConsultant';
-  private portfolio: any;
+interface TaskRequest {
+  id: string;
+  description: string;
+  capability: string;
+  budget: number;
+  deadline?: string;
+  requirements?: string[];
+  humanClient: string;
+  preferredChain?: SupportedChain; // Optional chain preference
+}
+
+interface HireRequest {
+  workerId: string;
+  task: TaskRequest;
+  payment: number;
+  chain: SupportedChain; // Chain where payment will be executed
+}
+
+interface WorkResult {
+  success: boolean;
+  result?: any;
+  error?: string;
+  workerId: string;
+  taskId: string;
+  chain: SupportedChain; // Chain where execution happened
+}
+
+interface AgentTask {
+  id: string;
+  status: 'pending' | 'assigned' | 'in_progress' | 'completed' | 'failed';
+  taskRequest: TaskRequest;
+  assignedWorker?: AgentWorker;
+  paymentToWorker: number;
+  margin: number;
+  executionChain: SupportedChain; // Chain selected for execution
+  result?: WorkResult;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Chain gas cost estimates for optimization (in USD)
+ */
+const CHAIN_COST_ESTIMATES: Record<SupportedChain, { gas: number; usdcTransfer: number }> = {
+  ethereum: { gas: 5.0, usdcTransfer: 2.0 },
+  base: { gas: 0.001, usdcTransfer: 0.0001 },
+  optimism: { gas: 0.002, usdcTransfer: 0.0002 },
+  arbitrum: { gas: 0.003, usdcTransfer: 0.0003 }
+};
+
+/**
+ * Consultant Agent - The Master Agent with Multi-Chain Support
+ */
+export class ConsultantAgent {
+  private wallet: AgentWallet;
+  private multiChainWallet: MultiChainWallet;
+  private walletManager: MultiChainWalletManager;
+  private bridge: CrossChainBridge;
+  private portfolio = loadAgentPortfolio();
+  private activeTasks: Map<string, AgentTask> = new Map();
+  private completedTasks: Map<string, AgentTask> = new Map();
+  private readonly MARGIN_RATE = 0.20; // 20% consultant margin
   
-  constructor() {
-    this.portfolio = loadAgentPortfolio();
-    console.log(`[Consultant] Loaded ${this.portfolio.agents?.length || 0} worker agents`);
+  constructor(wallet: AgentWallet, multiChainWallet: MultiChainWallet) {
+    this.wallet = wallet;
+    this.multiChainWallet = multiChainWallet;
+    this.walletManager = new MultiChainWalletManager();
+    this.bridge = new CrossChainBridge(wallet.privateKey);
+    console.log(`[Consultant] Initialized with wallet: ${wallet.address}`);
   }
   
   /**
-   * Main entry point: Receive complex task from human
+   * Get the consultant's wallet address
    */
-  async handleTask(task: {
-    description: string;
-    budget: number;
-    deadline?: string;
-    requirements?: string[];
-  }) {
-    console.log(`[Consultant] Received task: ${task.description}`);
-    console.log(`[Consultant] Budget: $${task.budget} USDC`);
-    
-    // Step 1: Decompose task into subtasks
-    const subtasks = await this.decomposeTask(task);
-    console.log(`[Consultant] Decomposed into ${subtasks.length} subtasks`);
-    
-    // Step 2: Find best workers for each subtask
-    const assignments = await this.findWorkers(subtasks);
-    console.log(`[Consultant] Assigned workers to all subtasks`);
-    
-    // Step 3: Calculate costs and margins
-    const plan = this.calculateEconomics(task.budget, assignments);
-    console.log(`[Consultant] Economics: Worker costs $${plan.workerCost}, Platform fee $${plan.platformFee}`);
-    
-    // Step 4: Execute hiring (simulated for now)
-    const results = await this.executeHiring(assignments);
-    
-    // Step 5: Aggregate results
-    const finalDeliverable = await this.aggregateResults(results);
-    
-    return {
-      success: true,
-      task: task.description,
-      subtasksCompleted: subtasks.length,
-      workersHired: assignments.length,
-      totalCost: plan.totalCost,
-      platformFee: plan.platformFee,
-      deliverable: finalDeliverable,
-      timestamp: new Date().toISOString()
-    };
+  getAddress(): string {
+    return this.wallet.address;
   }
   
   /**
-   * Decompose complex task into subtasks using LLM logic
+   * Get balances across all chains
    */
-  private async decomposeTask(task: any): Promise<any[]> {
-    // In production, this would call an LLM
-    // For now, use rule-based decomposition
-    
-    const description = task.description.toLowerCase();
-    const subtasks = [];
-    
-    if (description.includes('website') || description.includes('app')) {
-      subtasks.push(
-        { type: 'design', description: 'Create UI/UX design', estimatedCost: 0.1 },
-        { type: 'frontend', description: 'Build frontend components', estimatedCost: 0.15 },
-        { type: 'backend', description: 'Develop backend API', estimatedCost: 0.2 },
-        { type: 'review', description: 'Code review and testing', estimatedCost: 0.05 }
-      );
-    } else if (description.includes('contract') || description.includes('audit')) {
-      subtasks.push(
-        { type: 'audit', description: 'Smart contract security audit', estimatedCost: 0.3 },
-        { type: 'review', description: 'Secondary review', estimatedCost: 0.1 }
-      );
-    } else if (description.includes('research') || description.includes('analysis')) {
-      subtasks.push(
-        { type: 'research', description: 'Market research', estimatedCost: 0.1 },
-        { type: 'analysis', description: 'Data analysis', estimatedCost: 0.1 },
-        { type: 'report', description: 'Report writing', estimatedCost: 0.05 }
-      );
-    } else {
-      // Generic single task
-      subtasks.push({
-        type: 'general',
-        description: task.description,
-        estimatedCost: task.budget * 0.6 // 60% to worker, 20% platform, 20% buffer
-      });
-    }
-    
-    return subtasks;
+  async getBalances(): Promise<ChainBalance[]> {
+    return await this.walletManager.refreshBalances();
   }
   
   /**
-   * Find best worker agents for each subtask
+   * Select the optimal chain for task execution
+   * Considers: cost, available balance, and user preference
    */
-  private async findWorkers(subtasks: any[]): Promise<any[]> {
-    const agents = this.portfolio.agents || [];
-    const assignments = [];
+  private async selectExecutionChain(
+    taskRequest: TaskRequest,
+    paymentAmount: number
+  ): Promise<SupportedChain> {
+    const paymentStr = paymentAmount.toFixed(6);
     
-    for (const subtask of subtasks) {
-      // Score each agent based on capability match
-      const scoredAgents = agents.map((agent: any) => {
-        let score = 0;
-        
-        // Capability match
-        if (agent.capabilities?.some((c: any) => 
-          c.id.includes(subtask.type) || 
-          c.name.toLowerCase().includes(subtask.type)
-        )) {
-          score += 50;
-        }
-        
-        // Rating bonus
-        score += (agent.avgRating || 0) * 10;
-        
-        // Success rate bonus
-        score += (agent.successRate || 0) * 0.1;
-        
-        // Price competitiveness (lower is better)
-        const price = agent.pricing?.minPrice || 0.01;
-        if (price <= subtask.estimatedCost) {
-          score += 20;
-        }
-        
-        return { agent, score };
-      });
-      
-      // Sort by score and pick best
-      scoredAgents.sort((a: any, b: any) => b.score - a.score);
-      const bestMatch = scoredAgents[0];
-      
-      if (bestMatch) {
-        assignments.push({
-          subtask,
-          worker: bestMatch.agent,
-          score: bestMatch.score,
-          payment: Math.min(subtask.estimatedCost, bestMatch.agent.pricing?.minPrice || 0.01)
-        });
+    // If user has a preference and we have balance there, respect it
+    if (taskRequest.preferredChain) {
+      const hasBalance = await this.walletManager.getWallet().balances.some(
+        b => b.chain === taskRequest.preferredChain && parseFloat(b.usdcBalance) >= paymentAmount
+      );
+      if (hasBalance) {
+        console.log(`[Consultant] Using preferred chain: ${taskRequest.preferredChain}`);
+        return taskRequest.preferredChain;
       }
     }
     
-    return assignments;
+    // Otherwise, select the cheapest chain with sufficient balance
+    const optimalChain = selectOptimalChain(
+      this.walletManager.getWallet(),
+      paymentStr,
+      taskRequest.preferredChain
+    );
+    
+    console.log(`[Consultant] Auto-selected chain: ${optimalChain} (cheapest with sufficient balance)`);
+    return optimalChain;
   }
   
   /**
-   * Calculate economics: 80% to workers, 20% platform fee
+   * Calculate total execution cost on a chain
    */
-  private calculateEconomics(totalBudget: number, assignments: any[]) {
-    const workerCost = assignments.reduce((sum, a) => sum + a.payment, 0);
-    const platformFee = totalBudget * 0.20; // 20% platform fee
-    const buffer = totalBudget - workerCost - platformFee;
+  private calculateExecutionCost(chain: SupportedChain, payment: number): number {
+    const costs = CHAIN_COST_ESTIMATES[chain];
+    return costs.gas + costs.usdcTransfer + payment;
+  }
+  
+  /**
+   * Find the cheapest chain for hiring a worker
+   */
+  async findCheapestChainForHiring(
+    paymentAmount: number,
+    excludeChains?: SupportedChain[]
+  ): Promise<{ chain: SupportedChain; totalCost: number }> {
+    const chains: SupportedChain[] = ['base', 'optimism', 'arbitrum'];
+    const filtered = excludeChains 
+      ? chains.filter(c => !excludeChains.includes(c))
+      : chains;
+    
+    let cheapest = filtered[0];
+    let lowestCost = this.calculateExecutionCost(cheapest, paymentAmount);
+    
+    for (const chain of filtered) {
+      const cost = this.calculateExecutionCost(chain, paymentAmount);
+      if (cost < lowestCost) {
+        lowestCost = cost;
+        cheapest = chain;
+      }
+    }
+    
+    return { chain: cheapest, totalCost: lowestCost };
+  }
+  
+  /**
+   * Hire a worker on a specific chain
+   */
+  async hireWorkerOnChain(
+    task: AgentTask,
+    worker: AgentWorker,
+    chain: SupportedChain
+  ): Promise<AgentTask> {
+    console.log(`\n[Consultant] 🤝 Hiring ${worker.name} on ${chain.toUpperCase()} for task ${task.id}`);
+    
+    task.assignedWorker = worker;
+    task.status = 'assigned';
+    task.executionChain = chain;
+    task.updatedAt = new Date();
+    
+    // Simulate A2A communication
+    const hireRequest: HireRequest = {
+      workerId: worker.id,
+      task: task.taskRequest,
+      payment: task.paymentToWorker,
+      chain
+    };
+    
+    try {
+      // Execute the work through the runKimiAgent pattern
+      const result = await this.executeWorkerTask(worker, task, chain);
+      
+      task.result = result;
+      task.status = result.success ? 'completed' : 'failed';
+      task.updatedAt = new Date();
+      
+      // Move to completed
+      this.completedTasks.set(task.id, task);
+      this.activeTasks.delete(task.id);
+      
+      if (result.success) {
+        console.log(`[Consultant] ✅ Task completed by ${worker.name} on ${chain.toUpperCase()}`);
+        console.log(`  Result:`, result.result);
+      } else {
+        console.log(`[Consultant] ❌ Task failed: ${result.error}`);
+      }
+      
+      return task;
+      
+    } catch (error) {
+      console.error(`[Consultant] Error hiring worker on ${chain}:`, error);
+      task.status = 'failed';
+      task.updatedAt = new Date();
+      this.completedTasks.set(task.id, task);
+      this.activeTasks.delete(task.id);
+      return task;
+    }
+  }
+  
+  /**
+   * Receive a task from a human client
+   * Analyzes the task and delegates to appropriate worker agent(s)
+   * Auto-selects the cheapest chain for execution
+   */
+  async receiveTask(taskRequest: TaskRequest): Promise<AgentTask> {
+    console.log(`\n[Consultant] Received task from ${taskRequest.humanClient}`);
+    console.log(`  Task: ${taskRequest.description}`);
+    console.log(`  Budget: $${taskRequest.budget} USD`);
+    console.log(`  Required capability: ${taskRequest.capability}`);
+    if (taskRequest.preferredChain) {
+      console.log(`  Preferred chain: ${taskRequest.preferredChain}`);
+    }
+    
+    // Calculate payment split
+    const margin = taskRequest.budget * this.MARGIN_RATE;
+    const workerPayment = taskRequest.budget - margin;
+    
+    console.log(`  Consultant margin (20%): $${margin.toFixed(4)}`);
+    console.log(`  Worker payment (80%): $${workerPayment.toFixed(4)}`);
+    
+    // Select optimal chain for execution
+    const executionChain = await this.selectExecutionChain(taskRequest, workerPayment);
+    console.log(`  Execution chain: ${executionChain.toUpperCase()}`);
+    
+    // Create task record
+    const task: AgentTask = {
+      id: taskRequest.id,
+      status: 'pending',
+      taskRequest,
+      paymentToWorker: workerPayment,
+      margin,
+      executionChain,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    
+    this.activeTasks.set(task.id, task);
+    
+    // Find suitable workers
+    const candidates = findAgentsByCapability(this.portfolio, taskRequest.capability);
+    
+    if (candidates.length === 0) {
+      console.log(`[Consultant] ❌ No agents found for capability: ${taskRequest.capability}`);
+      task.status = 'failed';
+      this.completedTasks.set(task.id, task);
+      this.activeTasks.delete(task.id);
+      return task;
+    }
+    
+    console.log(`[Consultant] Found ${candidates.length} potential workers`);
+    candidates.forEach((agent, i) => {
+      const cap = agent.capabilities.find(c => 
+        c.name.toLowerCase().includes(taskRequest.capability.toLowerCase())
+      );
+      const chainInfo = agent.walletAddress ? `(multi-chain)` : '';
+      console.log(`  ${i + 1}. ${agent.name} ${chainInfo}(reliability: ${agent.reliability}, price: $${cap?.pricePerUnit})`);
+    });
+    
+    // Select best worker
+    const bestWorker = getBestAgentForCapability(this.portfolio, taskRequest.capability);
+    
+    if (!bestWorker) {
+      console.log(`[Consultant] ❌ Could not select best worker`);
+      task.status = 'failed';
+      this.completedTasks.set(task.id, task);
+      this.activeTasks.delete(task.id);
+      return task;
+    }
+    
+    console.log(`[Consultant] Selected worker: ${bestWorker.name}`);
+    
+    // Hire the worker on the selected chain
+    return await this.hireWorkerOnChain(task, bestWorker, executionChain);
+  }
+  
+  /**
+   * Execute task through worker agent on a specific chain
+   */
+  private async executeWorkerTask(
+    worker: AgentWorker, 
+    task: AgentTask,
+    chain: SupportedChain
+  ): Promise<WorkResult> {
+    console.log(`[Consultant] 📤 Sending work request to ${worker.name} on ${chain.toUpperCase()}`);
+    
+    // Simulate the runKimiAgent pattern
+    const capability = worker.capabilities.find(c => 
+      c.name.toLowerCase().includes(task.taskRequest.capability.toLowerCase())
+    );
+    
+    // Simulate processing time based on capability and chain
+    const estimatedTime = capability?.estimatedTime || '5s';
+    const baseDelay = parseInt(estimatedTime) * 1000 || 5000;
+    
+    // Add chain-specific delay simulation
+    const chainMultiplier = chain === 'base' ? 0.8 : chain === 'optimism' ? 1.0 : 1.2;
+    const delayMs = baseDelay * chainMultiplier;
+    
+    await this.simulateDelay(delayMs);
+    
+    // Simulate worker execution
+    const result = await this.simulateWorkerExecution(worker, task, chain);
     
     return {
-      totalCost: totalBudget,
-      workerCost,
-      platformFee,
-      buffer: Math.max(0, buffer),
-      workerPercentage: (workerCost / totalBudget * 100).toFixed(1),
-      platformPercentage: '20.0'
+      success: true,
+      result,
+      workerId: worker.id,
+      taskId: task.id,
+      chain
     };
   }
   
   /**
-   * Execute hiring via Agora protocol
+   * Simulate worker agent execution
+   * Enhanced with chain awareness
    */
-  private async executeHiring(assignments: any[]): Promise<any[]> {
-    const results = [];
+  private async simulateWorkerExecution(
+    worker: AgentWorker, 
+    task: AgentTask,
+    chain: SupportedChain
+  ): Promise<any> {
+    console.log(`[${worker.name}] 🔄 Processing on ${chain.toUpperCase()}: ${task.taskRequest.description}`);
     
-    for (const assignment of assignments) {
-      console.log(`[Consultant] Hiring ${assignment.worker.agentName} for $${assignment.payment}`);
-      
-      // In production, this would:
-      // 1. Create escrow transaction
-      // 2. Send REQUEST to worker via Relay
-      // 3. Wait for OFFER
-      // 4. Lock funds in escrow
-      // 5. Wait for RESULT
-      // 6. Release payment
-      
-      // Simulated execution
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      results.push({
-        worker: assignment.worker.agentName,
-        task: assignment.subtask.description,
-        payment: assignment.payment,
-        status: 'completed',
-        result: `Simulated result for: ${assignment.subtask.description}`,
-        timestamp: new Date().toISOString()
-      });
+    // Simulate different behaviors based on worker type
+    switch (worker.id) {
+      case 'echo':
+        return {
+          echoed: task.taskRequest.description,
+          chain,
+          timestamp: new Date().toISOString()
+        };
+        
+      case 'crypto-hunter':
+        return {
+          analysis: `Market analysis for ${task.taskRequest.description}`,
+          chain,
+          sentiment: 'bullish',
+          confidence: 0.85,
+          dataPoints: 127
+        };
+        
+      case 'translator':
+        return {
+          original: task.taskRequest.description,
+          translated: `[Translated on ${chain}] ${task.taskRequest.description}`,
+          targetLanguage: 'es',
+          wordCount: task.taskRequest.description.split(' ').length,
+          chain
+        };
+        
+      case 'code-reviewer':
+        return {
+          issues: [],
+          suggestions: ['Consider adding more comments', 'Optimize loop in line 42'],
+          score: 8.5,
+          securityRating: 'A',
+          chain
+        };
+        
+      case 'image-generator':
+        return {
+          prompt: task.taskRequest.description,
+          imageUrl: `https://generated.agora/${chain}/image/${task.id}.png`,
+          dimensions: '1024x1024',
+          style: 'digital-art',
+          chain
+        };
+        
+      case 'research-assistant':
+        return {
+          query: task.taskRequest.description,
+          summary: `Research summary for: ${task.taskRequest.description}`,
+          sources: 5,
+          confidence: 0.92,
+          chain
+        };
+        
+      default:
+        return {
+          processed: true,
+          worker: worker.name,
+          chain,
+          task: task.taskRequest.description
+        };
     }
-    
-    return results;
   }
   
   /**
-   * Aggregate results from all workers into final deliverable
+   * Bridge USDC to another chain if needed
    */
-  private async aggregateResults(results: any[]): Promise<string> {
-    // In production, this would use LLM to synthesize results
-    const summary = results.map(r => 
-      `- ${r.worker}: ${r.task} ($${r.payment}) - ${r.status}`
-    ).join('\n');
+  async bridgeUSDCIfNeeded(
+    destinationChain: SupportedChain,
+    amount: string
+  ): Promise<boolean> {
+    const balances = await this.walletManager.refreshBalances();
+    const destBalance = balances.find(b => b.chain === destinationChain);
     
-    return `## Task Completion Report\n\n${summary}\n\n` +
-           `## Summary\n` +
-           `- Total workers hired: ${results.length}\n` +
-           `- All subtasks completed successfully\n` +
-           `- Deliverable ready for delivery\n\n` +
-           `Generated at: ${new Date().toISOString()}`;
+    if (destBalance && parseFloat(destBalance.usdcBalance) >= parseFloat(amount)) {
+      console.log(`[Consultant] Sufficient USDC on ${destinationChain}, no bridge needed`);
+      return true;
+    }
+    
+    // Find chain with highest balance
+    const sourceChain = this.walletManager.getHighestBalanceChain();
+    if (!sourceChain || parseFloat(sourceChain.balance) < parseFloat(amount)) {
+      console.error(`[Consultant] Insufficient USDC on any chain for bridging`);
+      return false;
+    }
+    
+    console.log(`[Consultant] Bridging ${amount} USDC from ${sourceChain.chain} to ${destinationChain}...`);
+    
+    const result = await this.bridge.bridgeUSDC(
+      destinationChain,
+      amount,
+      sourceChain.chain
+    );
+    
+    if (result.success) {
+      console.log(`[Consultant] Bridge initiated: ${result.txHash}`);
+    } else {
+      console.error(`[Consultant] Bridge failed: ${result.error}`);
+    }
+    
+    return result.success;
+  }
+  
+  /**
+   * Get current portfolio of available agents
+   */
+  getPortfolio() {
+    return this.portfolio;
+  }
+  
+  /**
+   * Get statistics on tasks
+   */
+  getStats() {
+    const completed = Array.from(this.completedTasks.values());
+    const active = Array.from(this.activeTasks.values());
+    
+    const totalRevenue = completed.reduce((sum, t) => sum + t.margin, 0);
+    const totalPayouts = completed.reduce((sum, t) => sum + t.paymentToWorker, 0);
+    const successCount = completed.filter(t => t.status === 'completed').length;
+    const failCount = completed.filter(t => t.status === 'failed').length;
+    
+    // Chain usage statistics
+    const chainUsage = completed.reduce((acc, t) => {
+      acc[t.executionChain] = (acc[t.executionChain] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    return {
+      activeTasks: active.length,
+      completedTasks: completed.length,
+      successRate: completed.length > 0 ? successCount / completed.length : 0,
+      totalRevenue,
+      totalPayouts,
+      profitMargin: totalRevenue,
+      workers: this.portfolio.workers.length,
+      chainUsage
+    };
+  }
+  
+  /**
+   * List available capabilities
+   */
+  listCapabilities(): string[] {
+    const caps = new Set<string>();
+    this.portfolio.workers.forEach(worker => {
+      worker.capabilities.forEach(cap => caps.add(cap.name));
+    });
+    return Array.from(caps);
+  }
+  
+  /**
+   * Utility: delay helper
+   */
+  private simulateDelay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, Math.min(ms, 3000))); // Cap at 3s for demo
   }
 }
 
-// Initialize consultant
-const consultant = new ConsultantAgent();
-
-// API Routes
+/**
+ * Factory function to create and initialize Consultant Agent
+ */
+export async function createConsultantAgent(): Promise<ConsultantAgent> {
+  console.log('[Consultant] Initializing Consultant Agent with Multi-Chain Support...\n');
+  
+  // Ensure wallet exists
+  const wallet = loadOrCreateWallet();
+  const multiChainWallet = loadOrCreateMultiChainWallet();
+  
+  // Refresh balances
+  console.log('[Consultant] Fetching balances across chains...');
+  const updatedWallet = await refreshBalances(multiChainWallet);
+  
+  const agent = new ConsultantAgent(wallet, updatedWallet);
+  
+  console.log(`\n[Consultant] ✅ Agent ready`);
+  console.log(`  Address: ${agent.getAddress()}`);
+  console.log(`  Available workers: ${agent.getPortfolio().workers.length}`);
+  console.log(`  Capabilities: ${agent.listCapabilities().join(', ')}`);
+  console.log(`  Multi-chain support: Base, Optimism, Arbitrum\n`);
+  
+  return agent;
+}
 
 /**
- * POST /task - Submit a complex task to Consultant
+ * Demo function to showcase A2A economy with multi-chain support
  */
-app.post('/task', async (req: Request, res: Response) => {
-  try {
-    const { description, budget, deadline, requirements } = req.body;
-    
-    if (!description || !budget) {
-      return res.status(400).json({
-        error: 'Missing required fields: description, budget'
-      });
+export async function runDemo(): Promise<void> {
+  console.log('╔════════════════════════════════════════════════════════════╗');
+  console.log('║     Agora A2A Economy - Consultant Agent Demo              ║');
+  console.log('║     Multi-Chain Edition (Base, Optimism, Arbitrum)         ║');
+  console.log('╚════════════════════════════════════════════════════════════╝\n');
+  
+  // Initialize consultant
+  const consultant = await createConsultantAgent();
+  
+  // Show initial balances
+  console.log('[Consultant] Initial Balances:');
+  const balances = await consultant.getBalances();
+  balances.forEach(b => {
+    console.log(`  ${b.chain.toUpperCase()}: ${b.nativeBalance} ETH, ${b.usdcBalance} USDC`);
+  });
+  console.log();
+  
+  // Simulate incoming tasks from humans
+  const tasks: TaskRequest[] = [
+    {
+      id: 'task-001',
+      description: 'Translate "Hello world" to Spanish',
+      capability: 'text-translation',
+      budget: 0.01,
+      humanClient: 'alice',
+      preferredChain: 'base' // Alice prefers Base
+    },
+    {
+      id: 'task-002',
+      description: 'Generate cyberpunk cityscape image',
+      capability: 'image-generation',
+      budget: 0.20,
+      humanClient: 'bob'
+      // Bob has no preference - auto-select cheapest
+    },
+    {
+      id: 'task-003',
+      description: 'Analyze ETH market sentiment',
+      capability: 'market-sentiment',
+      budget: 0.05,
+      humanClient: 'charlie',
+      preferredChain: 'optimism'
+    },
+    {
+      id: 'task-004',
+      description: 'Echo test message',
+      capability: 'echo',
+      budget: 0.002,
+      humanClient: 'dave',
+      preferredChain: 'arbitrum'
+    },
+    {
+      id: 'task-005',
+      description: 'Deep research on AI agents',
+      capability: 'deep-research',
+      budget: 0.15,
+      humanClient: 'eve'
+      // Auto-select cheapest chain
     }
-    
-    const result = await consultant.handleTask({
-      description,
-      budget: parseFloat(budget),
-      deadline,
-      requirements: requirements || []
-    });
-    
-    res.json(result);
-  } catch (error) {
-    console.error('[Consultant] Error:', error);
-    res.status(500).json({
-      error: 'Task processing failed',
-      message: error instanceof Error ? error.message : String(error)
-    });
+  ];
+  
+  // Process each task
+  for (const task of tasks) {
+    await consultant.receiveTask(task);
+    console.log('\n────────────────────────────────────────────────────────────\n');
   }
-});
-
-/**
- * GET /workers - List available worker agents
- */
-app.get('/workers', (req: Request, res: Response) => {
-  const portfolio = loadAgentPortfolio();
-  res.json({
-    count: portfolio.agents?.length || 0,
-    workers: portfolio.agents?.map((a: any) => ({
-      id: a.agentId,
-      name: a.agentName,
-      capabilities: a.capabilities?.map((c: any) => c.name),
-      rating: a.avgRating,
-      price: a.pricing?.minPrice
-    }))
+  
+  // Print final stats
+  const stats = consultant.getStats();
+  console.log('╔════════════════════════════════════════════════════════════╗');
+  console.log('║                    Final Statistics                        ║');
+  console.log('╠════════════════════════════════════════════════════════════╣');
+  console.log(`║  Tasks Completed: ${stats.completedTasks.toString().padEnd(38)}║`);
+  console.log(`║  Success Rate: ${(stats.successRate * 100).toFixed(1)}%${''.padEnd(40)}║`);
+  console.log(`║  Total Revenue: $${stats.totalRevenue.toFixed(4)}${''.padEnd(36)}║`);
+  console.log(`║  Total Worker Payouts: $${stats.totalPayouts.toFixed(4)}${''.padEnd(29)}║`);
+  console.log(`║  Workers in Network: ${stats.workers}${''.padEnd(37)}║`);
+  console.log('╠════════════════════════════════════════════════════════════╣');
+  console.log('║                    Chain Usage Stats                       ║');
+  console.log('╠════════════════════════════════════════════════════════════╣');
+  Object.entries(stats.chainUsage || {}).forEach(([chain, count]) => {
+    console.log(`║  ${chain.toUpperCase().padEnd(10)}: ${count.toString().padEnd(45)}║`);
   });
-});
+  console.log('╚════════════════════════════════════════════════════════════╝\n');
+  
+  console.log('[Consultant] Multi-Chain A2A Economy Demo Complete!');
+  console.log('Features demonstrated:');
+  console.log('  ✓ Wallet-based identity');
+  console.log('  ✓ Multi-chain wallet support (Base, Optimism, Arbitrum)');
+  console.log('  ✓ Auto-selection of cheapest chain for execution');
+  console.log('  ✓ User chain preference support');
+  console.log('  ✓ Task delegation to specialized workers');
+  console.log('  ✓ 20/80 revenue split (margin/worker)');
+  console.log('  ✓ Agent-to-Agent (A2A) economic interactions');
+}
 
-/**
- * GET /status - Consultant health check
- */
-app.get('/status', (req: Request, res: Response) => {
-  res.json({
-    status: 'online',
-    name: 'AgoraConsultant',
-    version: '1.0.0',
-    workersAvailable: loadAgentPortfolio().agents?.length || 0,
-    timestamp: new Date().toISOString()
-  });
-});
+// Run demo if executed directly
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runDemo().catch(console.error);
+}
 
-// Start server
-const PORT = process.env.CONSULTANT_PORT || 3457;
-
-app.listen(PORT, () => {
-  console.log(`[Consultant] Agora Consultant Agent running on port ${PORT}`);
-  console.log(`[Consultant] API Endpoints:`);
-  console.log(`  POST /task - Submit complex task`);
-  console.log(`  GET /workers - List available workers`);
-  console.log(`  GET /status - Health check`);
-});
-
-export default app;
+export default ConsultantAgent;

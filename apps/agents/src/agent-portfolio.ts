@@ -11,11 +11,29 @@ export interface AgentCapability {
   estimatedTime: string;
 }
 
+/**
+ * Supported chains for multi-chain operations
+ */
+export type SupportedChain = 'ethereum' | 'base' | 'optimism' | 'arbitrum';
+
+/**
+ * Multi-chain wallet addresses for a worker
+ */
+export interface MultiChainAddresses {
+  ethereum?: string;
+  base?: string;
+  optimism?: string;
+  arbitrum?: string;
+}
+
 export interface AgentWorker {
   id: string;
   name: string;
   description: string;
   walletAddress?: string;
+  multiChainAddresses?: MultiChainAddresses; // Multi-chain wallet support
+  supportedChains?: SupportedChain[]; // Chains where this worker can operate
+  preferredChain?: SupportedChain; // Preferred chain for receiving payments
   capabilities: AgentCapability[];
   reliability: number; // 0-1 score
   avgResponseTime: string;
@@ -32,15 +50,24 @@ export interface AgentPortfolio {
 /**
  * Default agent portfolio configuration
  * These are the workers available for hire by the Consultant Agent
+ * Now with multi-chain support for Base, Optimism, and Arbitrum
  */
 export const DEFAULT_PORTFOLIO: AgentPortfolio = {
-  version: "1.0",
+  version: "1.1",
   lastUpdated: new Date().toISOString(),
   workers: [
     {
       id: "echo",
       name: "Echo Agent",
       description: "Simple echo agent for testing and basic message relay",
+      walletAddress: "0xEchoAgentDemoAddress",
+      multiChainAddresses: {
+        base: "0xEchoBase00000000000000000000000000000001",
+        optimism: "0xEchoOptimism000000000000000000000000001",
+        arbitrum: "0xEchoArbitrum00000000000000000000000001"
+      },
+      supportedChains: ["base", "optimism", "arbitrum"],
+      preferredChain: "base",
       capabilities: [
         {
           name: "echo",
@@ -66,6 +93,14 @@ export const DEFAULT_PORTFOLIO: AgentPortfolio = {
       id: "crypto-hunter",
       name: "Crypto Hunter",
       description: "Analyzes crypto markets, token data, and blockchain information",
+      walletAddress: "0xCryptoHunterDemoAddress",
+      multiChainAddresses: {
+        base: "0xCryptoBase00000000000000000000000000001",
+        optimism: "0xCryptoOptimism000000000000000000000001",
+        arbitrum: "0xCryptoArbitrum000000000000000000000001"
+      },
+      supportedChains: ["base", "optimism", "arbitrum"],
+      preferredChain: "arbitrum",
       capabilities: [
         {
           name: "token-analysis",
@@ -97,6 +132,14 @@ export const DEFAULT_PORTFOLIO: AgentPortfolio = {
       id: "code-reviewer",
       name: "Code Reviewer",
       description: "Reviews code for bugs, security issues, and best practices",
+      walletAddress: "0xCodeReviewerDemoAddress",
+      multiChainAddresses: {
+        base: "0xCodeBase000000000000000000000000000001",
+        optimism: "0xCodeOptimism0000000000000000000000001",
+        arbitrum: "0xCodeArbitrum0000000000000000000000001"
+      },
+      supportedChains: ["base", "optimism", "arbitrum"],
+      preferredChain: "optimism",
       capabilities: [
         {
           name: "security-audit",
@@ -128,6 +171,14 @@ export const DEFAULT_PORTFOLIO: AgentPortfolio = {
       id: "translator",
       name: "Polyglot Translator",
       description: "Translates text between multiple languages",
+      walletAddress: "0xTranslatorDemoAddress",
+      multiChainAddresses: {
+        base: "0xTranslateBase0000000000000000000000001",
+        optimism: "0xTranslateOptimism000000000000000000001",
+        arbitrum: "0xTranslateArbitrum00000000000000000001"
+      },
+      supportedChains: ["base", "optimism", "arbitrum"],
+      preferredChain: "base",
       capabilities: [
         {
           name: "text-translation",
@@ -152,6 +203,14 @@ export const DEFAULT_PORTFOLIO: AgentPortfolio = {
       id: "image-generator",
       name: "Vision Artist",
       description: "Generates images from text descriptions",
+      walletAddress: "0xImageGenDemoAddress",
+      multiChainAddresses: {
+        base: "0xImageBase0000000000000000000000000001",
+        optimism: "0xImageOptimism000000000000000000000001",
+        arbitrum: "0xImageArbitrum000000000000000000000001"
+      },
+      supportedChains: ["base", "optimism", "arbitrum"],
+      preferredChain: "base",
       capabilities: [
         {
           name: "image-generation",
@@ -176,6 +235,14 @@ export const DEFAULT_PORTFOLIO: AgentPortfolio = {
       id: "research-assistant",
       name: "Research Assistant",
       description: "Conducts web research and summarizes findings",
+      walletAddress: "0xResearchDemoAddress",
+      multiChainAddresses: {
+        base: "0xResearchBase00000000000000000000000001",
+        optimism: "0xResearchOptimism0000000000000000000001",
+        arbitrum: "0xResearchArbitrum0000000000000000000001"
+      },
+      supportedChains: ["base", "optimism", "arbitrum"],
+      preferredChain: "optimism",
       capabilities: [
         {
           name: "web-search",

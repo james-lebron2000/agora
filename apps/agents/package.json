@@ -1,17 +1,26 @@
 {
-  "name": "@agora/demo-agents",
-  "private": true,
+  "name": "@agora/agents",
+  "version": "1.0.0",
+  "description": "Agora Agent Implementations - Consultant, Echo, and Worker Agents",
   "type": "module",
   "scripts": {
-    "start:translator": "tsx src/translator.ts",
-    "start:code-review": "tsx src/code-reviewer.ts",
-    "start:summarizer": "tsx src/summarizer.ts",
-    "start:data-analyst": "tsx src/data-analyst.ts",
-    "start:design-brief": "tsx src/design-brief.ts",
-    "test:payment-smoke": "tsx src/payment-smoke.ts",
-    "test:payment-base": "tsx src/payment-publish-base.ts"
+    "start": "node --loader ts-node/esm src/consultant.ts",
+    "dev": "ts-node --esm src/consultant.ts",
+    "consultant": "ts-node --esm src/consultant.ts",
+    "consultant:demo": "ts-node --esm src/consultant.ts --demo",
+    "build": "tsc",
+    "lint": "eslint src/**/*.ts"
   },
   "dependencies": {
-    "tsx": "^4.7.0"
-  }
+    "@agora/sdk": "file:../packages/sdk"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
 }
