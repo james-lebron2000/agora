@@ -6,6 +6,26 @@ export * from './agent.js';
 export * from './payment.js';
 export * from './escrow.js';
 
+// Echo Survival Mechanism (v1.2)
+export {
+  AgentHealthMonitor,
+  AgentEconomics,
+  EchoSurvivalManager,
+  createSurvivalManager,
+  formatSurvivalReport,
+  shouldAcceptTask,
+  DEFAULT_THRESHOLDS,
+  OPERATION_COSTS,
+  DAILY_OPERATIONAL_COSTS,
+  type AgentHealth,
+  type HealthStatus,
+  type EconomicMetrics,
+  type SurvivalThresholds,
+  type SurvivalAction,
+  type SurvivalSnapshot,
+  type HealthTrend
+} from './survival.js';
+
 // Wallet management (v1.1)
 export {
   generateWallet,
