@@ -6,24 +6,26 @@ export * from './agent.js';
 export * from './payment.js';
 export * from './escrow.js';
 
-// Echo Survival Mechanism (v1.2)
+// Batch escrow operations
 export {
-  AgentHealthMonitor,
-  AgentEconomics,
+  batchRelease,
+  batchRefund,
+  type BatchEscrowOptions
+} from './escrow.js';
+
+// Echo Survival mechanism (v1.3)
+export {
   EchoSurvivalManager,
-  createSurvivalManager,
-  formatSurvivalReport,
-  shouldAcceptTask,
-  DEFAULT_THRESHOLDS,
-  OPERATION_COSTS,
-  DAILY_OPERATIONAL_COSTS,
+  getOrCreateSurvivalManager,
+  getSurvivalManager,
+  removeSurvivalManager,
+  DEFAULT_SURVIVAL_CONFIG,
   type AgentHealth,
-  type HealthStatus,
-  type EconomicMetrics,
-  type SurvivalThresholds,
-  type SurvivalAction,
-  type SurvivalSnapshot,
-  type HealthTrend
+  type AgentEconomics,
+  type SurvivalCheckResult,
+  type HeartbeatRecord,
+  type SurvivalConfig,
+  type AgentHealthStatus
 } from './survival.js';
 
 // Wallet management (v1.1)
@@ -61,39 +63,18 @@ export {
 export {
   CrossChainBridge,
   createChainPublicClient,
-  createChainWalletClient,
   getUSDCBalance,
   getNativeBalance,
   getAllBalances,
   getBridgeQuote,
-  executeBridge,
   findCheapestChain,
-  getBridgeStatus,
-  approveUSDCForBridge,
   SUPPORTED_CHAINS,
   USDC_ADDRESSES,
   LAYERZERO_ENDPOINTS,
   LAYERZERO_CHAIN_IDS,
-  NATIVE_SYMBOLS,
   RPC_URLS,
   type SupportedChain,
-  type BridgeConfig,
   type BridgeQuote,
   type ChainBalance,
   type BridgeResult
 } from './bridge.js';
-
-// Echo Survival mechanism (v1.3)
-export {
-  EchoSurvivalManager,
-  getOrCreateSurvivalManager,
-  getSurvivalManager,
-  removeSurvivalManager,
-  DEFAULT_SURVIVAL_CONFIG,
-  type AgentHealth,
-  type AgentEconomics,
-  type SurvivalCheckResult,
-  type HeartbeatRecord,
-  type SurvivalConfig,
-  type AgentHealthStatus
-} from './survival.js';

@@ -65,6 +65,20 @@ export const ESCROW_ABI = [
   },
   {
     type: 'function',
+    name: 'batchRelease',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'requestIds', type: 'bytes32[]' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'batchRefund',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'requestIds', type: 'bytes32[]' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
     name: 'escrows',
     stateMutability: 'view',
     inputs: [{ name: 'requestId', type: 'bytes32' }],
@@ -108,6 +122,25 @@ export const ESCROW_ABI = [
     ],
     anonymous: false,
   },
+  {
+    type: 'event',
+    name: 'BatchReleased',
+    inputs: [
+      { name: 'requestIds', type: 'bytes32[]', indexed: false },
+      { name: 'totalAmount', type: 'uint256', indexed: false },
+      { name: 'totalFee', type: 'uint256', indexed: false },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'BatchRefunded',
+    inputs: [
+      { name: 'requestIds', type: 'bytes32[]', indexed: false },
+      { name: 'totalAmount', type: 'uint256', indexed: false },
+    ],
+    anonymous: false,
+  },
 ] as const;
 
 export interface EscrowClientOptions {
@@ -143,6 +176,12 @@ export interface EscrowEventHandlers {
   onDeposited?: (log: { requestId: Hex; buyer: Address; seller: Address; amount: bigint }) => void;
   onReleased?: (log: { requestId: Hex; seller: Address; amount: bigint; fee: bigint }) => void;
   onRefunded?: (log: { requestId: Hex; buyer: Address; amount: bigint }) => void;
+  onBatchReleased?: (log: { requestIds: Hex[]; totalAmount: bigint; totalFee: bigint }) => void;
+  onBatchRefunded?: (log: { requestIds: Hex[]; totalAmount: bigint }) => void;
+}
+
+export interface BatchEscrowOptions extends EscrowClientOptions {
+  requestIds: (string | Hex)[];
 }
 
 export function encodeRequestId(requestId: string | Hex): Hex {
@@ -268,6 +307,38 @@ export async function refund(options: EscrowActionOptions): Promise<Hash> {
   });
 }
 
+export async function batchRelease(options: BatchEscrowOptions): Promise<Hash> {
+  const { walletClient, account, escrowAddress } = createClients(options);
+  if (!walletClient || !account) {
+    throw new Error('privateKey is required for batch release');
+  }
+  const requestIds = options.requestIds.map(encodeRequestId);
+
+  return walletClient.writeContract({
+    address: escrowAddress,
+    abi: ESCROW_ABI,
+    functionName: 'batchRelease',
+    args: [requestIds],
+    account,
+  });
+}
+
+export async function batchRefund(options: BatchEscrowOptions): Promise<Hash> {
+  const { walletClient, account, escrowAddress } = createClients(options);
+  if (!walletClient || !account) {
+    throw new Error('privateKey is required for batch refund');
+  }
+  const requestIds = options.requestIds.map(encodeRequestId);
+
+  return walletClient.writeContract({
+    address: escrowAddress,
+    abi: ESCROW_ABI,
+    functionName: 'batchRefund',
+    args: [requestIds],
+    account,
+  });
+}
+
 export async function getEscrowStatus(options: EscrowActionOptions): Promise<EscrowStatusResult> {
   const { publicClient, escrowAddress } = createClients(options);
   const requestId = encodeRequestId(options.requestId);
@@ -347,6 +418,38 @@ export function watchEscrowEvents(options: EscrowClientOptions & EscrowEventHand
           logs.forEach((log) => {
             const args = log.args as { requestId: Hex; buyer: Address; amount: bigint };
             options.onRefunded?.(args);
+          });
+        },
+      }),
+    );
+  }
+
+  if (options.onBatchReleased) {
+    unwatchers.push(
+      publicClient.watchContractEvent({
+        address: escrowAddress,
+        abi: ESCROW_ABI,
+        eventName: 'BatchReleased',
+        onLogs: (logs) => {
+          logs.forEach((log) => {
+            const args = log.args as { requestIds: Hex[]; totalAmount: bigint; totalFee: bigint };
+            options.onBatchReleased?.(args);
+          });
+        },
+      }),
+    );
+  }
+
+  if (options.onBatchRefunded) {
+    unwatchers.push(
+      publicClient.watchContractEvent({
+        address: escrowAddress,
+        abi: ESCROW_ABI,
+        eventName: 'BatchRefunded',
+        onLogs: (logs) => {
+          logs.forEach((log) => {
+            const args = log.args as { requestIds: Hex[]; totalAmount: bigint };
+            options.onBatchRefunded?.(args);
           });
         },
       }),
