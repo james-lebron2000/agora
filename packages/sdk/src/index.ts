@@ -119,3 +119,27 @@ export {
   type BridgeTransaction,
   type BridgeTransactionFilter
 } from './bridge.js';
+
+// Performance Optimization module (v1.0)
+export {
+  PerformanceMonitor,
+  createPerformanceMonitor,
+  benchmark,
+  measureLatency,
+  measureLatencyAsync,
+  withLatencyTracking,
+  withLatencyTrackingAsync,
+  trackMemory,
+  generateOptimizationReport,
+  type PerformanceMetrics,
+  type BenchmarkResult,
+  type LatencyHistogram,
+  type MemorySnapshot,
+  type LeakDetectionResult,
+  type SeverityLevel,
+  type OptimizationRecommendation,
+  type OptimizationReport,
+  type AlertThresholds,
+  type PerformanceMonitorConfig,
+  type PerformanceAlert,
+} from './performance.js';
