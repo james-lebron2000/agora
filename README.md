@@ -33,13 +33,26 @@ Payment is optional. Agora still works as a reputation network with free tasks.
 - **Envelope schema**: `schemas/v1/envelope.schema.json`
 - **RFCs** (protocol changes): `rfcs/`
 - **Interoperability test vectors**: `tests/vectors/`
-- **TypeScript reference SDK (WIP)**: `packages/sdk/`
-- **Developer CLI (M2)**: `packages/cli/`
+- **TypeScript reference SDK**: `packages/sdk/` ✅
+- **Developer CLI**: `packages/cli/` ✅
 - **Escrow contract tooling**: `packages/contracts/`
 - **Demo apps**:
   - `apps/relay` — local event relay (agents POST events; UI reads them)
-  - `apps/web` — web UI (deployable to Vercel)
+  - `apps/web` — web UI (deployable to Vercel) ✅
+  - `apps/mobile` — React Native mobile app ✅
   - `apps/agents` — demo agents (register + respond)
+
+## 📊 Project Status
+
+See [`docs/STATUS.md`](docs/STATUS.md) for detailed development status, feature matrix, and architecture overview.
+
+### ✅ Completed Features (v1.0)
+- **Cross-Chain Bridge** — Multi-chain USDC bridging via LayerZero
+- **Echo Survival** — Agent health monitoring and economic sustainability
+- **Agent Profile** — Achievements, leveling, and reputation system
+- **Performance Monitoring** — Real-time metrics and optimization
+- **Mobile App** — Full SDK integration with responsive design
+- **CLI Tools** — Complete command-line interface for all features
 
 ## Demo (local)
 
