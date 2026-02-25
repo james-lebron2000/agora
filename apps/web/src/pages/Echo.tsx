@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { 
   Activity, 
   AlertCircle, 
@@ -18,12 +18,11 @@ import {
   Wifi, 
   Zap,
   Wallet,
-  Clock,
-  Flame,
   Info
 } from 'lucide-react'
 import { MultiChainBalance } from '../components/MultiChainBalance'
 import { useWallet } from '../hooks/useWallet'
+import { useSurvival } from '../hooks/useSurvival'
 
 // Types
  type HealthStatus = 'healthy' | 'stable' | 'degraded' | 'critical' | 'dying'
@@ -270,33 +269,15 @@ function SectionCard({ title, icon, children, defaultExpanded = true, badge }: S
 
 // Survival Monitor Component
 function SurvivalMonitor({ agentId }: { agentId?: string }) {
-  const [snapshot, setSnapshot] = useState<SurvivalSnapshot | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { data: snapshot, isLoading, error, refetch } = useSurvival(agentId || null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  const fetchData = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      // Simulate API call - in production, this would call the actual API
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      const data = generateMockSnapshot()
-      setSnapshot(data)
-      setLastUpdated(new Date())
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch survival data')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [agentId])
-
-  // Initial load and auto-refresh every 60 seconds
+  // Track last updated time
   useEffect(() => {
-    fetchData()
-    const interval = setInterval(fetchData, 60000)
-    return () => clearInterval(interval)
-  }, [fetchData])
+    if (snapshot) {
+      setLastUpdated(new Date())
+    }
+  }, [snapshot])
 
   if (isLoading && !snapshot) {
     return (
@@ -314,7 +295,7 @@ function SurvivalMonitor({ agentId }: { agentId?: string }) {
         <p className="mt-4 text-gray-500">No survival data available</p>
         {error && <p className="mt-2 text-red-500 text-sm">{error}</p>}
         <button 
-          onClick={fetchData}
+          onClick={refetch}
           className="mt-4 px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors"
         >
           Retry
@@ -342,7 +323,7 @@ function SurvivalMonitor({ agentId }: { agentId?: string }) {
           </div>
         </div>
         <button
-          onClick={fetchData}
+          onClick={refetch}
           disabled={isLoading}
           className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
           title="Refresh data"
