@@ -13,6 +13,14 @@
     "./wallet": {
       "import": "./dist/wallet-manager.js",
       "types": "./dist/wallet-manager.d.ts"
+    },
+    "./survival": {
+      "import": "./dist/survival.js",
+      "types": "./dist/survival.d.ts"
+    },
+    "./bridge": {
+      "import": "./dist/bridge.js",
+      "types": "./dist/bridge.d.ts"
     }
   },
   "scripts": {
