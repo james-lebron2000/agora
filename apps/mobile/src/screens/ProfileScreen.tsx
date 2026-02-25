@@ -8,6 +8,7 @@ import {
   Alert,
   Image,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,14 +24,18 @@ import {
   AgentLevelProgress,
   AgentLeaderboard,
   ShareProfile,
+  ProfileStats,
+  AchievementGallery,
   generateActivityData,
   calculateLevel,
   type TimePeriod,
   type SortMetric,
   type LeaderboardEntry,
+  type Achievement,
 } from '../components';
 import { useWalletStore } from '../store/walletStore';
 import { useTasks, useSurvival, useProfileApi } from '../hooks/useApi';
+import { useProfile } from '../hooks/useProfile';
 import type { Task } from '../types/navigation';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -181,13 +186,25 @@ export default function ProfileScreen() {
   const { tasks } = useTasks();
   const { snapshot } = useSurvival(address);
   const {
-    profile,
-    stats,
+    profile: legacyProfile,
+    stats: legacyStats,
     isSavingProfile,
     isUploadingAvatar,
     saveProfile,
     uploadUserAvatar,
   } = useProfileApi(address);
+
+  // Profile SDK Integration
+  const {
+    profile,
+    stats,
+    achievements: sdkAchievements,
+    isLoadingProfile,
+    isLoadingStats,
+    isLoadingAchievements,
+    level,
+    levelProgress: levelProgressValue,
+  } = useProfile({ agentId: address || undefined });
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<TimePeriod>('all-time');
@@ -212,16 +229,35 @@ export default function ProfileScreen() {
     [tasks, address]
   );
 
-  const postedCount = stats?.postedTasks ?? myTasks.length;
-  const completedCount = stats?.completedTasks ?? myTasks.filter((t) => t.status === 'completed').length;
-  const inProgressCount = stats?.inProgressTasks ?? myTasks.filter((t) => t.status === 'in_progress').length;
-  const cancelledCount = stats?.cancelledTasks ?? myTasks.filter((t) => t.status === 'cancelled').length;
-  const completionRate = stats?.completionRate ?? (postedCount > 0 ? (completedCount / postedCount) * 100 : 0);
+  const postedCount = legacyStats?.postedTasks ?? myTasks.length;
+  const completedCount = legacyStats?.completedTasks ?? myTasks.filter((t) => t.status === 'completed').length;
+  const inProgressCount = legacyStats?.inProgressTasks ?? myTasks.filter((t) => t.status === 'in_progress').length;
+  const cancelledCount = legacyStats?.cancelledTasks ?? myTasks.filter((t) => t.status === 'cancelled').length;
+  const completionRate = legacyStats?.completionRate ?? (postedCount > 0 ? (completedCount / postedCount) * 100 : 0);
 
   const survivalStatus = (snapshot?.health?.status || 'stable') as SurvivalStatus;
-  const survivalScore = snapshot?.health?.overall ?? stats?.survivalHealth ?? 72;
+  const survivalScore = snapshot?.health?.overall ?? legacyStats?.survivalHealth ?? 72;
 
-  const achievements = stats?.achievements ?? [];
+  const achievements = legacyStats?.achievements ?? [];
+
+  // Convert SDK achievements to component format
+  const formattedAchievements: Achievement[] = useMemo(() => {
+    if (sdkAchievements.length > 0) {
+      return sdkAchievements.map(a => ({
+        id: a.id,
+        name: a.name,
+        description: a.description,
+        icon: a.icon,
+        tier: a.tier,
+        xpReward: a.xpReward,
+        unlocked: a.unlocked,
+        unlockedAt: a.unlockedAt,
+        progress: a.progress,
+        criteria: a.criteria,
+      }));
+    }
+    return [];
+  }, [sdkAchievements]);
 
   const handleDisconnect = () => {
     Alert.alert(
@@ -282,10 +318,29 @@ export default function ProfileScreen() {
     }
   };
 
-  const displayName = profile?.username || (address ? `User ${address.slice(0, 6)}` : 'Guest');
-  const nickname = profile?.nickname || 'Echo Agent';
-  const avatarUri = profile?.avatarUrl;
+  // Use SDK profile data when available, fallback to legacy
+  const displayName = profile?.name || legacyProfile?.username || (address ? `User ${address.slice(0, 6)}` : 'Guest');
+  const nickname = profile?.name || legacyProfile?.nickname || 'Echo Agent';
+  const avatarUri = profile?.avatarUrl || legacyProfile?.avatarUrl;
   const agentId = address || 'unknown-agent';
+
+  // SDK stats data (when available)
+  const sdkStatsData = stats ? {
+    tasksCompleted: stats.tasksCompleted,
+    tasksCompletedThisMonth: stats.tasksCompletedThisMonth,
+    successRate: stats.successRate,
+    averageRating: stats.averageRating,
+    totalReviews: stats.totalReviews,
+    currentStreak: stats.currentStreak,
+    longestStreak: stats.longestStreak,
+    averageResponseTime: stats.averageResponseTime,
+    totalWorkingHours: stats.totalWorkingHours,
+  } : null;
+
+  const sdkEarningsData = profile ? {
+    totalEarned: profile.totalEarned,
+    totalSpent: profile.totalSpent,
+  } : { totalEarned: '0', totalSpent: '0' };
 
   return (
     <>
@@ -372,6 +427,42 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <ActivityHeatmap data={activityData} title="Contribution Activity" />
         </View>
+
+        {/* SDK Profile Stats - New! */}
+        {(isLoadingProfile || isLoadingStats) ? (
+          <View style={[styles.section, styles.loadingSection]}>
+            <ActivityIndicator size="small" color="#6366f1" />
+            <Text style={styles.loadingText}>Loading profile stats...</Text>
+          </View>
+        ) : sdkStatsData ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Performance Stats</Text>
+              <View style={styles.sdkBadge}>
+                <Text style={styles.sdkBadgeText}>SDK</Text>
+              </View>
+            </View>
+            <ProfileStats stats={sdkStatsData} earnings={sdkEarningsData} />
+          </View>
+        ) : null}
+
+        {/* SDK Achievement Gallery - New! */}
+        {isLoadingAchievements ? (
+          <View style={[styles.section, styles.loadingSection]}>
+            <ActivityIndicator size="small" color="#6366f1" />
+            <Text style={styles.loadingText}>Loading achievements...</Text>
+          </View>
+        ) : formattedAchievements.length > 0 ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Achievements</Text>
+              <View style={styles.sdkBadge}>
+                <Text style={styles.sdkBadgeText}>SDK</Text>
+              </View>
+            </View>
+            <AchievementGallery achievements={formattedAchievements} />
+          </View>
+        ) : null}
 
         {/* Task Statistics */}
         <View style={styles.section}>
@@ -481,6 +572,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  sdkBadge: {
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  sdkBadgeText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  loadingSection: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 24,
+  },
+  loadingText: {
+    fontSize: 13,
+    color: '#64748b',
+    marginTop: 8,
   },
   header: {
     alignItems: 'center',

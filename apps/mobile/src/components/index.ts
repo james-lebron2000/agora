@@ -12,3 +12,7 @@ export { AgentAvatar, AgentAvatarSkeleton } from './AgentAvatar';
 export { AgentLeaderboard, type LeaderboardEntry, type TimePeriod, type SortMetric } from './AgentLeaderboard';
 export { AgentLevelProgress, CompareAgents, calculateLevel, generateSampleLevel } from './AgentLevelProgress';
 export { ShareProfile } from './ShareProfile';
+
+// Profile SDK Components
+export { ProfileStats } from './ProfileStats';
+export { AchievementGallery, type Achievement, type AchievementTier } from './AchievementGallery';
