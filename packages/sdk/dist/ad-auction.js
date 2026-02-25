@@ -216,12 +216,12 @@ export class AdAuctionManager {
                 rejectionReason: `Bid exceeds maximum per-slot bid of ${formatBidAmount(allocation.maxBidPerSlot)}`
             };
         }
-        // Check max bids per agent
+        // Check max bids per agent (count both active and pending bids on this slot)
         const agentBids = agentBidsStore.get(this.agentId);
-        const activeBids = Array.from(agentBids)
+        const slotBids = Array.from(agentBids)
             .map(id => bidStore.get(id))
-            .filter(bid => bid && bid.status === 'pending' && bid.slotType === request.slotType);
-        if (activeBids.length >= this.config.maxBidsPerAgent) {
+            .filter(bid => bid && (bid.status === 'pending' || bid.status === 'active') && bid.slotType === request.slotType);
+        if (slotBids.length >= this.config.maxBidsPerAgent) {
             return {
                 accepted: false,
                 rejectionReason: `Maximum ${this.config.maxBidsPerAgent} active bids per slot type`
@@ -506,6 +506,29 @@ export function getAuctionStats() {
  */
 export function getAllActiveBids() {
     return Array.from(bidStore.values()).filter(bid => bid.status === 'active');
+}
+/**
+ * Reset all auction stores (for testing only)
+ * @internal
+ */
+export function __resetAuctionStores() {
+    bidStore.clear();
+    slotStore.clear();
+    budgetStore.clear();
+    agentBidsStore.clear();
+    globalManagers.clear();
+    // Re-initialize slots
+    const slotTypes = ['banner', 'sidebar', 'featured', 'popup'];
+    for (const type of slotTypes) {
+        slotStore.set(type, {
+            type,
+            currentBid: null,
+            secondBid: null,
+            isAvailable: true,
+            currentPrice: SLOT_BASE_PRICES[type],
+            expiresIn: 0
+        });
+    }
 }
 export default AdAuctionManager;
 //# sourceMappingURL=ad-auction.js.map

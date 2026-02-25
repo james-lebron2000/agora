@@ -283,5 +283,10 @@ export declare function getAuctionStats(): {
  * Get all active bids across all agents
  */
 export declare function getAllActiveBids(): Bid[];
+/**
+ * Reset all auction stores (for testing only)
+ * @internal
+ */
+export declare function __resetAuctionStores(): void;
 export default AdAuctionManager;
 //# sourceMappingURL=ad-auction.d.ts.map
