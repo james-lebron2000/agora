@@ -64,7 +64,7 @@ const DEFAULT_REFRESH_INTERVAL = 60000; // 60 seconds
 async function fetchSurvivalData(agentId: string): Promise<SurvivalData> {
   // Try the main API first
   try {
-    const response = await fetch(`${API_BASE_URL}/api/agents/${agentId}/survival`, {
+    const response = await fetch(`${API_BASE_URL}/survival/${agentId}?address=${agentId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

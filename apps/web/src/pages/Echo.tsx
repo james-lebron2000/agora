@@ -24,54 +24,20 @@ import { MultiChainBalance } from '../components/MultiChainBalance'
 import { useWallet } from '../hooks/useWallet'
 import { useSurvival } from '../hooks/useSurvival'
 
-// Types
- type HealthStatus = 'healthy' | 'stable' | 'degraded' | 'critical' | 'dying'
- type ActionType = 'bridge' | 'reduce_cost' | 'optimize_chain' | 'earn' | 'alert' | 'shutdown'
- type Priority = 'low' | 'medium' | 'high' | 'critical'
-
-interface SurvivalAction {
-  type: ActionType
-  priority: Priority
-  description: string
-  estimatedImpact: string
-  recommendedChain?: string
-}
-
-interface HealthTrend {
-  direction: 'improving' | 'stable' | 'declining'
-  rateOfChange: number
-  predictedHealth: number
-  predictedRunway: number
-}
-
-interface HealthMetrics {
-  overall: number
-  compute: number
-  storage: number
-  network: number
-  economic: number
-  status: HealthStatus
-  lastCheck: string
-}
-
-interface EconomicData {
-  totalUSDC: number
-  netWorthUSD: number
-  runwayDays: number
-  dailyBurnRateUSD: number
-  efficiencyScore: number
-}
-
-interface SurvivalSnapshot {
-  health: HealthMetrics
-  economics: EconomicData
-  trend: HealthTrend
-  pendingActions: SurvivalAction[]
-  survivalMode: boolean
-}
+// Types (from useSurvival hook)
+import type { 
+  HealthStatus, 
+  ActionType, 
+  Priority, 
+  SurvivalAction, 
+  HealthTrend, 
+  HealthMetrics, 
+  EconomicData,
+  SurvivalData as SurvivalSnapshot
+} from '../hooks/useSurvival'
 
 // Status metadata
-const statusMeta: Record<HealthStatus, { 
+const statusMeta: Record<HealthStatus | string, { 
   color: string 
   bgColor: string
   label: string
@@ -109,14 +75,14 @@ const statusMeta: Record<HealthStatus, {
   }
 }
 
-const priorityMeta: Record<Priority, { color: string; bgColor: string }> = {
+const priorityMeta: Record<Priority | string, { color: string; bgColor: string }> = {
   critical: { color: 'text-white', bgColor: 'bg-red-500' },
   high: { color: 'text-white', bgColor: 'bg-amber-500' },
   medium: { color: 'text-white', bgColor: 'bg-blue-500' },
   low: { color: 'text-white', bgColor: 'bg-gray-500' }
 }
 
-const actionTypeMeta: Record<ActionType, { label: string; icon: React.ReactNode }> = {
+const actionTypeMeta: Record<ActionType | string, { label: string; icon: React.ReactNode }> = {
   bridge: { label: 'BRIDGE', icon: <ArrowRight className="w-3 h-3" /> },
   reduce_cost: { label: 'REDUCE COST', icon: <TrendingDown className="w-3 h-3" /> },
   optimize_chain: { label: 'OPTIMIZE', icon: <Zap className="w-3 h-3" /> },
@@ -125,60 +91,7 @@ const actionTypeMeta: Record<ActionType, { label: string; icon: React.ReactNode 
   shutdown: { label: 'SHUTDOWN', icon: <Skull className="w-3 h-3" /> }
 }
 
-// Mock data generator
-const generateMockSnapshot = (): SurvivalSnapshot => {
-  const healthScore = Math.floor(Math.random() * 40) + 60 // 60-100
-  let status: HealthStatus = 'healthy'
-  if (healthScore < 20) status = 'dying'
-  else if (healthScore < 40) status = 'critical'
-  else if (healthScore < 60) status = 'degraded'
-  else if (healthScore < 80) status = 'stable'
 
-  const runwayDays = Math.floor(Math.random() * 30) + 15
-  const totalUSDC = Math.floor(Math.random() * 5000) + 500
-  const dailyBurn = Math.random() * 50 + 10
-
-  return {
-    health: {
-      overall: healthScore,
-      compute: Math.floor(Math.random() * 30) + 70,
-      storage: Math.floor(Math.random() * 30) + 70,
-      network: Math.floor(Math.random() * 30) + 70,
-      economic: Math.floor(Math.random() * 30) + 60,
-      status,
-      lastCheck: new Date().toISOString()
-    },
-    economics: {
-      totalUSDC,
-      netWorthUSD: totalUSDC + Math.floor(Math.random() * 1000),
-      runwayDays,
-      dailyBurnRateUSD: dailyBurn,
-      efficiencyScore: Math.floor(Math.random() * 30) + 60
-    },
-    trend: {
-      direction: Math.random() > 0.5 ? 'improving' : Math.random() > 0.5 ? 'stable' : 'declining',
-      rateOfChange: (Math.random() * 10) - 5,
-      predictedHealth: Math.min(100, healthScore + Math.floor(Math.random() * 10) - 3),
-      predictedRunway: runwayDays + Math.floor(Math.random() * 5) - 2
-    },
-    pendingActions: [
-      {
-        type: 'bridge',
-        priority: runwayDays < 10 ? 'high' : 'medium',
-        description: 'Consider bridging USDC from Ethereum to Base for lower fees',
-        estimatedImpact: 'Reduce transaction costs by ~40%',
-        recommendedChain: 'base'
-      },
-      {
-        type: 'optimize_chain',
-        priority: 'medium',
-        description: 'Migrate operations to Base for cost efficiency',
-        estimatedImpact: 'Save ~$0.50 per operation'
-      }
-    ],
-    survivalMode: healthScore < 30 || runwayDays < 3 || totalUSDC < 100
-  }
-}
 
 // Format helpers
 const formatCurrency = (value: number): string => {

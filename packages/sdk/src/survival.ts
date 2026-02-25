@@ -148,6 +148,27 @@ export interface TaskDecision {
 }
 
 /**
+ * Survival action types
+ */
+export type SurvivalActionType = 'bridge' | 'reduce_cost' | 'optimize_chain' | 'earn' | 'alert' | 'shutdown';
+
+/**
+ * Survival action priority
+ */
+export type SurvivalActionPriority = 'low' | 'medium' | 'high' | 'critical';
+
+/**
+ * Survival action recommendation
+ */
+export interface SurvivalAction {
+  type: SurvivalActionType;
+  priority: SurvivalActionPriority;
+  description: string;
+  estimatedImpact: string;
+  recommendedChain?: string;
+}
+
+/**
  * Format survival report as readable string
  */
 export function formatSurvivalReport(snapshot: SurvivalSnapshot): string {
