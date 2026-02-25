@@ -62,3 +62,18 @@ export {
   type ChainBalance,
   type BridgeResult
 } from './bridge.js';
+
+// Echo Survival mechanism (v1.3)
+export {
+  EchoSurvivalManager,
+  getOrCreateSurvivalManager,
+  getSurvivalManager,
+  removeSurvivalManager,
+  DEFAULT_SURVIVAL_CONFIG,
+  type AgentHealth,
+  type AgentEconomics,
+  type SurvivalCheckResult,
+  type HeartbeatRecord,
+  type SurvivalConfig,
+  type AgentHealthStatus
+} from './survival.js';

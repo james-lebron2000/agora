@@ -7,11 +7,14 @@ import { NetworkStats, type NetworkMetrics } from './components/NetworkStats'
 import { UseCaseShowcase } from './components/UseCaseShowcase'
 import { BridgeCard } from './components/BridgeCard'
 import { BridgeStatus } from './components/BridgeStatus'
+import { MobileHeader } from './components/MobileHeader'
+import { MobileBottomNav } from './components/MobileBottomNav'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 import { Echo } from './pages/Echo'
 import { Analytics as Tokenomics } from './pages/Analytics'
 import { ARHud } from './pages/ARHud'
+import { AgentProfile } from './pages/AgentProfile'
 // import { AgentChat } from './components/AgentChat'
 
 type EventsResp = { ok: boolean; events: AgoraEvent[]; lastTs: string | null }
@@ -50,7 +53,7 @@ const MOCK_METRICS: NetworkMetrics = {
   volume24h: 12450,
 }
 
-type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge'
+type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge' | 'profile'
 
 const FALLBACK_AGENTS: AgentSummary[] = [
   {
@@ -136,6 +139,7 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
     if (window.location.pathname === '/echo') return 'echo'
     if (window.location.pathname === '/tokenomics') return 'tokenomics'
     if (window.location.pathname === '/bridge') return 'bridge'
+    if (window.location.pathname === '/profile') return 'profile'
     if (window.location.pathname.startsWith('/analytics')) return 'analytics'
     return 'home'
   }
@@ -159,7 +163,9 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
               ? '/ar'
               : next === 'bridge'
                 ? '/bridge'
-                : '/'
+                : next === 'profile'
+                  ? '/profile'
+                  : '/'
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path)
       setRoute(next)
@@ -583,21 +589,34 @@ function AppContent() {
 
   // Full-page routes
   if (route === 'echo') {
-    return <Echo />
+    return (
+      <>
+        <MobileHeader currentRoute={route} onNavigate={navigate} />
+        <Echo />
+        <MobileBottomNav currentRoute={route} onNavigate={navigate} />
+      </>
+    )
   }
 
   if (route === 'tokenomics') {
-    return <Tokenomics />
+    return (
+      <>
+        <MobileHeader currentRoute={route} onNavigate={navigate} />
+        <Tokenomics />
+        <MobileBottomNav currentRoute={route} onNavigate={navigate} />
+      </>
+    )
   }
 
   if (route === 'bridge') {
     return (
       <WalletProvider>
-        <div className="min-h-screen bg-agora-50">
+        <MobileHeader currentRoute={route} onNavigate={navigate} />
+        <div className="min-h-screen bg-agora-50 pt-20 lg:pt-0">
           <div className="max-w-7xl mx-auto px-4 py-8">
             <div className="mb-6">
-              <h1 className="text-3xl font-bold text-agora-900">Cross-Chain Bridge</h1>
-              <p className="text-agora-600 mt-2">Bridge USDC and ETH across Base, Optimism, Arbitrum, and Ethereum</p>
+              <h1 className="text-2xl lg:text-3xl font-bold text-agora-900">Cross-Chain Bridge</h1>
+              <p className="text-agora-600 mt-2 text-sm lg:text-base">Bridge USDC and ETH across Base, Optimism, Arbitrum, and Ethereum</p>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
@@ -609,32 +628,53 @@ function AppContent() {
             </div>
           </div>
         </div>
+        <MobileBottomNav currentRoute={route} onNavigate={navigate} />
       </WalletProvider>
     )
   }
   
   if (route === 'ar') {
-    return <ARHud />
+    return (
+      <>
+        <MobileHeader currentRoute={route} onNavigate={navigate} />
+        <ARHud />
+        <MobileBottomNav currentRoute={route} onNavigate={navigate} />
+      </>
+    )
+  }
+
+  if (route === 'profile') {
+    return (
+      <>
+        <MobileHeader currentRoute={route} onNavigate={navigate} />
+        <AgentProfile />
+        <MobileBottomNav currentRoute={route} onNavigate={navigate} />
+      </>
+    )
   }
 
   return (
-    <Layout
-      left={left}
-      center={route === 'analytics' ? analyticsCenter : homeCenter}
-      right={right}
-      hero={
-        route === 'analytics'
-          ? undefined
-          : (
-            <div className="space-y-6">
-              <Hero />
-              <NetworkStats metrics={metrics} refreshKey={metricsTick} />
-              <UseCaseShowcase metrics={metrics} usingSeed={usingSeed} />
-            </div>
-          )
-      }
-      nav={nav}
-    />
+    <>
+      <MobileHeader currentRoute={route} onNavigate={navigate} />
+      <Layout
+        left={left}
+        center={route === 'analytics' ? analyticsCenter : homeCenter}
+        right={right}
+        hero={
+          route === 'analytics'
+            ? undefined
+            : (
+              <div className="space-y-6">
+                <Hero />
+                <NetworkStats metrics={metrics} refreshKey={metricsTick} />
+                <UseCaseShowcase metrics={metrics} usingSeed={usingSeed} />
+              </div>
+            )
+        }
+        nav={nav}
+      />
+      <MobileBottomNav currentRoute={route} onNavigate={navigate} />
+    </>
   )
 }
 
