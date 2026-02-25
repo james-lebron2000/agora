@@ -20,15 +20,9 @@ const currencyWithCents = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 })
 
-const currencyNoCents = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 0,
-})
-
 const formatInteger = (value: number) => Math.round(value).toLocaleString('en-US')
 const formatCurrency = (value: number) => currencyWithCents.format(Math.round(value * 100) / 100)
-const formatDelta = (value: number) => `+${currencyNoCents.format(Math.round(value))}`
+const formatVolume24h = (value: number) => formatCurrency(value)
 
 function useCountUp(target: number, refreshKey: number, duration = 1200) {
   const [value, setValue] = useState(0)
@@ -104,7 +98,7 @@ export function NetworkStats({ metrics, refreshKey }: NetworkStatsProps) {
         label: 'Registered Agents',
         value: metrics.totalAgents,
         icon: '🤖',
-        helper: 'All-time agent signups',
+        helper: 'From agent registry and relay providers',
         formatter: formatInteger,
       },
       {
@@ -112,15 +106,15 @@ export function NetworkStats({ metrics, refreshKey }: NetworkStatsProps) {
         label: 'Completed Deals',
         value: metrics.totalTransactions,
         icon: '✅',
-        helper: 'Cumulative successful matches',
+        helper: 'Threads with RESULT events',
         formatter: formatInteger,
       },
       {
         id: 'volume',
-        label: 'Total Volume',
+        label: 'Total Settled (USDC)',
         value: metrics.totalVolume,
         icon: '💰',
-        helper: 'USDC settled to date',
+        helper: 'Accepted payments with USDC amount',
         formatter: formatCurrency,
       },
       {
@@ -128,23 +122,23 @@ export function NetworkStats({ metrics, refreshKey }: NetworkStatsProps) {
         label: 'Active Requests',
         value: metrics.activeRequests,
         icon: '🔥',
-        helper: 'Live demand right now',
+        helper: 'OPEN + ACTIVE threads',
         formatter: formatInteger,
       },
       {
         id: 'volume24h',
-        label: '24h Volume',
+        label: '24h Settled (USDC)',
         value: metrics.volume24h,
         icon: '📈',
-        helper: 'New volume in the last day',
-        formatter: formatDelta,
+        helper: 'Accepted USDC payments in last 24h',
+        formatter: formatVolume24h,
       },
     ],
     [metrics],
   )
 
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-agora-200 bg-gradient-to-r from-agora-900 to-base-blue text-white shadow-glow">
+    <section className="relative overflow-hidden rounded-3xl border border-agora-200 bg-gradient-to-r from-agora-900 to-agora-950 text-white shadow-glow">
       <div className="absolute -top-20 right-8 h-40 w-40 rounded-full bg-usdc/20 blur-3xl" />
       <div className="absolute -bottom-24 left-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
       <div className="relative p-6 sm:p-8">
@@ -156,11 +150,11 @@ export function NetworkStats({ metrics, refreshKey }: NetworkStatsProps) {
             <h3 className="mt-4 text-2xl font-semibold tracking-tight">
               Real-time Agora Activity
             </h3>
-            <p className="mt-1 text-sm text-white/70">Refreshes every 5 seconds</p>
+            <p className="mt-1 text-sm text-white/70">Auto-updates from relay events</p>
           </div>
           <div className="flex items-center gap-2 text-xs text-white/70">
             <span className="h-2 w-2 rounded-full bg-usdc animate-pulse" />
-            Streaming metrics
+            Relay event stream
           </div>
         </div>
 

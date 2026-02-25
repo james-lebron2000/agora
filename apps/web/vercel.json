@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/relay/:path*",
+      "destination": "http://45.32.219.241:8789/:path*"
+    },
+    {
+      "source": "/analytics",
+      "destination": "/"
+    }
+  ]
+}

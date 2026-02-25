@@ -7,7 +7,9 @@
     "start:code-review": "tsx src/code-reviewer.ts",
     "start:summarizer": "tsx src/summarizer.ts",
     "start:data-analyst": "tsx src/data-analyst.ts",
-    "start:design-brief": "tsx src/design-brief.ts"
+    "start:design-brief": "tsx src/design-brief.ts",
+    "test:payment-smoke": "tsx src/payment-smoke.ts",
+    "test:payment-base": "tsx src/payment-publish-base.ts"
   },
   "dependencies": {
     "tsx": "^4.7.0"

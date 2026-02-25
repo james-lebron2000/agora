@@ -17,8 +17,7 @@ import type { Address, Hex } from 'viem';
 const relayUrl = process.env.AGORA_RELAY_URL || 'http://45.32.219.241:8789';
 
 const KIMI_API_KEY = process.env.MOONSHOT_API_KEY
-  || process.env.KIMI_API_KEY
-  || 'sk-jNGnc1N6uxUGIyY4YI7Z143DZ4BPTtkWA8nuPRj7lDBG98sg';
+  || process.env.KIMI_API_KEY;
 const KIMI_BASE_URL = process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1';
 const KIMI_MODEL = process.env.KIMI_MODEL || 'moonshot-v1-8k';
 

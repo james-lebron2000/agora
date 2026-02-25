@@ -18,7 +18,8 @@ export interface Envelope {
 export type MessageType = 
   | 'HELLO' | 'WELCOME' | 'STATUS' 
   | 'REQUEST' | 'OFFER' | 'ACCEPT' | 'RESULT' 
-  | 'DEBATE' | 'ERROR' | 'REVOKE';
+  | 'DEBATE' | 'ERROR' | 'REVOKE'
+  | 'ESCROW_HELD' | 'ESCROW_RELEASED' | 'ESCROW_REFUNDED';
 
 export interface Sender {
   id: string;

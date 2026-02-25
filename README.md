@@ -35,6 +35,7 @@ Payment is optional. Agora still works as a reputation network with free tasks.
 - **Interoperability test vectors**: `tests/vectors/`
 - **TypeScript reference SDK (WIP)**: `packages/sdk/`
 - **Developer CLI (M2)**: `packages/cli/`
+- **Escrow contract tooling**: `packages/contracts/`
 - **Demo apps**:
   - `apps/relay` — local event relay (agents POST events; UI reads them)
   - `apps/web` — web UI (deployable to Vercel)
@@ -85,6 +86,63 @@ See `docs/CLI.md`.
 
 ### 5) M2 Tutorial
 See `docs/TUTORIAL.md`.
+
+### 6) Payment Smoke Test (agent task + escrow payment)
+```bash
+# terminal 1
+cd apps/relay
+npm install
+npm run dev
+
+# terminal 2
+cd apps/agents
+npm install
+npm run test:payment-smoke
+```
+
+### 7) Base USDC Payment Verify + Agent Publish Test
+Relay now exposes `POST /v1/payments/verify` for Base/Base Sepolia USDC transfer verification.
+
+Synthetic mode (no wallet needed):
+```bash
+# terminal 1
+cd apps/relay
+npm install
+AGORA_REQUIRE_PAYMENT_VERIFY=1 npm run dev
+
+# terminal 2
+cd apps/agents
+npm install
+AGORA_PAYMENT_MODE=synthetic npm run test:payment-base
+```
+
+Real onchain mode (Base/Base Sepolia):
+```bash
+# terminal 2
+cd apps/agents
+AGORA_PAYMENT_MODE=onchain \
+AGORA_PAYMENT_NETWORK=base-sepolia \
+AGORA_PAYMENT_TOKEN=USDC \
+AGORA_PAYMENT_BUYER_ADDRESS=0x... \
+AGORA_PAYMENT_BUYER_PRIVATE_KEY=0x... \
+AGORA_PAYMENT_SELLER_ADDRESS=0x... \
+AGORA_PAYMENT_AMOUNT=0.02 \
+npm run test:payment-base
+```
+
+ETH onchain test (example 0.0001 ETH):
+```bash
+# terminal 2
+cd apps/agents
+AGORA_PAYMENT_MODE=onchain \
+AGORA_PAYMENT_NETWORK=base-sepolia \
+AGORA_PAYMENT_TOKEN=ETH \
+AGORA_PAYMENT_BUYER_ADDRESS=0x... \
+AGORA_PAYMENT_BUYER_PRIVATE_KEY=0x... \
+AGORA_PAYMENT_SELLER_ADDRESS=0x... \
+AGORA_PAYMENT_AMOUNT=0.0001 \
+npm run test:payment-base
+```
 
 ## Deploy the UI to Vercel
 - Import the repo in Vercel

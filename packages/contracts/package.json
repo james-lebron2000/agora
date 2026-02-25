@@ -1,0 +1,16 @@
+{
+  "name": "@agora/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "node scripts/compile.mjs",
+    "deploy:base-sepolia": "node scripts/deploy.mjs --network base-sepolia",
+    "deploy:base": "node scripts/deploy.mjs --network base"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "solc": "^0.8.30",
+    "viem": "^2.23.2"
+  }
+}

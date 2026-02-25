@@ -6,6 +6,7 @@ import {
   ResultPayload,
 } from './messages.js';
 import { RelayClient, SubscribeOptions, AgentRegistration, AgentRecord } from './relay.js';
+import { JsonSchema, validateJsonSchema } from './schema.js';
 
 export interface AgoraAgentOptions {
   did: string;
@@ -13,7 +14,11 @@ export interface AgoraAgentOptions {
   relayUrl: string;
   name?: string;
   url?: string;
+  description?: string;
+  portfolioUrl?: string;
+  metadata?: Record<string, unknown>;
   capabilities?: unknown[];
+  intentSchemas?: Record<string, { input?: JsonSchema; output?: JsonSchema }>;
 }
 
 export interface RegisterOptions {
@@ -22,20 +27,78 @@ export interface RegisterOptions {
 }
 
 export type MessageHandler = (envelope: SignedEnvelope) => void | Promise<void>;
+export type EscrowHandler = (
+  envelope: SignedEnvelope,
+  escrow: {
+    request_id: string;
+    payer?: string;
+    payee?: string;
+    amount?: number;
+    currency?: string;
+    status?: string;
+    held_at?: string;
+    released_at?: string;
+  },
+) => void | Promise<void>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function extractIntentSchemasFromCapabilities(
+  capabilities: unknown[],
+): Record<string, { input?: JsonSchema; output?: JsonSchema }> {
+  const map: Record<string, { input?: JsonSchema; output?: JsonSchema }> = {};
+  if (!Array.isArray(capabilities)) return map;
+
+  for (const capability of capabilities) {
+    if (!isRecord(capability)) continue;
+    const input = (isRecord(capability.input_schema) ? capability.input_schema : undefined)
+      || (isRecord((capability.schemas as any)?.request) ? (capability.schemas as any).request : undefined);
+    const output = (isRecord(capability.output_schema) ? capability.output_schema : undefined)
+      || (isRecord((capability.schemas as any)?.response) ? (capability.schemas as any).response : undefined);
+    const intents = Array.isArray(capability.intents) ? capability.intents : [];
+
+    for (const intentDecl of intents) {
+      if (typeof intentDecl === 'string' && intentDecl) {
+        map[intentDecl] = { input, output };
+        continue;
+      }
+      if (!isRecord(intentDecl) || typeof intentDecl.id !== 'string' || !intentDecl.id) continue;
+      const intentInput = isRecord(intentDecl.input_schema) ? intentDecl.input_schema : input;
+      const intentOutput = isRecord(intentDecl.output_schema) ? intentDecl.output_schema : output;
+      map[intentDecl.id] = { input: intentInput, output: intentOutput };
+    }
+  }
+
+  return map;
+}
 
 export class AgoraAgent {
   public readonly did: string;
   public readonly relay: RelayClient;
   private readonly signer: EnvelopeSigner;
   private readonly senderProfile: Sender;
+  private readonly registrationProfile: {
+    description?: string;
+    portfolio_url?: string;
+    metadata?: Record<string, unknown>;
+  };
   private readonly defaultCapabilities?: unknown[];
+  private readonly intentSchemas: Record<string, { input?: JsonSchema; output?: JsonSchema }>;
 
   constructor(options: AgoraAgentOptions) {
     this.did = options.did;
     this.relay = new RelayClient({ baseUrl: options.relayUrl });
     this.signer = new EnvelopeSigner(options.privateKey);
     this.senderProfile = { id: options.did, name: options.name, url: options.url };
+    this.registrationProfile = {
+      description: options.description,
+      portfolio_url: options.portfolioUrl,
+      metadata: options.metadata,
+    };
     this.defaultCapabilities = options.capabilities;
+    this.intentSchemas = options.intentSchemas || extractIntentSchemasFromCapabilities(options.capabilities || []);
   }
 
   get sender(): Sender {
@@ -44,7 +107,7 @@ export class AgoraAgent {
 
   async register(options: RegisterOptions = {}): Promise<{ ok: boolean; agent?: AgentRecord; error?: string }> {
     const payload: AgentRegistration = {
-      agent: this.senderProfile,
+      agent: { ...this.senderProfile, ...this.registrationProfile },
       capabilities: options.capabilities ?? this.defaultCapabilities,
       status: options.status,
     };
@@ -64,6 +127,13 @@ export class AgoraAgent {
     payload: RequestPayload,
     options?: { recipient?: string; thread?: string }
   ): Promise<{ ok: boolean; id?: string; error?: string }> {
+    const schema = this.intentSchemas[payload.intent]?.input;
+    if (schema) {
+      const check = validateJsonSchema(schema, payload.params, 'payload.params');
+      if (!check.ok) {
+        return { ok: false, error: `REQUEST_SCHEMA_VALIDATION_FAILED: ${check.errors.join('; ')}` };
+      }
+    }
     const envelope = MessageBuilder.request(this.senderProfile, payload, options);
     return this.sendEnvelope(envelope);
   }
@@ -88,8 +158,16 @@ export class AgoraAgent {
   async sendResult(
     requestId: string,
     payload: Omit<ResultPayload, 'request_id'>,
-    options?: { thread?: string }
+    options?: { thread?: string; intent?: string }
   ): Promise<{ ok: boolean; id?: string; error?: string }> {
+    const outputSchema = options?.intent ? this.intentSchemas[options.intent]?.output : undefined;
+    if (outputSchema) {
+      const outputValue = payload.output ?? payload;
+      const check = validateJsonSchema(outputSchema, outputValue, 'payload.output');
+      if (!check.ok) {
+        return { ok: false, error: `RESULT_SCHEMA_VALIDATION_FAILED: ${check.errors.join('; ')}` };
+      }
+    }
     const envelope = MessageBuilder.result(this.senderProfile, requestId, payload, options);
     return this.sendEnvelope(envelope);
   }
@@ -116,7 +194,31 @@ export class AgoraAgent {
   }
 
   async onRequest(handler: MessageHandler, options: SubscribeOptions = {}): Promise<void> {
-    return this.onMessage('REQUEST', handler, options);
+    return this.onMessage('REQUEST', async (envelope) => {
+      const payload = envelope.payload || {};
+      const intent = typeof payload.intent === 'string' ? payload.intent : null;
+      const schema = intent ? this.intentSchemas[intent]?.input : undefined;
+      if (schema) {
+        const check = validateJsonSchema(schema, payload.params, 'payload.params');
+        if (!check.ok) {
+          await this.sendError(
+            'REQUEST_SCHEMA_VALIDATION_FAILED',
+            `Incoming request schema validation failed: ${check.errors.join('; ')}`,
+            {
+              recipient: envelope.sender?.id,
+              thread: envelope.thread?.id,
+              details: {
+                request_id: payload.request_id || payload.requestId,
+                intent,
+                errors: check.errors,
+              },
+            },
+          );
+          return;
+        }
+      }
+      await handler(envelope);
+    }, options);
   }
 
   async onOffer(handler: MessageHandler, options: SubscribeOptions = {}): Promise<void> {
@@ -129,5 +231,27 @@ export class AgoraAgent {
 
   async onResult(handler: MessageHandler, options: SubscribeOptions = {}): Promise<void> {
     return this.onMessage('RESULT', handler, options);
+  }
+
+  async onEscrowDeposit(
+    handler: EscrowHandler,
+    options: SubscribeOptions & { onlyForPayee?: boolean } = {},
+  ): Promise<void> {
+    const { onlyForPayee = true, ...subscribe } = options;
+    return this.onMessage('ESCROW_HELD', async (envelope) => {
+      const payload = envelope.payload || {};
+      const escrow = {
+        request_id: typeof payload.request_id === 'string' ? payload.request_id : String(payload.request_id || ''),
+        payer: typeof payload.payer === 'string' ? payload.payer : undefined,
+        payee: typeof payload.payee === 'string' ? payload.payee : undefined,
+        amount: typeof payload.amount === 'number' ? payload.amount : undefined,
+        currency: typeof payload.currency === 'string' ? payload.currency : undefined,
+        status: typeof payload.status === 'string' ? payload.status : undefined,
+        held_at: typeof payload.held_at === 'string' ? payload.held_at : undefined,
+        released_at: typeof payload.released_at === 'string' ? payload.released_at : undefined,
+      };
+      if (onlyForPayee && escrow.payee && escrow.payee !== this.did) return;
+      await handler(envelope, escrow);
+    }, subscribe);
   }
 }

@@ -42,6 +42,50 @@ const readJsonFile = (filePath) => {
   return JSON.parse(fs.readFileSync(absolute, 'utf-8'));
 };
 
+const writeFileIfMissing = (filePath, content, options = {}) => {
+  const { force = false } = options;
+  const absolute = path.resolve(process.cwd(), filePath);
+  if (!force && fs.existsSync(absolute)) return false;
+  fs.mkdirSync(path.dirname(absolute), { recursive: true });
+  fs.writeFileSync(absolute, content);
+  return true;
+};
+
+const appendGitignoreEntries = (entries) => {
+  const absolute = path.resolve(process.cwd(), '.gitignore');
+  const existing = fs.existsSync(absolute)
+    ? fs.readFileSync(absolute, 'utf-8').split('\n').map((line) => line.trim())
+    : [];
+  const next = [...existing];
+  for (const entry of entries) {
+    if (!next.includes(entry)) next.push(entry);
+  }
+  fs.writeFileSync(absolute, `${next.filter(Boolean).join('\n')}\n`);
+};
+
+const resolveCapabilitySchemaRefs = (capabilities, baseDir) => {
+  if (!Array.isArray(capabilities)) return [];
+  return capabilities.map((capability) => {
+    if (!capability || typeof capability !== 'object') return capability;
+    const inputPath = capability.input_schema_file || capability.inputSchemaFile;
+    const outputPath = capability.output_schema_file || capability.outputSchemaFile;
+    const next = { ...capability };
+    if (typeof inputPath === 'string') {
+      const absolute = path.resolve(baseDir, inputPath);
+      next.input_schema = JSON.parse(fs.readFileSync(absolute, 'utf-8'));
+    }
+    if (typeof outputPath === 'string') {
+      const absolute = path.resolve(baseDir, outputPath);
+      next.output_schema = JSON.parse(fs.readFileSync(absolute, 'utf-8'));
+    }
+    delete next.input_schema_file;
+    delete next.inputSchemaFile;
+    delete next.output_schema_file;
+    delete next.outputSchemaFile;
+    return next;
+  });
+};
+
 const signEnvelope = async (envelope, privateKeyHex) => {
   if (!privateKeyHex) return envelope;
   const privateKey = new Uint8Array(Buffer.from(privateKeyHex, 'hex'));
@@ -85,11 +129,151 @@ program
     }, null, 2));
   });
 
+const agentProgram = program
+  .command('agent')
+  .description('Agent lifecycle commands');
+
+agentProgram
+  .command('init')
+  .description('Initialize an Agora agent workspace in the current directory')
+  .option('--name <name>', 'Agent display name', 'MyAgoraAgent')
+  .option('--intent <intent...>', 'Intent list (space-separated or comma-separated)', ['general.assistant'])
+  .option('--relay <url>', 'Default relay URL', DEFAULT_RELAY)
+  .option('--rate <number>', 'Default metered rate (USDC per turn)', '0.005')
+  .option('--force', 'Overwrite generated files if they already exist', false)
+  .action(async (opts) => {
+    const intents = (opts.intent || [])
+      .flatMap((value) => String(value).split(','))
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const intentList = intents.length ? intents : ['general.assistant'];
+    const rate = Number(opts.rate);
+    if (!Number.isFinite(rate) || rate <= 0) {
+      console.error('Invalid --rate, expected positive number.');
+      process.exit(1);
+    }
+
+    const privateKey = ed25519.utils.randomSecretKey();
+    const publicKey = await ed25519.getPublicKeyAsync(privateKey);
+    const did = publicKeyToDidKey(publicKey);
+    const nameSlug = String(opts.name || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const capabilityId = `cap_${nameSlug || 'agent'}_v1`;
+
+    const requestSchema = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['task'],
+      properties: {
+        task: { type: 'string' },
+        context: { type: 'object', additionalProperties: true },
+        priority: { enum: ['low', 'normal', 'high'] },
+      },
+    };
+    const resultSchema = {
+      type: 'object',
+      additionalProperties: false,
+      required: ['status', 'summary'],
+      properties: {
+        status: { enum: ['success', 'partial', 'failed'] },
+        summary: { type: 'string' },
+        artifacts: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['type', 'url'],
+            properties: {
+              type: { type: 'string' },
+              url: { type: 'string' },
+              name: { type: 'string' },
+            },
+          },
+        },
+      },
+    };
+
+    const capabilities = intentList.map((intent, index) => ({
+      id: `${capabilityId}_${index + 1}`,
+      name: `${opts.name} - ${intent}`,
+      intents: [{ id: intent, name: intent }],
+      pricing: {
+        model: 'metered',
+        currency: 'USDC',
+        metered_unit: 'turn',
+        metered_rate: rate,
+      },
+      input_schema_file: './schemas/request.schema.json',
+      output_schema_file: './schemas/result.schema.json',
+    }));
+
+    const agentConfig = {
+      name: opts.name,
+      did,
+      relay: opts.relay,
+      intents: intentList,
+      capabilitiesFile: './capabilities.json',
+      identityFile: './.agora/identity.json',
+    };
+
+    const identity = {
+      did,
+      publicKey: Buffer.from(publicKey).toString('hex'),
+      privateKey: Buffer.from(privateKey).toString('hex'),
+      createdAt: new Date().toISOString(),
+    };
+
+    const envExample = [
+      `AGORA_RELAY_URL=${opts.relay}`,
+      `AGORA_AGENT_DID=${did}`,
+      'AGORA_AGENT_IDENTITY_FILE=.agora/identity.json',
+      'AGORA_AGENT_NAME=' + opts.name,
+      '',
+    ].join('\n');
+
+    const runnerTemplate = `import fs from 'node:fs';\nimport { AgoraAgent } from '@agora/sdk';\n\nconst relayUrl = process.env.AGORA_RELAY_URL || '${opts.relay}';\nconst identityPath = process.env.AGORA_AGENT_IDENTITY_FILE || '.agora/identity.json';\nconst identity = JSON.parse(fs.readFileSync(identityPath, 'utf-8'));\n\nconst agent = new AgoraAgent({\n  did: identity.did,\n  privateKey: new Uint8Array(Buffer.from(identity.privateKey, 'hex')),\n  relayUrl,\n  name: process.env.AGORA_AGENT_NAME || '${opts.name}',\n});\n\nconst caps = JSON.parse(fs.readFileSync('capabilities.json', 'utf-8'));\nconst register = await agent.register({ capabilities: caps, status: 'online' });\nif (!register.ok) {\n  console.error('register failed:', register.error || register);\n  process.exit(1);\n}\nconsole.log('registered:', identity.did);\n\nawait agent.onRequest(async (envelope) => {\n  const requestId = String(envelope.payload?.request_id || envelope.payload?.requestId || '');\n  if (!requestId) return;\n\n  await agent.sendOffer(requestId, {\n    plan: 'Auto-handled by generated starter agent',\n    price: { amount: ${rate}, currency: 'USDC' },\n    eta_seconds: 30,\n  });\n});\n`;
+
+    const force = Boolean(opts.force);
+    const created = [];
+    const skipped = [];
+
+    const files = [
+      ['agent.config.json', JSON.stringify(agentConfig, null, 2) + '\n'],
+      ['capabilities.json', JSON.stringify(capabilities, null, 2) + '\n'],
+      ['schemas/request.schema.json', JSON.stringify(requestSchema, null, 2) + '\n'],
+      ['schemas/result.schema.json', JSON.stringify(resultSchema, null, 2) + '\n'],
+      ['.agora/identity.json', JSON.stringify(identity, null, 2) + '\n'],
+      ['.env.example', envExample],
+      ['agent.runner.mjs', runnerTemplate],
+    ];
+
+    for (const [file, content] of files) {
+      const wasCreated = writeFileIfMissing(file, content, { force });
+      if (wasCreated) created.push(file);
+      else skipped.push(file);
+    }
+
+    appendGitignoreEntries(['.env', '.agora/']);
+
+    console.log(JSON.stringify({
+      ok: true,
+      did,
+      created,
+      skipped,
+      next: [
+        'cp .env.example .env',
+        'npm install @agora/sdk',
+        'node agent.runner.mjs',
+      ],
+    }, null, 2));
+  });
+
 program
   .command('register')
   .option('--relay <url>', 'Relay URL', DEFAULT_RELAY)
   .option('--did <did>', 'Agent DID')
   .option('--name <name>', 'Agent name')
+  .option('--description <text>', 'Agent description')
+  .option('--portfolio-url <url>', 'Agent portfolio URL')
   .option('--intent <intent...>', 'Intent list (space-separated)')
   .option('--capabilities <path>', 'Capabilities JSON file')
   .action(async (opts) => {
@@ -99,18 +283,35 @@ program
     }
     const intents = opts.intent ? opts.intent.flatMap((v) => String(v).split(',')) : [];
     const capabilities = opts.capabilities
-      ? readJsonFile(opts.capabilities)
+      ? (() => {
+          const raw = readJsonFile(opts.capabilities);
+          const normalized = Array.isArray(raw) ? raw : [raw];
+          return resolveCapabilitySchemaRefs(
+            normalized,
+            path.dirname(path.resolve(process.cwd(), opts.capabilities)),
+          );
+        })()
       : intents.length
         ? [{
             id: `cap_${opts.name || 'agent'}`,
             intents: intents.map((id) => ({ id, name: id })),
             pricing: { model: 'free' },
+            input_schema: {
+              type: 'object',
+              additionalProperties: true,
+            },
+            output_schema: {
+              type: 'object',
+              additionalProperties: true,
+            },
           }]
         : [];
     const payload = {
       agent: {
         id: opts.did,
         name: opts.name,
+        description: opts.description,
+        portfolio_url: opts.portfolioUrl,
       },
       capabilities: Array.isArray(capabilities) ? capabilities : [capabilities],
     };
@@ -126,12 +327,33 @@ program
   .command('discover')
   .option('--relay <url>', 'Relay URL', DEFAULT_RELAY)
   .option('--intent <intent>', 'Intent filter')
+  .option('--q <query>', 'Keyword search')
+  .option('--status <status>', 'Status filter: online/offline')
   .option('--limit <limit>', 'Limit', '5')
   .action(async (opts) => {
     const params = new URLSearchParams();
     if (opts.intent) params.set('intent', opts.intent);
+    if (opts.q) params.set('q', opts.q);
+    if (opts.status) params.set('status', opts.status);
     if (opts.limit) params.set('limit', String(opts.limit));
     const { json } = await fetchJson(`${opts.relay.replace(/\/$/, '')}/v1/discover?${params}`);
+    console.log(JSON.stringify(json, null, 2));
+  });
+
+program
+  .command('directory')
+  .option('--relay <url>', 'Relay URL', DEFAULT_RELAY)
+  .option('--intent <intent>', 'Intent filter')
+  .option('--q <query>', 'Keyword search')
+  .option('--status <status>', 'Status filter: online/offline')
+  .option('--limit <limit>', 'Limit', '20')
+  .action(async (opts) => {
+    const params = new URLSearchParams();
+    if (opts.intent) params.set('intent', opts.intent);
+    if (opts.q) params.set('q', opts.q);
+    if (opts.status) params.set('status', opts.status);
+    if (opts.limit) params.set('limit', String(opts.limit));
+    const { json } = await fetchJson(`${opts.relay.replace(/\/$/, '')}/v1/directory?${params}`);
     console.log(JSON.stringify(json, null, 2));
   });
 
@@ -181,6 +403,71 @@ program
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ envelope: signed }),
+    });
+    console.log(JSON.stringify(json, null, 2));
+  });
+
+program
+  .command('execute')
+  .option('--relay <url>', 'Relay URL', DEFAULT_RELAY)
+  .option('--agent-id <did>', 'Executor agent DID')
+  .option('--request-id <id>', 'Request ID')
+  .option('--intent <intent>', 'Intent (optional)')
+  .option('--thread-id <id>', 'Thread ID (optional)')
+  .option('--code-file <path>', 'Path to source code file')
+  .option('--code <source>', 'Inline source code')
+  .option('--timeout-ms <ms>', 'Execution timeout in ms', '5000')
+  .option('--max-memory-mb <mb>', 'Max memory in MB', '128')
+  .option('--artifact <path...>', 'Artifact file paths (relative to writable dir)')
+  .option('--readonly-files <path>', 'JSON file containing readonly_files array')
+  .option('--allow-network', 'Allow network egress in sandbox', false)
+  .option('--no-publish-result', 'Do not publish RESULT event to relay')
+  .action(async (opts) => {
+    if (!opts.agentId || !opts.requestId) {
+      console.error('Missing --agent-id or --request-id');
+      process.exit(1);
+    }
+
+    const inlineCode = typeof opts.code === 'string' ? opts.code : '';
+    const fileCode = opts.codeFile ? fs.readFileSync(path.resolve(process.cwd(), opts.codeFile), 'utf-8') : '';
+    const code = inlineCode || fileCode;
+    if (!code) {
+      console.error('Missing code: provide --code or --code-file');
+      process.exit(1);
+    }
+
+    const readonlyFiles = opts.readonlyFiles
+      ? (() => {
+          const raw = readJsonFile(opts.readonlyFiles);
+          if (!Array.isArray(raw)) {
+            console.error('--readonly-files must point to a JSON array');
+            process.exit(1);
+          }
+          return raw;
+        })()
+      : [];
+
+    const payload = {
+      agent_id: opts.agentId,
+      request_id: opts.requestId,
+      intent: opts.intent || undefined,
+      thread_id: opts.threadId || undefined,
+      publish_result: opts.publishResult,
+      job: {
+        language: 'nodejs',
+        code,
+        timeout_ms: Number(opts.timeoutMs),
+        max_memory_mb: Number(opts.maxMemoryMb),
+        network: { enabled: !!opts.allowNetwork },
+        artifacts: Array.isArray(opts.artifact) ? opts.artifact : [],
+        readonly_files: readonlyFiles,
+      },
+    };
+
+    const { json } = await fetchJson(`${opts.relay.replace(/\/$/, '')}/v1/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     });
     console.log(JSON.stringify(json, null, 2));
   });

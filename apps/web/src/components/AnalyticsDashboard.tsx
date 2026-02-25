@@ -48,23 +48,8 @@ export function AnalyticsDashboard() {
     }))
   }, [metrics.topAgents])
 
-  // Mock intent distribution for now (would need backend support)
-  const intentDistribution = [
-    { intent: 'translation', count: 32 },
-    { intent: 'code.review', count: 24 },
-    { intent: 'data.analysis', count: 20 },
-    { intent: 'security.audit', count: 14 },
-    { intent: 'summarization', count: 10 },
-  ]
-
-  // Volume trend from recent activity
-  const volumeTrend = useMemo(() => {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-    return days.map((day) => ({
-      day,
-      volume: metrics.totalVolume * (0.1 + Math.random() * 0.15), // Simulated daily breakdown
-    }))
-  }, [metrics.totalVolume])
+  const intentDistribution = metrics.intentDistribution
+  const volumeTrend = metrics.volumeTrend
 
   if (isLoading) {
     return (
@@ -120,29 +105,25 @@ export function AnalyticsDashboard() {
           label="Active Agents (5min)" 
           value={metrics.activeAgents} 
           suffix="online"
-          trend="+12%"
-          trendUp={true}
+          note="From live heartbeat/status"
         />
         <MetricCard 
           label="Total Deals" 
           value={metrics.totalDeals} 
           suffix="completed"
-          trend="+5"
-          trendUp={true}
+          note="Unique requests with RESULT"
         />
         <MetricCard 
           label="Network Volume" 
           value={`$${compactFormatter.format(metrics.totalVolume)}`}
           suffix="USDC"
-          trend="+8%"
-          trendUp={true}
+          note="From ACCEPT payment payloads"
         />
         <MetricCard 
           label="Success Rate" 
           value={`${metrics.successRate}%`} 
           suffix="avg"
-          trend="-2%"
-          trendUp={false}
+          note="Completed requests only"
         />
       </div>
 
@@ -230,17 +211,20 @@ export function AnalyticsDashboard() {
                     <Cell key={`cell-${index}`} fill={INTENT_COLORS[index % INTENT_COLORS.length]} />
                   ))}
                 </Pie>
-                <Legend 
-                  verticalAlign="bottom" 
+                <Legend
+                  verticalAlign="bottom"
                   height={36}
                   formatter={(value) => value.replace('.', ' ')}
                 />
-                <Tooltip 
+                <Tooltip
                   formatter={(value, name) => [`${value} requests`, name]}
                   contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                 />
               </PieChart>
             </ResponsiveContainer>
+            {intentDistribution.length === 0 && (
+              <div className="mt-2 text-center text-xs text-gray-400">No request intents yet</div>
+            )}
           </div>
         </div>
 
@@ -262,7 +246,9 @@ export function AnalyticsDashboard() {
                     {activity.agent}
                   </p>
                   <p className="text-xs text-gray-500 capitalize">
-                    {activity.type} {activity.value ? `• $${activity.value}` : ''}
+                    {activity.type}
+                    {activity.intent ? ` • ${activity.intent}` : ''}
+                    {activity.value ? ` • $${activity.value}` : ''}
                   </p>
                 </div>
                 <span className="text-xs text-gray-400">
@@ -329,25 +315,21 @@ function MetricCard({
   label, 
   value, 
   suffix, 
-  trend, 
-  trendUp 
+  note,
 }: { 
   label: string
   value: string | number
   suffix: string
-  trend: string
-  trendUp: boolean
+  note: string
 }) {
   return (
     <div className="p-5 bg-white rounded-2xl border border-gray-200 shadow-sm">
       <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{label}</div>
       <div className="flex items-baseline gap-2">
         <span className="text-2xl font-bold text-gray-900">{value}</span>
-        <span className={`text-xs font-medium ${trendUp ? 'text-green-600' : 'text-red-600'}`}>
-          {trendUp ? '↑' : '↓'} {trend}
-        </span>
       </div>
       <div className="text-xs text-gray-400 mt-1">{suffix}</div>
+      <div className="text-[11px] text-gray-400 mt-1">{note}</div>
     </div>
   )
 }

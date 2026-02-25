@@ -5,10 +5,12 @@ import { Hero } from './components/Hero'
 import { AnalyticsDashboard } from './components/AnalyticsDashboard'
 import { NetworkStats, type NetworkMetrics } from './components/NetworkStats'
 import { UseCaseShowcase } from './components/UseCaseShowcase'
-import { BridgeCard } from './components/BridgeCard'
-import { BridgeStatus } from './components/BridgeStatus'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
+import { Echo } from './pages/Echo'
+import { Analytics as Tokenomics } from './pages/Analytics'
+import { ARHud } from './pages/ARHud'
+import { AgentChat } from './components/AgentChat'
 
 type EventsResp = { ok: boolean; events: AgoraEvent[]; lastTs: string | null }
 type AgentResp = { ok: boolean; agents: AgentSummary[] }
@@ -46,7 +48,7 @@ const MOCK_METRICS: NetworkMetrics = {
   volume24h: 12450,
 }
 
-type Route = 'home' | 'analytics' | 'bridge'
+type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'agentChat' | 'ar'
 
 const FALLBACK_AGENTS: AgentSummary[] = [
   {
@@ -127,9 +129,12 @@ function formatPricing(pricing?: AgentPricing): string {
 }
 
 function useRoute(): { route: Route; navigate: (route: Route) => void } {
-  const getRoute = (): Route => {
+  const getRoute = () => {
+    if (window.location.pathname === '/ar') return 'ar'
+    if (window.location.pathname === '/agent-chat') return 'agentChat'
+    if (window.location.pathname === '/echo') return 'echo'
+    if (window.location.pathname === '/tokenomics') return 'tokenomics'
     if (window.location.pathname.startsWith('/analytics')) return 'analytics'
-    if (window.location.pathname.startsWith('/bridge')) return 'bridge'
     return 'home'
   }
   const [route, setRoute] = useState<Route>(() => getRoute())
@@ -141,7 +146,18 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
   }, [])
 
   const navigate = (next: Route) => {
-    const path = next === 'analytics' ? '/analytics' : next === 'bridge' ? '/bridge' : '/'
+    const path =
+      next === 'analytics'
+        ? '/analytics'
+        : next === 'tokenomics'
+          ? '/tokenomics'
+          : next === 'echo'
+            ? '/echo'
+            : next === 'agentChat'
+              ? '/agent-chat'
+              : next === 'ar'
+                ? '/ar'
+                : '/'
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path)
       setRoute(next)
@@ -183,8 +199,7 @@ function NavLink({
 
 function AppContent() {
   const relayUrl = useMemo(() => {
-    const env = (import.meta as any).env
-    return (env?.VITE_RELAY_URL as string) || 'http://45.32.219.241:8789'
+    return import.meta.env.VITE_RELAY_URL || 'http://45.32.219.241:8789'
   }, [])
   const { route, navigate } = useRoute()
 
@@ -523,23 +538,6 @@ function AppContent() {
     </div>
   )
 
-  const bridgeCenter = (
-    <div className="space-y-8">
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-base-light rounded-lg flex items-center justify-center">
-            <svg className="w-4 h-4 text-base-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-bold text-agora-900">Cross-Chain Bridge</h3>
-        </div>
-        <BridgeCard />
-      </div>
-      <BridgeStatus />
-    </div>
-  )
-
   const nav = (
     <>
       <NavLink
@@ -555,37 +553,65 @@ function AppContent() {
         onClick={() => navigate('analytics')}
       />
       <NavLink
-        label="Bridge"
-        href="/bridge"
-        active={route === 'bridge'}
-        onClick={() => navigate('bridge')}
+        label="Tokenomics"
+        href="/tokenomics"
+        active={route === 'tokenomics'}
+        onClick={() => navigate('tokenomics')}
+      />
+      <NavLink
+        label="🤖 Echo"
+        href="/echo"
+        active={route === 'echo'}
+        onClick={() => navigate('echo')}
+      />
+      <NavLink
+        label="Agent Chat"
+        href="/agent-chat"
+        active={route === 'agentChat'}
+        onClick={() => navigate('agentChat')}
+      />
+      <NavLink
+        label="AR HUD"
+        href="/ar"
+        active={route === 'ar'}
+        onClick={() => navigate('ar')}
       />
     </>
   )
 
-  const getCenter = () => {
-    if (route === 'analytics') return analyticsCenter
-    if (route === 'bridge') return bridgeCenter
-    return homeCenter
+  // Full-page routes
+  if (route === 'echo') {
+    return <Echo />
   }
 
-  const getHero = () => {
-    if (route === 'analytics' || route === 'bridge') return undefined
-    return (
-      <div className="space-y-6">
-        <Hero />
-        <NetworkStats metrics={metrics} refreshKey={metricsTick} />
-        <UseCaseShowcase />
-      </div>
-    )
+  if (route === 'tokenomics') {
+    return <Tokenomics />
+  }
+
+  if (route === 'agentChat') {
+    return <AgentChat />
+  }
+  
+  if (route === 'ar') {
+    return <ARHud />
   }
 
   return (
     <Layout
       left={left}
-      center={getCenter()}
+      center={route === 'analytics' ? analyticsCenter : homeCenter}
       right={right}
-      hero={getHero()}
+      hero={
+        route === 'analytics'
+          ? undefined
+          : (
+            <div className="space-y-6">
+              <Hero />
+              <NetworkStats metrics={metrics} refreshKey={metricsTick} />
+              <UseCaseShowcase metrics={metrics} usingSeed={usingSeed} />
+            </div>
+          )
+      }
       nav={nav}
     />
   )

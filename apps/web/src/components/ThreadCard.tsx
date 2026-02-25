@@ -1,13 +1,27 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Thread, Offer } from '../lib/agora'
-import { PaymentModal } from './PaymentModal'
+import { PaymentModal, type PaymentReceipt } from './PaymentModal'
 import { EscrowStatus } from './EscrowStatus'
+import { SandboxExecuteModal } from './SandboxExecuteModal'
 import { useWallet } from '../hooks/useWallet'
+import { BASE_NETWORK } from '../lib/chain'
 
 interface ThreadCardProps {
   thread: Thread
   relayUrl: string
   onAcceptComplete?: () => void
+}
+
+type SettlementSnapshot = {
+  request_id: string
+  currency?: string
+  amount_gross?: number
+  amount_fee?: number
+  amount_seller?: number
+  status?: 'HELD' | 'RELEASED' | 'REFUNDED'
+  held_at?: string | null
+  released_at?: string | null
+  refunded_at?: string | null
 }
 
 function StatusPill({ status }: { status: Thread['status'] }) {
@@ -53,8 +67,12 @@ function OfferRow({
 
       <div className="flex items-center gap-4">
         <div className="text-right">
-          {offer.priceUsd !== undefined ? (
-            <div className="font-semibold text-agora-900">${offer.priceUsd.toFixed(4)}</div>
+          {offer.priceAmount !== undefined ? (
+            <div className="font-semibold text-agora-900">
+              {offer.currency === 'ETH'
+                ? `${offer.priceAmount.toFixed(6)} ETH`
+                : `$${offer.priceAmount.toFixed(4)} ${offer.currency || 'USDC'}`}
+            </div>
           ) : (
             <div className="text-agora-400 text-sm">No price</div>
           )}
@@ -74,10 +92,12 @@ function OfferRow({
 }
 
 export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardProps) {
-  const { isConnected } = useWallet()
+  const { isConnected, address, chainId } = useWallet()
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null)
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isSandboxModalOpen, setIsSandboxModalOpen] = useState(false)
+  const [settlement, setSettlement] = useState<SettlementSnapshot | null>(null)
 
   const canAcceptOffers = thread.status === 'OPEN' && thread.offers.length > 0
   const acceptedOffer = thread.acceptedOfferId
@@ -86,9 +106,36 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
   const escrowBuyer = thread.requester
   const escrowSeller = acceptedOffer?.provider
 
+  useEffect(() => {
+    let active = true
+    let timer: ReturnType<typeof setInterval> | null = null
+    const fetchSettlement = async () => {
+      try {
+        const res = await fetch(`${relayUrl.replace(/\/$/, '')}/v1/settlements/${encodeURIComponent(thread.requestId)}`)
+        if (res.status === 404) {
+          if (active) setSettlement(null)
+          return
+        }
+        const json = await res.json()
+        if (res.ok && json?.ok && json?.settlement) {
+          if (active) setSettlement(json.settlement as SettlementSnapshot)
+        }
+      } catch {
+        // best-effort display only
+      }
+    }
+    fetchSettlement().catch(() => {})
+    timer = setInterval(() => {
+      fetchSettlement().catch(() => {})
+    }, 8000)
+    return () => {
+      active = false
+      if (timer) clearInterval(timer)
+    }
+  }, [relayUrl, thread.requestId, thread.acceptedAt, thread.settlementStatus])
+
   const handleAcceptClick = (offer: Offer) => {
     if (!isConnected) {
-      // Show a toast or alert that wallet needs to be connected
       alert('Please connect your wallet first')
       return
     }
@@ -96,40 +143,69 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
     setIsPaymentModalOpen(true)
   }
 
-  const handlePaymentConfirm = async (txHash: string) => {
+  const handlePaymentConfirm = async (payment: PaymentReceipt) => {
     if (!selectedOffer) return
 
     setIsSubmitting(true)
 
     try {
-      // Build the ACCEPT message payload
+      const senderId = address
+        ? `eip155:${chainId ?? 84532}:${address.toLowerCase()}`
+        : 'web:unknown'
+      const payoutToken = payment.token
+      const payoutAmount = selectedOffer.priceAmount ?? selectedOffer.priceUsd ?? payment.amount
+      const chain = chainId === 8453
+        ? 'base'
+        : chainId === 84532
+          ? 'base-sepolia'
+          : payment.chain || BASE_NETWORK
+
       const acceptPayload = {
         request_id: thread.requestId,
         offer_id: selectedOffer.offerId,
-        tx_hash: txHash,
-        chain: 'base',
-        token: 'USDC',
+        accepted_at: new Date().toISOString(),
+        payment_tx: payment.txHash,
+        chain,
+        token: payoutToken,
+        amount: payoutAmount,
+        payer: address?.toLowerCase(),
+        payee: selectedOffer.provider,
+        terms: {
+          offer_id: selectedOffer.offerId,
+          provider: selectedOffer.provider,
+          payer: address?.toLowerCase(),
+          payee: selectedOffer.provider,
+          token: payoutToken,
+          chain,
+          amount: payoutAmount,
+          amount_usdc: payoutToken === 'USDC' ? payoutAmount : null,
+          amount_eth: payoutToken === 'ETH' ? payoutAmount : null,
+        },
       }
 
-      // Send to relay
+      const acceptEnvelope = {
+        version: '1.0',
+        id: `acc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        ts: new Date().toISOString(),
+        type: 'ACCEPT',
+        sender: { id: senderId },
+        thread: { id: thread.requestId },
+        payload: acceptPayload,
+      }
+
       const response = await fetch(`${relayUrl}/v1/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'ACCEPT',
-          payload: acceptPayload,
-        }),
+        body: JSON.stringify({ envelope: acceptEnvelope }),
       })
 
       if (!response.ok) {
         throw new Error('Failed to submit acceptance')
       }
 
-      // Close modal and reset
       setIsPaymentModalOpen(false)
       setSelectedOffer(null)
 
-      // Notify parent to refresh
       onAcceptComplete?.()
     } catch (error) {
       console.error('Failed to submit acceptance:', error)
@@ -171,7 +247,7 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
               Offers ({thread.offers.length})
             </h4>
             {canAcceptOffers && (
-              <span className="text-xs text-base-blue font-medium">Click accept to pay with USDC</span>
+              <span className="text-xs text-base-blue font-medium">Click accept to pay with USDC or ETH</span>
             )}
           </div>
 
@@ -211,9 +287,11 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
               <div className="text-sm text-agora-700">
                 Provider: <span className="font-medium">{acceptedOffer.provider}</span>
               </div>
-              {acceptedOffer.priceUsd !== undefined && (
+              {acceptedOffer.priceAmount !== undefined && (
                 <div className="text-sm font-semibold text-agora-900">
-                  ${acceptedOffer.priceUsd.toFixed(4)}
+                  {acceptedOffer.currency === 'ETH'
+                    ? `${acceptedOffer.priceAmount.toFixed(6)} ETH`
+                    : `$${acceptedOffer.priceAmount.toFixed(4)} ${acceptedOffer.currency || 'USDC'}`}
                 </div>
               )}
             </div>
@@ -222,6 +300,47 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
                 Accepted at {new Date(thread.acceptedAt).toLocaleString()}
               </div>
             )}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-agora-500">
+                If the provider is allowlisted for sandbox execution, you can run code and publish a RESULT.
+              </div>
+              <button
+                onClick={() => setIsSandboxModalOpen(true)}
+                className="px-4 py-2 rounded-lg bg-agora-900 text-white text-sm font-semibold hover:bg-agora-800"
+              >
+                Execute (Sandbox)
+              </button>
+            </div>
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              <div className="rounded-lg border border-agora-200 bg-white px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-agora-500">Payment TX</div>
+                <div className="text-xs font-mono text-agora-700 break-all">
+                  {thread.paymentTx || 'Pending'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-agora-200 bg-white px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-agora-500">Settlement Status</div>
+                <div className="text-sm font-semibold text-agora-800">
+                  {settlement?.status || thread.settlementStatus || 'PENDING'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-agora-200 bg-white px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-agora-500">Buyer Frozen</div>
+                <div className="text-sm font-semibold text-agora-900">
+                  {typeof settlement?.amount_gross === 'number'
+                    ? `${settlement.amount_gross.toFixed(6)} ${settlement.currency || thread.paymentToken || 'USDC'}`
+                    : 'Pending'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-agora-200 bg-white px-3 py-2">
+                <div className="text-[11px] uppercase tracking-wide text-agora-500">Seller Net / Platform Fee</div>
+                <div className="text-sm font-semibold text-agora-900">
+                  {(typeof settlement?.amount_seller === 'number' && typeof settlement?.amount_fee === 'number')
+                    ? `${settlement.amount_seller.toFixed(6)} / ${settlement.amount_fee.toFixed(6)} ${settlement.currency || thread.paymentToken || 'USDC'}`
+                    : 'Pending'}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -252,7 +371,6 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
         )}
       </div>
 
-      {/* Payment Modal */}
       <PaymentModal
         isOpen={isPaymentModalOpen}
         onClose={() => {
@@ -265,6 +383,17 @@ export function ThreadCard({ thread, relayUrl, onAcceptComplete }: ThreadCardPro
         offer={selectedOffer}
         thread={{ requestId: thread.requestId, intent: thread.intent }}
       />
+
+      {acceptedOffer && (
+        <SandboxExecuteModal
+          isOpen={isSandboxModalOpen}
+          onClose={() => setIsSandboxModalOpen(false)}
+          relayUrl={relayUrl}
+          agentId={acceptedOffer.provider}
+          requestId={thread.requestId}
+          intent={thread.intent}
+        />
+      )}
     </>
   )
 }
