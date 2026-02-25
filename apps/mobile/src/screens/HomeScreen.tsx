@@ -15,10 +15,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAgents } from '../hooks/useApi';
 import { useTasks } from '../hooks/useApi';
 import { useWalletStore } from '../store/walletStore';
+import { SurvivalMonitor } from '../components';
 import type { RootStackParamList, MainTabParamList, Agent, Task } from '../types/navigation';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type NavigationProp = any;
+type NavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
 const AgentCard: React.FC<{ agent: Agent; onPress: () => void }> = ({ agent, onPress }) => (
   <TouchableOpacity style={styles.agentCard} onPress={onPress}>
@@ -118,6 +121,16 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* Echo Survival Monitor */}
+      <View style={styles.survivalSection}>
+        <Text style={styles.sectionTitle}>Agent Health</Text>
+        <SurvivalMonitor 
+          agentId={address || null}
+          showHeader={false}
+          compact={true}
+        />
+      </View>
+
       {/* Quick Actions */}
       <View style={styles.actionsSection}>
         <TouchableOpacity
@@ -193,6 +206,10 @@ const styles = StyleSheet.create({
   },
   walletSection: {
     padding: 16,
+  },
+  survivalSection: {
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
   walletCard: {
     backgroundColor: '#6366f1',

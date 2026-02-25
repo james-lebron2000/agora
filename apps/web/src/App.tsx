@@ -14,11 +14,7 @@ import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 import { Echo } from './pages/Echo'
 import { Analytics as Tokenomics } from './pages/Analytics'
 import { ARHud } from './pages/ARHud'
-<<<<<<< HEAD
-import { AgentProfilePage } from './pages/AgentProfile'
-=======
 import { AgentProfile } from './pages/AgentProfile'
->>>>>>> b709ee0576540a1daf8429ff7f5ccfd2def62f4f
 // import { AgentChat } from './components/AgentChat'
 
 type EventsResp = { ok: boolean; events: AgoraEvent[]; lastTs: string | null }
@@ -661,10 +657,6 @@ function AppContent() {
         <MobileBottomNav currentRoute={route} onNavigate={navigate} />
       </>
     )
-  }
-
-  if (route === 'profile') {
-    return <AgentProfilePage />
   }
 
   return (
