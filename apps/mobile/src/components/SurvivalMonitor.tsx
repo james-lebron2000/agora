@@ -9,13 +9,15 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useSurvival } from '../hooks/useApi';
+import { useSurvivalSDK } from '../hooks/useSDK';
+import type { Address } from 'viem';
 
-// Health status type
- type HealthStatus = 'healthy' | 'stable' | 'degraded' | 'critical' | 'dying';
+// Health status type - matches SDK's AgentHealthStatus plus UI-specific statuses
+ type HealthStatus = 'healthy' | 'stable' | 'degraded' | 'critical' | 'dying' | 'dead';
 
 interface SurvivalMonitorProps {
   agentId: string | null;
+  address?: Address | null;
   showHeader?: boolean;
   compact?: boolean;
 }
@@ -36,11 +38,12 @@ interface HealthTrend {
 }
 
 export function SurvivalMonitor({ 
-  agentId, 
+  agentId,
+  address,
   showHeader = true,
   compact = false 
 }: SurvivalMonitorProps) {
-  const { health, economics, snapshot, isLoading, error, refetch } = useSurvival(agentId);
+  const { health, economics, snapshot, isLoading, error, refetch } = useSurvivalSDK(agentId, address);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedSection, setExpandedSection] = useState<string | null>('health');
 
@@ -150,7 +153,12 @@ export function SurvivalMonitor({
     );
   }
 
-  const trend: HealthTrend = snapshot.trend;
+  const trend: HealthTrend = snapshot.trend || {
+    direction: 'stable',
+    rateOfChange: 0,
+    predictedHealth: snapshot.health.overall,
+    predictedRunway: economics?.runwayDays || 0
+  };
   const actions: SurvivalAction[] = snapshot.pendingActions || [];
 
   return (
