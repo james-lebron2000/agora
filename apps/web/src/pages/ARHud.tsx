@@ -63,3 +63,5 @@ export function ARHud() {
     </div>
   )
 }
+
+export default ARHud

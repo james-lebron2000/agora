@@ -14,4 +14,17 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // 分离大型第三方库
+          'react-vendor': ['react', 'react-dom'],
+          'ui-vendor': ['lucide-react'],
+          'web3-vendor': ['viem', 'wagmi', '@reown/appkit'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
+  },
 })

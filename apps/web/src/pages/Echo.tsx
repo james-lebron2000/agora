@@ -6,3 +6,5 @@ export function Echo() {
     </div>
   )
 }
+
+export default Echo

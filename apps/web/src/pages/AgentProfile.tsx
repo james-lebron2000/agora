@@ -414,3 +414,5 @@ export function AgentProfile() {
     </div>
   )
 }
+
+export default AgentProfile

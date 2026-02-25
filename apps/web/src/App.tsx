@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
 import { Layout } from './components/Layout'
 import { Feed } from './components/Feed'
 import { Hero } from './components/Hero'
@@ -11,10 +11,23 @@ import { MobileHeader } from './components/MobileHeader'
 import { MobileBottomNav } from './components/MobileBottomNav'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
-import { Echo } from './pages/Echo'
-import { Analytics as Tokenomics } from './pages/Analytics'
-import { ARHud } from './pages/ARHud'
-import { AgentProfile } from './pages/AgentProfile'
+// 动态导入页面组件 (named exports 需要转换)
+const Echo = lazy(() => import('./pages/Echo').then(m => ({ default: m.Echo })))
+const Tokenomics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
+const ARHud = lazy(() => import('./pages/ARHud').then(m => ({ default: m.ARHud })))
+const AgentProfile = lazy(() => import('./pages/AgentProfile').then(m => ({ default: m.AgentProfile })))
+
+// 加载状态组件
+function PageLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-agora-50">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-8 h-8 border-2 border-agora-300 border-t-agora-900 rounded-full animate-spin" />
+        <p className="text-sm text-agora-600">Loading...</p>
+      </div>
+    </div>
+  )
+}
 // import { AgentChat } from './components/AgentChat'
 
 type EventsResp = { ok: boolean; events: AgoraEvent[]; lastTs: string | null }
@@ -596,66 +609,68 @@ function AppContent() {
   // Full-page routes
   if (route === 'echo') {
     return (
-      <>
+      <Suspense fallback={<PageLoader />}>
         <MobileHeader currentRoute={route} onNavigate={navigate} />
         <Echo />
         <MobileBottomNav currentRoute={route} onNavigate={navigate} />
-      </>
+      </Suspense>
     )
   }
 
   if (route === 'tokenomics') {
     return (
-      <>
+      <Suspense fallback={<PageLoader />}>
         <MobileHeader currentRoute={route} onNavigate={navigate} />
         <Tokenomics />
         <MobileBottomNav currentRoute={route} onNavigate={navigate} />
-      </>
+      </Suspense>
     )
   }
 
   if (route === 'bridge') {
     return (
       <WalletProvider>
-        <MobileHeader currentRoute={route} onNavigate={navigate} />
-        <div className="min-h-screen bg-agora-50 pt-20 lg:pt-0">
-          <div className="max-w-7xl mx-auto px-4 py-8">
-            <div className="mb-6">
-              <h1 className="text-2xl lg:text-3xl font-bold text-agora-900">Cross-Chain Bridge</h1>
-              <p className="text-agora-600 mt-2 text-sm lg:text-base">Bridge USDC and ETH across Base, Optimism, Arbitrum, and Ethereum</p>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2">
-                <BridgeCard />
+        <Suspense fallback={<PageLoader />}>
+          <MobileHeader currentRoute={route} onNavigate={navigate} />
+          <div className="min-h-screen bg-agora-50 pt-20 lg:pt-0">
+            <div className="max-w-7xl mx-auto px-4 py-8">
+              <div className="mb-6">
+                <h1 className="text-2xl lg:text-3xl font-bold text-agora-900">Cross-Chain Bridge</h1>
+                <p className="text-agora-600 mt-2 text-sm lg:text-base">Bridge USDC and ETH across Base, Optimism, Arbitrum, and Ethereum</p>
               </div>
-              <div>
-                <BridgeStatus />
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2">
+                  <BridgeCard />
+                </div>
+                <div>
+                  <BridgeStatus />
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        <MobileBottomNav currentRoute={route} onNavigate={navigate} />
+          <MobileBottomNav currentRoute={route} onNavigate={navigate} />
+        </Suspense>
       </WalletProvider>
     )
   }
   
   if (route === 'ar') {
     return (
-      <>
+      <Suspense fallback={<PageLoader />}>
         <MobileHeader currentRoute={route} onNavigate={navigate} />
         <ARHud />
         <MobileBottomNav currentRoute={route} onNavigate={navigate} />
-      </>
+      </Suspense>
     )
   }
 
   if (route === 'profile') {
     return (
-      <>
+      <Suspense fallback={<PageLoader />}>
         <MobileHeader currentRoute={route} onNavigate={navigate} />
         <AgentProfile />
         <MobileBottomNav currentRoute={route} onNavigate={navigate} />
-      </>
+      </Suspense>
     )
   }
 
