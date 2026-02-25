@@ -78,6 +78,7 @@ export {
   USDC_ADDRESSES,
   LAYERZERO_ENDPOINTS,
   LAYERZERO_CHAIN_IDS,
+  LAYERZERO_USDC_OFT,
   RPC_URLS,
   type SupportedChain,
   type BridgeQuote,

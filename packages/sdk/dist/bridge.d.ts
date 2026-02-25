@@ -1,7 +1,7 @@
 /**
  * Cross-Chain Bridge Module for Agora
  * Supports Base, Optimism, and Arbitrum chains
- * Uses LayerZero for cross-chain messaging and USDC transfers
+ * Uses LayerZero V2 for cross-chain messaging and USDC transfers via OFT (Omnichain Fungible Token)
  */
 import { type Hex, type Address } from 'viem';
 export declare const SUPPORTED_CHAINS: {
@@ -736,6 +736,7 @@ export type SupportedChain = keyof typeof SUPPORTED_CHAINS;
 export declare const USDC_ADDRESSES: Record<SupportedChain, Address>;
 export declare const LAYERZERO_ENDPOINTS: Record<SupportedChain, Address>;
 export declare const LAYERZERO_CHAIN_IDS: Record<SupportedChain, number>;
+export declare const LAYERZERO_USDC_OFT: Record<SupportedChain, Address>;
 export interface BridgeQuote {
     sourceChain: SupportedChain;
     destinationChain: SupportedChain;
@@ -744,6 +745,10 @@ export interface BridgeQuote {
     estimatedFee: string;
     estimatedTime: number;
     path?: string[];
+    lzFee?: {
+        nativeFee: bigint;
+        lzTokenFee: bigint;
+    };
 }
 export declare const RPC_URLS: Record<SupportedChain, string[]>;
 export interface ChainBalance {
@@ -758,6 +763,10 @@ export interface BridgeResult {
     sourceChain: SupportedChain;
     destinationChain: SupportedChain;
     amount: string;
+    fees?: {
+        nativeFee: string;
+        lzTokenFee: string;
+    };
 }
 /**
  * Create public client for chain
@@ -5132,8 +5141,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
     getBlobBaseFee: () => Promise<import("viem").GetBlobBaseFeeReturnType>;
     getBlock: <includeTransactions extends boolean = false, blockTag extends import("viem").BlockTag = "latest">(args?: import("viem").GetBlockParameters<includeTransactions, blockTag> | undefined) => Promise<{
         number: blockTag extends "pending" ? null : bigint;
-        hash: blockTag extends "pending" ? null : `0x${string}`;
         nonce: blockTag extends "pending" ? null : `0x${string}`;
+        hash: blockTag extends "pending" ? null : `0x${string}`;
         logsBloom: blockTag extends "pending" ? null : `0x${string}`;
         baseFeePerGas: bigint | null;
         blobGasUsed: bigint;
@@ -5159,15 +5168,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         withdrawalsRoot?: `0x${string}` | undefined | undefined;
         transactions: includeTransactions extends true ? ({
             type: "legacy";
+            to: Address | null;
+            nonce: number;
             yParity?: undefined | undefined;
             from: Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: Hex;
-            nonce: number;
             r: Hex;
             s: Hex;
-            to: Address | null;
             typeHex: Hex | null;
             v: bigint;
             value: bigint;
@@ -5184,15 +5193,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_2 ? T_2 extends (blockTag extends "pending" ? true : false) ? T_2 extends true ? null : number : never : never;
         } | {
             type: "eip2930";
+            to: Address | null;
+            nonce: number;
             yParity: number;
             from: Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: Hex;
-            nonce: number;
             r: Hex;
             s: Hex;
-            to: Address | null;
             typeHex: Hex | null;
             v: bigint;
             value: bigint;
@@ -5209,15 +5218,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_5 ? T_5 extends (blockTag extends "pending" ? true : false) ? T_5 extends true ? null : number : never : never;
         } | {
             type: "eip1559";
+            to: Address | null;
+            nonce: number;
             yParity: number;
             from: Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: Hex;
-            nonce: number;
             r: Hex;
             s: Hex;
-            to: Address | null;
             typeHex: Hex | null;
             v: bigint;
             value: bigint;
@@ -5234,15 +5243,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_8 ? T_8 extends (blockTag extends "pending" ? true : false) ? T_8 extends true ? null : number : never : never;
         } | {
             type: "eip4844";
+            to: Address | null;
+            nonce: number;
             yParity: number;
             from: Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: Hex;
-            nonce: number;
             r: Hex;
             s: Hex;
-            to: Address | null;
             typeHex: Hex | null;
             v: bigint;
             value: bigint;
@@ -5259,15 +5268,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_11 ? T_11 extends (blockTag extends "pending" ? true : false) ? T_11 extends true ? null : number : never : never;
         } | {
             type: "eip7702";
+            to: Address | null;
+            nonce: number;
             yParity: number;
             from: Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: Hex;
-            nonce: number;
             r: Hex;
             s: Hex;
-            to: Address | null;
             typeHex: Hex | null;
             v: bigint;
             value: bigint;
@@ -5284,15 +5293,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_14 ? T_14 extends (blockTag extends "pending" ? true : false) ? T_14 extends true ? null : number : never : never;
         } | {
             type: "deposit";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -5308,15 +5317,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_17 ? T_17 extends (blockTag extends "pending" ? true : false) ? T_17 extends true ? null : number : never : never;
         } | {
             type: "legacy";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity?: undefined | undefined | undefined;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -5336,15 +5345,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_20 ? T_20 extends (blockTag extends "pending" ? true : false) ? T_20 extends true ? null : number : never : never;
         } | {
             type: "eip2930";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -5364,15 +5373,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_23 ? T_23 extends (blockTag extends "pending" ? true : false) ? T_23 extends true ? null : number : never : never;
         } | {
             type: "eip1559";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -5392,15 +5401,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_26 ? T_26 extends (blockTag extends "pending" ? true : false) ? T_26 extends true ? null : number : never : never;
         } | {
             type: "eip4844";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -5420,15 +5429,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_29 ? T_29 extends (blockTag extends "pending" ? true : false) ? T_29 extends true ? null : number : never : never;
         } | {
             type: "eip7702";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -5448,15 +5457,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_32 ? T_32 extends (blockTag extends "pending" ? true : false) ? T_32 extends true ? null : number : never : never;
         } | {
             type: "deposit";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -5472,15 +5481,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_35 ? T_35 extends (blockTag extends "pending" ? true : false) ? T_35 extends true ? null : number : never : never;
         } | {
             type: "legacy";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity?: undefined | undefined | undefined;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -5500,15 +5509,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_38 ? T_38 extends (blockTag extends "pending" ? true : false) ? T_38 extends true ? null : number : never : never;
         } | {
             type: "eip2930";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -5528,15 +5537,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_41 ? T_41 extends (blockTag extends "pending" ? true : false) ? T_41 extends true ? null : number : never : never;
         } | {
             type: "eip1559";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -5556,15 +5565,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_44 ? T_44 extends (blockTag extends "pending" ? true : false) ? T_44 extends true ? null : number : never : never;
         } | {
             type: "eip4844";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -5584,15 +5593,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_47 ? T_47 extends (blockTag extends "pending" ? true : false) ? T_47 extends true ? null : number : never : never;
         } | {
             type: "eip7702";
+            to: import("abitype").Address | null;
+            nonce: number;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
             hash: import("viem").Hash;
             input: import("viem").Hex;
-            nonce: number;
             r: import("viem").Hex;
             s: import("viem").Hex;
-            to: import("abitype").Address | null;
             typeHex: import("viem").Hex | null;
             v: bigint;
             value: bigint;
@@ -6359,15 +6368,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
     getStorageAt: (args: import("viem").GetStorageAtParameters) => Promise<import("viem").GetStorageAtReturnType>;
     getTransaction: <blockTag extends import("viem").BlockTag = "latest">(args: import("viem").GetTransactionParameters<blockTag>) => Promise<{
         type: "legacy";
+        to: Address | null;
+        nonce: number;
         yParity?: undefined | undefined;
         from: Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: Hex;
-        nonce: number;
         r: Hex;
         s: Hex;
-        to: Address | null;
         typeHex: Hex | null;
         v: bigint;
         value: bigint;
@@ -6384,15 +6393,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_2 ? T_2 extends (blockTag extends "pending" ? true : false) ? T_2 extends true ? null : number : never : never;
     } | {
         type: "eip2930";
+        to: Address | null;
+        nonce: number;
         yParity: number;
         from: Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: Hex;
-        nonce: number;
         r: Hex;
         s: Hex;
-        to: Address | null;
         typeHex: Hex | null;
         v: bigint;
         value: bigint;
@@ -6409,15 +6418,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_5 ? T_5 extends (blockTag extends "pending" ? true : false) ? T_5 extends true ? null : number : never : never;
     } | {
         type: "eip1559";
+        to: Address | null;
+        nonce: number;
         yParity: number;
         from: Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: Hex;
-        nonce: number;
         r: Hex;
         s: Hex;
-        to: Address | null;
         typeHex: Hex | null;
         v: bigint;
         value: bigint;
@@ -6434,15 +6443,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_8 ? T_8 extends (blockTag extends "pending" ? true : false) ? T_8 extends true ? null : number : never : never;
     } | {
         type: "eip4844";
+        to: Address | null;
+        nonce: number;
         yParity: number;
         from: Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: Hex;
-        nonce: number;
         r: Hex;
         s: Hex;
-        to: Address | null;
         typeHex: Hex | null;
         v: bigint;
         value: bigint;
@@ -6459,15 +6468,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_11 ? T_11 extends (blockTag extends "pending" ? true : false) ? T_11 extends true ? null : number : never : never;
     } | {
         type: "eip7702";
+        to: Address | null;
+        nonce: number;
         yParity: number;
         from: Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: Hex;
-        nonce: number;
         r: Hex;
         s: Hex;
-        to: Address | null;
         typeHex: Hex | null;
         v: bigint;
         value: bigint;
@@ -6484,15 +6493,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_14 ? T_14 extends (blockTag extends "pending" ? true : false) ? T_14 extends true ? null : number : never : never;
     } | {
         type: "deposit";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -6508,15 +6517,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_17 ? T_17 extends (blockTag extends "pending" ? true : false) ? T_17 extends true ? null : number : never : never;
     } | {
         type: "legacy";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity?: undefined | undefined | undefined;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -6536,15 +6545,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_20 ? T_20 extends (blockTag extends "pending" ? true : false) ? T_20 extends true ? null : number : never : never;
     } | {
         type: "eip2930";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -6564,15 +6573,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_23 ? T_23 extends (blockTag extends "pending" ? true : false) ? T_23 extends true ? null : number : never : never;
     } | {
         type: "eip1559";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -6592,15 +6601,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_26 ? T_26 extends (blockTag extends "pending" ? true : false) ? T_26 extends true ? null : number : never : never;
     } | {
         type: "eip4844";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -6620,15 +6629,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_29 ? T_29 extends (blockTag extends "pending" ? true : false) ? T_29 extends true ? null : number : never : never;
     } | {
         type: "eip7702";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -6648,15 +6657,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_32 ? T_32 extends (blockTag extends "pending" ? true : false) ? T_32 extends true ? null : number : never : never;
     } | {
         type: "deposit";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -6672,15 +6681,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_35 ? T_35 extends (blockTag extends "pending" ? true : false) ? T_35 extends true ? null : number : never : never;
     } | {
         type: "legacy";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity?: undefined | undefined | undefined;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -6700,15 +6709,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_38 ? T_38 extends (blockTag extends "pending" ? true : false) ? T_38 extends true ? null : number : never : never;
     } | {
         type: "eip2930";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -6728,15 +6737,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_41 ? T_41 extends (blockTag extends "pending" ? true : false) ? T_41 extends true ? null : number : never : never;
     } | {
         type: "eip1559";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -6756,15 +6765,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_44 ? T_44 extends (blockTag extends "pending" ? true : false) ? T_44 extends true ? null : number : never : never;
     } | {
         type: "eip4844";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -6784,15 +6793,15 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_47 ? T_47 extends (blockTag extends "pending" ? true : false) ? T_47 extends true ? null : number : never : never;
     } | {
         type: "eip7702";
+        to: import("abitype").Address | null;
+        nonce: number;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
         hash: import("viem").Hash;
         input: import("viem").Hex;
-        nonce: number;
         r: import("viem").Hex;
         s: import("viem").Hex;
-        to: import("abitype").Address | null;
         typeHex: import("viem").Hex | null;
         v: bigint;
         value: bigint;
@@ -14443,7 +14452,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         authorizationList: import("viem").TransactionSerializableEIP7702["authorizationList"];
     } ? "eip7702" : never) | (request["type"] extends string | undefined ? Extract<request["type"], string> : never)>) ? T_12 extends "eip7702" ? import("viem").TransactionRequestEIP7702 : never : never : never)>> & {
         chainId?: number | undefined;
-    }, (request["parameters"] extends readonly import("viem").PrepareTransactionRequestParameterType[] ? request["parameters"][number] : "type" | "fees" | "gas" | "nonce" | "blobVersionedHashes" | "chainId") extends infer T_13 ? T_13 extends (request["parameters"] extends readonly import("viem").PrepareTransactionRequestParameterType[] ? request["parameters"][number] : "type" | "fees" | "gas" | "nonce" | "blobVersionedHashes" | "chainId") ? T_13 extends "fees" ? "gasPrice" | "maxFeePerGas" | "maxPriorityFeePerGas" : T_13 : never : never> & (unknown extends request["kzg"] ? {} : Pick<request, "kzg">) extends infer T ? { [K in keyof T]: T[K]; } : never>;
+    }, (request["parameters"] extends readonly import("viem").PrepareTransactionRequestParameterType[] ? request["parameters"][number] : "type" | "nonce" | "fees" | "gas" | "blobVersionedHashes" | "chainId") extends infer T_13 ? T_13 extends (request["parameters"] extends readonly import("viem").PrepareTransactionRequestParameterType[] ? request["parameters"][number] : "type" | "nonce" | "fees" | "gas" | "blobVersionedHashes" | "chainId") ? T_13 extends "fees" ? "gasPrice" | "maxFeePerGas" | "maxPriorityFeePerGas" : T_13 : never : never> & (unknown extends request["kzg"] ? {} : Pick<request, "kzg">) extends infer T ? { [K in keyof T]: T[K]; } : never>;
     readContract: <const abi extends import("viem").Abi | readonly unknown[], functionName extends import("viem").ContractFunctionName<abi, "pure" | "view">, const args extends import("viem").ContractFunctionArgs<abi, "pure" | "view", functionName>>(args: import("viem").ReadContractParameters<abi, functionName, args>) => Promise<import("viem").ReadContractReturnType<abi, functionName, args>>;
     sendRawTransaction: (args: import("viem").SendRawTransactionParameters) => Promise<import("viem").SendRawTransactionReturnType>;
     sendRawTransactionSync: (args: import("viem").SendRawTransactionSyncParameters) => Promise<import("viem").TransactionReceipt | {
@@ -14494,7 +14503,7 @@ export declare function createChainPublicClient(chain: SupportedChain): {
     simulate: <const calls extends readonly unknown[]>(args: import("viem").SimulateBlocksParameters<calls>) => Promise<import("viem").SimulateBlocksReturnType<calls>>;
     simulateBlocks: <const calls extends readonly unknown[]>(args: import("viem").SimulateBlocksParameters<calls>) => Promise<import("viem").SimulateBlocksReturnType<calls>>;
     simulateCalls: <const calls extends readonly unknown[]>(args: import("viem").SimulateCallsParameters<calls>) => Promise<import("viem").SimulateCallsReturnType<calls>>;
-    simulateContract: <const abi extends import("viem").Abi | readonly unknown[], functionName extends import("viem").ContractFunctionName<abi, "nonpayable" | "payable">, const args_1 extends import("viem").ContractFunctionArgs<abi, "nonpayable" | "payable", functionName>, chainOverride extends import("viem").Chain | undefined, accountOverride extends import("viem").Account | Address | undefined = undefined>(args: import("viem").SimulateContractParameters<abi, functionName, args_1, {
+    simulateContract: <const abi extends import("viem").Abi | readonly unknown[], functionName extends import("viem").ContractFunctionName<abi, "payable" | "nonpayable">, const args_1 extends import("viem").ContractFunctionArgs<abi, "payable" | "nonpayable", functionName>, chainOverride extends import("viem").Chain | undefined, accountOverride extends import("viem").Account | Address | undefined = undefined>(args: import("viem").SimulateContractParameters<abi, functionName, args_1, {
         blockExplorers: {
             readonly default: {
                 readonly name: "Basescan";
@@ -21812,7 +21821,7 @@ export declare function getNativeBalance(address: Address, chain: SupportedChain
 export declare function getAllBalances(address: Address): Promise<ChainBalance[]>;
 /**
  * Get bridge quote for cross-chain transfer
- * Uses LayerZero for cross-chain messaging fee estimation
+ * Uses LayerZero OFT quoteSend for accurate fee estimation
  */
 export declare function getBridgeQuote(params: {
     sourceChain: SupportedChain;
@@ -21845,10 +21854,12 @@ export declare class CrossChainBridge {
      */
     getQuote(destinationChain: SupportedChain, token: 'USDC' | 'ETH', amount: string, sourceChain?: SupportedChain): Promise<BridgeQuote>;
     /**
-     * Bridge USDC using LayerZero protocol
+     * Bridge USDC using LayerZero OFT (Omnichain Fungible Token) protocol
      * Supports Base ↔ Optimism ↔ Arbitrum transfers
+     * Uses LayerZero V2 for cross-chain messaging
+     *
      * @param destinationChain - Target chain
-     * @param amount - Amount to bridge
+     * @param amount - Amount to bridge (in USDC, e.g., "10.5")
      * @param sourceChain - Source chain (defaults to defaultChain)
      * @returns BridgeResult with transaction details
      */

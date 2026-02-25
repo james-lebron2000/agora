@@ -11,22 +11,7 @@
  * @module survival
  */
 import { type Address } from 'viem';
-import { type SupportedChain, type ChainBalance } from './bridge.js';
 export type AgentHealthStatus = 'healthy' | 'degraded' | 'critical' | 'dead';
-/**
- * Survival snapshot for quick state assessment
- */
-export interface SurvivalSnapshot {
-    health: {
-        status: AgentHealthStatus;
-        overall: number;
-    };
-    economics: {
-        balance: string;
-        runwayDays: number;
-    };
-    timestamp: number;
-}
 /**
  * Agent health metrics
  */
@@ -116,34 +101,6 @@ export interface SurvivalConfig {
  */
 export declare const DEFAULT_SURVIVAL_CONFIG: SurvivalConfig;
 /**
- * Task acceptance decision result
- */
-export interface TaskDecision {
-    accept: boolean;
-    reason: string;
-}
-/**
- * Format survival report as readable string
- */
-export declare function formatSurvivalReport(snapshot: SurvivalSnapshot): string;
-/**
- * Determine if agent should accept a task based on survival state
- */
-export declare function shouldAcceptTask(snapshot: SurvivalSnapshot, budget: string, estimatedCost: string, minProfitMargin?: number): TaskDecision;
-/**
- * Survival event types
- */
-export type SurvivalEventType = 'health:critical' | 'economic:warning' | 'action:recommended' | 'survival:mode-enter' | 'survival:mode-exit';
-/**
- * Event callback type
- */
-export type SurvivalEventCallback = (data: {
-    type: SurvivalEventType;
-    agentId: string;
-    timestamp: number;
-    details?: Record<string, unknown>;
-}) => void;
-/**
  * Echo Survival Manager
  * Manages agent health and economic sustainability
  */
@@ -151,43 +108,7 @@ export declare class EchoSurvivalManager {
     private config;
     private agentId;
     private address;
-    private healthCheckTimer;
-    private heartbeatTimer;
-    private eventListeners;
-    private survivalMode;
     constructor(agentId: string, address: Address, config?: Partial<SurvivalConfig>);
-    /**
-     * Register event listener
-     */
-    on(event: SurvivalEventType, callback: SurvivalEventCallback): () => void;
-    /**
-     * Emit event to all listeners
-     */
-    private emit;
-    /**
-     * Start periodic health checks and heartbeats
-     */
-    start(): void;
-    /**
-     * Stop periodic checks and heartbeats
-     */
-    stop(): void;
-    /**
-     * Run periodic health check and emit events
-     */
-    private runPeriodicHealthCheck;
-    /**
-     * Check if agent is in survival mode
-     */
-    isInSurvivalMode(): boolean;
-    /**
-     * Get optimal chain for an operation based on balances
-     */
-    getOptimalChain(operation?: 'read' | 'write' | 'bridge'): Promise<SupportedChain | null>;
-    /**
-     * Perform full survival check and return snapshot
-     */
-    performSurvivalCheck(balances?: ChainBalance[]): Promise<SurvivalSnapshot>;
     /**
      * Create initial health state
      */
@@ -232,9 +153,9 @@ export declare class EchoSurvivalManager {
      */
     needsEmergencyFunding(): Promise<boolean>;
     /**
-     * Perform full survival check with detailed results
+     * Perform full survival check
      */
-    performFullSurvivalCheck(): Promise<SurvivalCheckResult>;
+    performSurvivalCheck(): Promise<SurvivalCheckResult>;
     /**
      * Update health metrics
      */

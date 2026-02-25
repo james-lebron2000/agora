@@ -25,79 +25,6 @@ export const DEFAULT_SURVIVAL_CONFIG = {
     alertThreshold: 50
 };
 /**
- * Format survival report as readable string
- */
-export function formatSurvivalReport(snapshot) {
-    const { health, economics, timestamp } = snapshot;
-    const date = new Date(timestamp).toLocaleString();
-    let report = `🤖 Survival Report (${date})\n`;
-    report += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-    report += `Health: ${health.status.toUpperCase()} (Score: ${health.overall}/100)\n`;
-    report += `Balance: $${parseFloat(economics.balance).toFixed(2)}\n`;
-    report += `Runway: ${economics.runwayDays} days\n`;
-    // Add status indicator
-    if (health.status === 'healthy' && economics.runwayDays >= 7) {
-        report += `Status: ✅ Operational\n`;
-    }
-    else if (health.status === 'critical' || economics.runwayDays < 3) {
-        report += `Status: 🚨 SURVIVAL MODE\n`;
-    }
-    else {
-        report += `Status: ⚠️ Caution\n`;
-    }
-    return report;
-}
-/**
- * Determine if agent should accept a task based on survival state
- */
-export function shouldAcceptTask(snapshot, budget, estimatedCost, minProfitMargin = 0.1) {
-    const balance = parseFloat(snapshot.economics.balance);
-    const taskBudget = parseFloat(budget);
-    const cost = parseFloat(estimatedCost);
-    const minBalance = parseFloat(DEFAULT_SURVIVAL_CONFIG.minSurvivalBalance);
-    // Check survival mode
-    if (snapshot.health.status === 'critical' || snapshot.health.status === 'dead') {
-        return {
-            accept: false,
-            reason: `Health status is ${snapshot.health.status}. Focus on recovery.`
-        };
-    }
-    // Check runway
-    if (snapshot.economics.runwayDays < 3) {
-        return {
-            accept: false,
-            reason: `Critical runway: only ${snapshot.economics.runwayDays} days remaining`
-        };
-    }
-    // Check if balance is too low
-    if (balance < minBalance) {
-        return {
-            accept: false,
-            reason: `Balance ($${balance.toFixed(2)}) below minimum ($${minBalance.toFixed(2)})`
-        };
-    }
-    // Check profitability
-    const profit = taskBudget - cost;
-    const profitMargin = cost > 0 ? profit / cost : 0;
-    if (profitMargin < minProfitMargin) {
-        return {
-            accept: false,
-            reason: `Profit margin (${(profitMargin * 100).toFixed(1)}%) below minimum (${(minProfitMargin * 100).toFixed(0)}%)`
-        };
-    }
-    // Check if we can afford the cost
-    if (cost > balance * 0.5) {
-        return {
-            accept: false,
-            reason: `Task cost ($${cost.toFixed(2)}) exceeds 50% of available balance`
-        };
-    }
-    return {
-        accept: true,
-        reason: `Task profitable (${(profitMargin * 100).toFixed(1)}% margin) and within budget constraints`
-    };
-}
-/**
  * In-memory heartbeat storage (production should use persistent storage)
  */
 const heartbeatStore = new Map();
@@ -111,10 +38,6 @@ export class EchoSurvivalManager {
     config;
     agentId;
     address;
-    healthCheckTimer = null;
-    heartbeatTimer = null;
-    eventListeners = new Map();
-    survivalMode = false;
     constructor(agentId, address, config = {}) {
         this.agentId = agentId;
         this.address = address;
@@ -129,157 +52,6 @@ export class EchoSurvivalManager {
         if (!economicsStore.has(agentId)) {
             economicsStore.set(agentId, this.createInitialEconomics());
         }
-    }
-    /**
-     * Register event listener
-     */
-    on(event, callback) {
-        if (!this.eventListeners.has(event)) {
-            this.eventListeners.set(event, new Set());
-        }
-        this.eventListeners.get(event).add(callback);
-        // Return unsubscribe function
-        return () => {
-            this.eventListeners.get(event)?.delete(callback);
-        };
-    }
-    /**
-     * Emit event to all listeners
-     */
-    emit(event, details) {
-        const callbacks = this.eventListeners.get(event);
-        if (callbacks) {
-            const data = {
-                type: event,
-                agentId: this.agentId,
-                timestamp: Date.now(),
-                details
-            };
-            callbacks.forEach(cb => {
-                try {
-                    cb(data);
-                }
-                catch (err) {
-                    console.error(`Event handler error for ${event}:`, err);
-                }
-            });
-        }
-    }
-    /**
-     * Start periodic health checks and heartbeats
-     */
-    start() {
-        if (this.healthCheckTimer || this.heartbeatTimer) {
-            console.warn('Survival manager already started');
-            return;
-        }
-        // Start health check interval
-        this.healthCheckTimer = setInterval(async () => {
-            await this.runPeriodicHealthCheck();
-        }, this.config.healthCheckInterval);
-        // Start heartbeat interval
-        this.heartbeatTimer = setInterval(async () => {
-            await this.sendHeartbeat({ source: 'periodic' });
-        }, this.config.heartbeatInterval);
-        console.log(`Survival manager started for agent ${this.agentId}`);
-    }
-    /**
-     * Stop periodic checks and heartbeats
-     */
-    stop() {
-        if (this.healthCheckTimer) {
-            clearInterval(this.healthCheckTimer);
-            this.healthCheckTimer = null;
-        }
-        if (this.heartbeatTimer) {
-            clearInterval(this.heartbeatTimer);
-            this.heartbeatTimer = null;
-        }
-        console.log(`Survival manager stopped for agent ${this.agentId}`);
-    }
-    /**
-     * Run periodic health check and emit events
-     */
-    async runPeriodicHealthCheck() {
-        const health = this.checkHealth(this.agentId);
-        const economics = await this.checkEconomics();
-        // Check health status changes
-        if (health.status === 'critical') {
-            this.emit('health:critical', { status: health.status, successRate: health.successRate });
-        }
-        // Check economic warnings
-        const balance = parseFloat(economics.currentBalance);
-        const minBalance = parseFloat(this.config.minSurvivalBalance);
-        if (balance < minBalance || economics.daysOfRunway < 7) {
-            this.emit('economic:warning', { balance, runwayDays: economics.daysOfRunway });
-        }
-        // Check survival mode transitions
-        const shouldBeInSurvivalMode = health.status === 'critical' || health.status === 'dead' || balance < minBalance || economics.daysOfRunway < 3;
-        if (shouldBeInSurvivalMode && !this.survivalMode) {
-            this.survivalMode = true;
-            this.emit('survival:mode-enter', { balance, healthStatus: health.status });
-        }
-        else if (!shouldBeInSurvivalMode && this.survivalMode) {
-            this.survivalMode = false;
-            this.emit('survival:mode-exit', { balance, healthStatus: health.status });
-        }
-        // Emit action recommendations
-        const recommendations = await this.getRecoveryRecommendations();
-        if (recommendations.length > 0) {
-            this.emit('action:recommended', { recommendations });
-        }
-    }
-    /**
-     * Check if agent is in survival mode
-     */
-    isInSurvivalMode() {
-        return this.survivalMode;
-    }
-    /**
-     * Get optimal chain for an operation based on balances
-     */
-    async getOptimalChain(operation = 'read') {
-        const balances = await this.checkEconomics();
-        // Simple heuristic: prefer chains with sufficient balance
-        // In production, this would consider gas costs, latency, etc.
-        if (parseFloat(balances.currentBalance) > 0) {
-            // Return the first supported chain (could be enhanced with chain selection logic)
-            return 'arbitrum';
-        }
-        return null;
-    }
-    /**
-     * Perform full survival check and return snapshot
-     */
-    async performSurvivalCheck(balances) {
-        const health = this.checkHealth(this.agentId);
-        const economics = await this.checkEconomics();
-        // Calculate health score
-        const healthScore = this.calculateHealthScore(health);
-        // Update survival mode based on check
-        const balance = parseFloat(economics.currentBalance);
-        const minBalance = parseFloat(this.config.minSurvivalBalance);
-        const shouldBeInSurvivalMode = health.status === 'critical' || health.status === 'dead' || balance < minBalance || economics.daysOfRunway < 3;
-        if (shouldBeInSurvivalMode !== this.survivalMode) {
-            this.survivalMode = shouldBeInSurvivalMode;
-            if (this.survivalMode) {
-                this.emit('survival:mode-enter', { balance, healthStatus: health.status });
-            }
-            else {
-                this.emit('survival:mode-exit', { balance, healthStatus: health.status });
-            }
-        }
-        return {
-            health: {
-                status: health.status,
-                overall: Math.round(healthScore)
-            },
-            economics: {
-                balance: economics.currentBalance,
-                runwayDays: economics.daysOfRunway
-            },
-            timestamp: Date.now()
-        };
     }
     /**
      * Create initial health state
@@ -478,9 +250,9 @@ export class EchoSurvivalManager {
         return balance < minBalance || economics.daysOfRunway < 3;
     }
     /**
-     * Perform full survival check with detailed results
+     * Perform full survival check
      */
-    async performFullSurvivalCheck() {
+    async performSurvivalCheck() {
         const [health, economics, survivalScore, recommendations, needsEmergency] = await Promise.all([
             Promise.resolve(this.checkHealth(this.agentId)),
             this.checkEconomics(),
