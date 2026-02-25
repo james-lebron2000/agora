@@ -331,7 +331,7 @@ export class ProfileManager {
       headers: this.headers(),
     });
     if (!response.ok) throw new Error(`Failed to get profile: ${response.statusText}`);
-    return response.json();
+    return response.json() as Promise<AgentProfile>;
   }
 
   /**
@@ -342,7 +342,7 @@ export class ProfileManager {
       headers: this.headers(),
     });
     if (!response.ok) throw new Error(`Failed to get profile: ${response.statusText}`);
-    return response.json();
+    return response.json() as Promise<AgentProfile>;
   }
 
   /**
@@ -355,7 +355,7 @@ export class ProfileManager {
       body: JSON.stringify(data),
     });
     if (!response.ok) throw new Error(`Failed to update profile: ${response.statusText}`);
-    return response.json();
+    return response.json() as Promise<AgentProfile>;
   }
 
   /**
@@ -366,7 +366,7 @@ export class ProfileManager {
       headers: this.headers(),
     });
     if (!response.ok) throw new Error(`Failed to get stats: ${response.statusText}`);
-    return response.json();
+    return response.json() as Promise<ProfileStats>;
   }
 
   /**
@@ -377,7 +377,7 @@ export class ProfileManager {
       headers: this.headers(),
     });
     if (!response.ok) throw new Error(`Failed to get achievements: ${response.statusText}`);
-    return response.json();
+    return response.json() as Promise<Achievement[]>;
   }
 
   /**
@@ -388,7 +388,7 @@ export class ProfileManager {
       headers: this.headers(),
     });
     if (!response.ok) throw new Error(`Failed to get reputation: ${response.statusText}`);
-    return response.json();
+    return response.json() as Promise<ReputationHistoryEntry[]>;
   }
 
   /**
@@ -400,7 +400,7 @@ export class ProfileManager {
       { headers: this.headers() }
     );
     if (!response.ok) throw new Error(`Failed to search profiles: ${response.statusText}`);
-    return response.json();
+    return response.json() as Promise<AgentProfile[]>;
   }
 
   /**
@@ -412,7 +412,7 @@ export class ProfileManager {
       { headers: this.headers() }
     );
     if (!response.ok) throw new Error(`Failed to get leaderboard: ${response.statusText}`);
-    return response.json();
+    return response.json() as Promise<AgentProfile[]>;
   }
 }
 
@@ -422,3 +422,343 @@ export class ProfileManager {
 export function createProfileManager(apiUrl: string, authToken?: string): ProfileManager {
   return new ProfileManager(apiUrl, authToken);
 }
+
+// ============================================================================
+// Frontend Optimizations - Added in v1.1
+// ============================================================================
+
+/**
+ * Cache entry with TTL
+ */
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
+
+/**
+ * Simple client-side cache manager for profile data
+ */
+export class ProfileCache {
+  private cache = new Map<string, CacheEntry<unknown>>();
+  private static instance: ProfileCache;
+
+  static getInstance(): ProfileCache {
+    if (!ProfileCache.instance) {
+      ProfileCache.instance = new ProfileCache();
+    }
+    return ProfileCache.instance;
+  }
+
+  /**
+   * Set cached data with TTL (default: 5 minutes)
+   */
+  set<T>(key: string, data: T, ttlMs = 5 * 60 * 1000): void {
+    this.cache.set(key, { data, timestamp: Date.now(), ttl: ttlMs });
+  }
+
+  /**
+   * Get cached data if not expired
+   */
+  get<T>(key: string): T | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    if (Date.now() - entry.timestamp > entry.ttl) {
+      this.cache.delete(key);
+      return undefined;
+    }
+    return entry.data as T;
+  }
+
+  /**
+   * Check if key exists and is valid
+   */
+  has(key: string): boolean {
+    return this.get(key) !== undefined;
+  }
+
+  /**
+   * Invalidate cache by pattern
+   */
+  invalidate(pattern: string): void {
+    const regex = new RegExp(pattern);
+    for (const key of this.cache.keys()) {
+      if (regex.test(key)) this.cache.delete(key);
+    }
+  }
+
+  /**
+   * Clear all cache
+   */
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+/**
+ * Get singleton cache instance
+ */
+export function getProfileCache(): ProfileCache {
+  return ProfileCache.getInstance();
+}
+
+/**
+ * Batch fetch multiple profiles efficiently
+ */
+export async function batchGetProfiles(
+  apiUrl: string,
+  agentIds: string[],
+  authToken?: string
+): Promise<Map<string, AgentProfile>> {
+  const cache = ProfileCache.getInstance();
+  const result = new Map<string, AgentProfile>();
+  const toFetch: string[] = [];
+
+  // Check cache first
+  for (const id of agentIds) {
+    const cached = cache.get<AgentProfile>(`profile:${id}`);
+    if (cached) {
+      result.set(id, cached);
+    } else {
+      toFetch.push(id);
+    }
+  }
+
+  if (toFetch.length === 0) return result;
+
+  // Fetch missing profiles in batch
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+  const response = await fetch(`${apiUrl}/profiles/batch`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ids: toFetch }),
+  });
+
+  if (!response.ok) throw new Error(`Batch fetch failed: ${response.statusText}`);
+
+  const profiles = await response.json() as AgentProfile[];
+  for (const profile of profiles) {
+    cache.set(`profile:${profile.id}`, profile);
+    result.set(profile.id, profile);
+  }
+
+  return result;
+}
+
+/**
+ * Profile completeness check result
+ */
+export interface ProfileCompleteness {
+  score: number; // 0-100
+  missing: string[];
+  suggestions: string[];
+}
+
+/**
+ * Check profile completeness and provide suggestions
+ */
+export function checkProfileCompleteness(profile: AgentProfile): ProfileCompleteness {
+  const missing: string[] = [];
+  const suggestions: string[] = [];
+
+  if (!profile.bio || profile.bio.length < 20) {
+    missing.push('bio');
+    suggestions.push('Add a detailed bio (at least 20 characters)');
+  }
+  if (!profile.avatarUrl) {
+    missing.push('avatar');
+    suggestions.push('Upload a profile avatar');
+  }
+  if (!profile.skills || profile.skills.length === 0) {
+    missing.push('skills');
+    suggestions.push('Add at least 3 skills');
+  }
+  if (!profile.socials?.twitter && !profile.socials?.github) {
+    missing.push('socials');
+    suggestions.push('Connect at least one social account');
+  }
+
+  const totalFields = 4;
+  const completedFields = totalFields - missing.length;
+  const score = Math.round((completedFields / totalFields) * 100);
+
+  return { score, missing, suggestions };
+}
+
+/**
+ * Save profile to localStorage for offline access
+ */
+export function saveProfileToLocalStorage(profile: AgentProfile): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(`agora:profile:${profile.id}`, JSON.stringify({
+    profile,
+    savedAt: Date.now(),
+  }));
+}
+
+// DOM type declarations for non-DOM environments
+interface Storage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+declare const localStorage: Storage | undefined;
+
+/**
+ * Load profile from localStorage
+ */
+export function loadProfileFromLocalStorage(agentId: string): AgentProfile | null {
+  if (typeof localStorage === 'undefined') return null;
+  const data = localStorage.getItem(`agora:profile:${agentId}`);
+  if (!data) return null;
+  try {
+    const parsed = JSON.parse(data);
+    // Check if data is not too old (7 days)
+    if (Date.now() - parsed.savedAt > 7 * 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(`agora:profile:${agentId}`);
+      return null;
+    }
+    return parsed.profile as AgentProfile;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Clear cached profile from localStorage
+ */
+export function clearProfileFromLocalStorage(agentId: string): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.removeItem(`agora:profile:${agentId}`);
+}
+
+/**
+ * Profile update with optimistic update support
+ */
+export interface OptimisticUpdate<T> {
+  previous: T;
+  updated: T;
+  rollback: () => void;
+}
+
+/**
+ * Create optimistic update for profile
+ */
+export function createOptimisticProfileUpdate(
+  profile: AgentProfile,
+  updates: Partial<AgentProfile>
+): OptimisticUpdate<AgentProfile> {
+  const previous = { ...profile };
+  const updated = { ...profile, ...updates };
+
+  return {
+    previous,
+    updated,
+    rollback: () => Object.assign(profile, previous),
+  };
+}
+
+/**
+ * Avatar upload result
+ */
+export interface AvatarUploadResult {
+  success: boolean;
+  url?: string;
+  error?: string;
+}
+
+/**
+ * Upload avatar with progress tracking
+ */
+export async function uploadAvatar(
+  apiUrl: string,
+  file: File,
+  authToken: string,
+  onProgress?: (percent: number) => void
+): Promise<AvatarUploadResult> {
+  // Use native fetch with a workaround for progress tracking
+  // In browser environments, XMLHttpRequest is available
+  if (typeof XMLHttpRequest === 'undefined') {
+    // Fallback for Node.js - just use fetch without progress
+    const formData = new FormData();
+    formData.append('avatar', file);
+    
+    const response = await fetch(`${apiUrl}/profiles/avatar`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      return { success: false, error: response.statusText };
+    }
+    
+    const data = await response.json() as { url: string };
+    return { success: true, url: data.url };
+  }
+
+  // Browser environment with XMLHttpRequest
+  const formData = new FormData();
+  formData.append('avatar', file);
+
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.onprogress = (event: ProgressEvent) => {
+      if (event.lengthComputable && onProgress) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        onProgress(percent);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        const response = JSON.parse(xhr.responseText);
+        resolve({ success: true, url: response.url });
+      } else {
+        resolve({ success: false, error: xhr.statusText });
+      }
+    };
+
+    xhr.onerror = () => resolve({ success: false, error: 'Upload failed' });
+
+    xhr.open('POST', `${apiUrl}/profiles/avatar`);
+    xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+    xhr.send(formData);
+  });
+}
+
+// XMLHttpRequest type declaration for TypeScript
+declare const XMLHttpRequest: {
+  new (): {
+    upload: { onprogress: ((event: ProgressEvent) => void) | null };
+    onload: (() => void) | null;
+    onerror: (() => void) | null;
+    status: number;
+    responseText: string;
+    statusText: string;
+    open(method: string, url: string): void;
+    setRequestHeader(header: string, value: string): void;
+    send(body: FormData): void;
+  };
+};
+
+interface ProgressEvent {
+  lengthComputable: boolean;
+  loaded: number;
+  total: number;
+}
+
+/**
+ * React Hook types for profile management
+ */
+export interface UseProfileOptions {
+  cache?: boolean;
+  cacheTtl?: number;
+  refreshInterval?: number;
+}
+
+// Note: React hooks implementation should be in a separate file (profile-hooks.ts)
+// to avoid React dependency in the core SDK

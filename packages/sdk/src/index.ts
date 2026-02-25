@@ -144,7 +144,7 @@ export {
   type PerformanceAlert,
 } from './performance.js';
 
-// Agent Profile module (v1.0)
+// Agent Profile module (v1.1) - with frontend optimizations
 export {
   ProfileManager,
   createProfileManager,
@@ -153,10 +153,24 @@ export {
   levelProgress,
   getTierColor,
   getDefaultAchievements,
+  // Frontend optimizations
+  ProfileCache,
+  getProfileCache,
+  batchGetProfiles,
+  checkProfileCompleteness,
+  saveProfileToLocalStorage,
+  loadProfileFromLocalStorage,
+  clearProfileFromLocalStorage,
+  createOptimisticProfileUpdate,
+  uploadAvatar,
   type AgentProfile,
   type AchievementTier,
   type Achievement,
   type ProfileStats,
   type UpdateProfileRequest,
   type ReputationHistoryEntry,
+  type ProfileCompleteness,
+  type AvatarUploadResult,
+  type OptimisticUpdate,
+  type UseProfileOptions,
 } from './profile.js';
