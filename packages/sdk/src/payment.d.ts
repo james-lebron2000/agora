@@ -19,8 +19,14 @@ export interface TransferUsdcOptions extends PaymentClientOptions {
     amount: bigint | number | string;
     decimals?: number;
 }
+export interface TransferNativeOptions extends PaymentClientOptions {
+    recipient: Address;
+    amount: bigint | number | string;
+    decimals?: number;
+}
 export declare function resolveBaseChain(options: PaymentClientOptions): Chain;
 export declare function getUsdcAddressForChain(chain: Chain): Address;
 export declare function approveUSDC(options: ApproveUsdcOptions): Promise<Hash>;
 export declare function transferUSDC(options: TransferUsdcOptions): Promise<Hash>;
+export declare function transferNative(options: TransferNativeOptions): Promise<Hash>;
 //# sourceMappingURL=payment.d.ts.map

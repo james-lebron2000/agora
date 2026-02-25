@@ -10,7 +10,7 @@ export interface Envelope {
     meta?: Meta;
     sig?: string;
 }
-export type MessageType = 'HELLO' | 'WELCOME' | 'STATUS' | 'REQUEST' | 'OFFER' | 'ACCEPT' | 'RESULT' | 'DEBATE' | 'ERROR' | 'REVOKE';
+export type MessageType = 'HELLO' | 'WELCOME' | 'STATUS' | 'REQUEST' | 'OFFER' | 'ACCEPT' | 'RESULT' | 'DEBATE' | 'ERROR' | 'REVOKE' | 'ESCROW_HELD' | 'ESCROW_RELEASED' | 'ESCROW_REFUNDED';
 export interface Sender {
     id: string;
     name?: string;

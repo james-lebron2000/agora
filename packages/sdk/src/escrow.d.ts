@@ -38,6 +38,24 @@ export declare const ESCROW_ABI: readonly [{
     readonly outputs: readonly [];
 }, {
     readonly type: "function";
+    readonly name: "batchRelease";
+    readonly stateMutability: "nonpayable";
+    readonly inputs: readonly [{
+        readonly name: "requestIds";
+        readonly type: "bytes32[]";
+    }];
+    readonly outputs: readonly [];
+}, {
+    readonly type: "function";
+    readonly name: "batchRefund";
+    readonly stateMutability: "nonpayable";
+    readonly inputs: readonly [{
+        readonly name: "requestIds";
+        readonly type: "bytes32[]";
+    }];
+    readonly outputs: readonly [];
+}, {
+    readonly type: "function";
     readonly name: "escrows";
     readonly stateMutability: "view";
     readonly inputs: readonly [{
@@ -119,6 +137,36 @@ export declare const ESCROW_ABI: readonly [{
         readonly indexed: false;
     }];
     readonly anonymous: false;
+}, {
+    readonly type: "event";
+    readonly name: "BatchReleased";
+    readonly inputs: readonly [{
+        readonly name: "requestIds";
+        readonly type: "bytes32[]";
+        readonly indexed: false;
+    }, {
+        readonly name: "totalAmount";
+        readonly type: "uint256";
+        readonly indexed: false;
+    }, {
+        readonly name: "totalFee";
+        readonly type: "uint256";
+        readonly indexed: false;
+    }];
+    readonly anonymous: false;
+}, {
+    readonly type: "event";
+    readonly name: "BatchRefunded";
+    readonly inputs: readonly [{
+        readonly name: "requestIds";
+        readonly type: "bytes32[]";
+        readonly indexed: false;
+    }, {
+        readonly name: "totalAmount";
+        readonly type: "uint256";
+        readonly indexed: false;
+    }];
+    readonly anonymous: false;
 }];
 export interface EscrowClientOptions {
     privateKey?: Hex;
@@ -163,11 +211,25 @@ export interface EscrowEventHandlers {
         buyer: Address;
         amount: bigint;
     }) => void;
+    onBatchReleased?: (log: {
+        requestIds: Hex[];
+        totalAmount: bigint;
+        totalFee: bigint;
+    }) => void;
+    onBatchRefunded?: (log: {
+        requestIds: Hex[];
+        totalAmount: bigint;
+    }) => void;
+}
+export interface BatchEscrowOptions extends EscrowClientOptions {
+    requestIds: (string | Hex)[];
 }
 export declare function encodeRequestId(requestId: string | Hex): Hex;
 export declare function deposit(options: DepositOptions): Promise<Hash>;
 export declare function release(options: EscrowActionOptions): Promise<Hash>;
 export declare function refund(options: EscrowActionOptions): Promise<Hash>;
+export declare function batchRelease(options: BatchEscrowOptions): Promise<Hash>;
+export declare function batchRefund(options: BatchEscrowOptions): Promise<Hash>;
 export declare function getEscrowStatus(options: EscrowActionOptions): Promise<EscrowStatusResult>;
 export declare function watchEscrowEvents(options: EscrowClientOptions & EscrowEventHandlers): () => void;
 //# sourceMappingURL=escrow.d.ts.map

@@ -28,12 +28,7 @@ import { useSurvival } from '../hooks/useSurvival'
 import type { 
   HealthStatus, 
   ActionType, 
-  Priority, 
-  SurvivalAction, 
-  HealthTrend, 
-  HealthMetrics, 
-  EconomicData,
-  SurvivalData as SurvivalSnapshot
+  Priority
 } from '../hooks/useSurvival'
 
 // Status metadata
@@ -109,10 +104,9 @@ interface MetricBarProps {
   label: string
   value: number
   icon: React.ReactNode
-  colorClass: string
 }
 
-function MetricBar({ label, value, icon, colorClass }: MetricBarProps) {
+function MetricBar({ label, value, icon }: MetricBarProps) {
   const getBarColor = (val: number) => {
     if (val >= 70) return 'bg-emerald-500'
     if (val >= 40) return 'bg-amber-500'
@@ -182,7 +176,7 @@ function SectionCard({ title, icon, children, defaultExpanded = true, badge }: S
 
 // Survival Monitor Component
 function SurvivalMonitor({ agentId }: { agentId?: string }) {
-  const { data: snapshot, isLoading, error, refetch } = useSurvival(agentId || null)
+  const { data: snapshot, isLoading, error, refetch } = useSurvival(agentId || '')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
   // Track last updated time
@@ -288,25 +282,21 @@ function SurvivalMonitor({ agentId }: { agentId?: string }) {
             label="Compute"
             value={health.compute}
             icon={<Cpu className="w-4 h-4" />}
-            colorClass="text-blue-500"
           />
           <MetricBar 
             label="Storage"
             value={health.storage}
             icon={<HardDrive className="w-4 h-4" />}
-            colorClass="text-purple-500"
           />
           <MetricBar 
             label="Network"
             value={health.network}
             icon={<Wifi className="w-4 h-4" />}
-            colorClass="text-cyan-500"
           />
           <MetricBar 
             label="Economic"
             value={health.economic}
             icon={<DollarSign className="w-4 h-4" />}
-            colorClass="text-emerald-500"
           />
         </div>
       </div>

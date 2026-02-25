@@ -16,14 +16,40 @@ export interface AgentRegistration {
         id: string;
         name?: string;
         url?: string;
+        description?: string;
+        portfolio_url?: string;
+        portfolioUrl?: string;
+        metadata?: Record<string, unknown>;
     };
     capabilities?: unknown[];
     status?: string;
 }
 export interface AgentRecord extends AgentRegistration {
+    id?: string;
+    name?: string;
+    url?: string;
+    description?: string;
+    portfolio_url?: string;
+    metadata?: Record<string, unknown> | null;
     intents?: string[];
+    pricing?: Array<{
+        capability_id?: string | null;
+        capability_name?: string | null;
+        model?: string | null;
+        currency?: string | null;
+        fixed_price?: number | null;
+        metered_unit?: string | null;
+        metered_rate?: number | null;
+    }>;
     last_seen?: string;
+    status?: string;
     reputation?: ReputationRecord;
+}
+export interface DirectoryOptions {
+    intent?: string;
+    q?: string;
+    status?: 'online' | 'offline' | string;
+    limit?: number;
 }
 export interface ReputationRecord {
     agent_id: string;
@@ -56,6 +82,82 @@ export interface LedgerAccount {
     balance: number;
     currency: string;
     updated_at: string;
+}
+export interface PaymentVerification {
+    tx_hash: string;
+    chain: string;
+    token: string;
+    status: string;
+    confirmations: number;
+    amount: string | null;
+    amount_units: string | null;
+    payer: string | null;
+    payee: string | null;
+    block_number: number | null;
+    verified_at: string;
+}
+export interface MarketRateRow {
+    currency: string;
+    sample_size: number;
+    average: number;
+    p25: number;
+    p50: number;
+    p75: number;
+    min: number;
+    max: number;
+}
+export interface MarketRateResponse {
+    ok: boolean;
+    query?: {
+        intent?: string | null;
+        currency?: string | null;
+        period?: string;
+        period_ms?: number;
+    };
+    sample_size?: number;
+    rates?: MarketRateRow[];
+    generated_at?: string;
+    error?: string;
+    message?: string;
+}
+export interface SandboxExecuteJob {
+    language?: 'nodejs' | 'javascript' | 'js' | string;
+    code: string;
+    stdin?: string;
+    timeout_ms?: number;
+    max_memory_mb?: number;
+    network?: {
+        enabled?: boolean;
+    };
+    readonly_files?: Array<{
+        path: string;
+        content: string;
+    }>;
+    artifacts?: string[];
+}
+export interface SandboxExecutePayload {
+    agent_id: string;
+    request_id: string;
+    intent?: string;
+    thread_id?: string;
+    publish_result?: boolean;
+    job: SandboxExecuteJob;
+}
+export interface SandboxExecutionRecord {
+    run_id: string;
+    language: string;
+    status: 'SUCCESS' | 'FAILED' | 'TIMEOUT' | 'ERROR' | string;
+    started_at: string;
+    finished_at: string;
+    duration_ms: number;
+    exit_code: number | null;
+    signal: string | null;
+    timeout_ms: number;
+    max_memory_mb: number;
+    network_enabled: boolean;
+    stdout: string;
+    stderr: string;
+    artifacts: Array<Record<string, unknown>>;
 }
 export declare class RelayClient {
     private baseUrl;
@@ -101,6 +203,12 @@ export declare class RelayClient {
     discoverAgents(intent?: string, limit?: number): Promise<{
         ok: boolean;
         agents?: AgentRecord[];
+        error?: string;
+    }>;
+    listDirectory(options?: DirectoryOptions): Promise<{
+        ok: boolean;
+        agents?: AgentRecord[];
+        total?: number;
         error?: string;
     }>;
     getAgentStatus(did: string): Promise<{
@@ -169,6 +277,38 @@ export declare class RelayClient {
         ok: boolean;
         account?: LedgerAccount;
         error?: string;
+    }>;
+    verifyPayment(payload: {
+        tx_hash: string;
+        chain?: 'base' | 'base-sepolia' | string;
+        token?: 'USDC' | string;
+        payer?: string;
+        payee?: string;
+        amount?: number | string;
+        sender_id?: string;
+    }): Promise<{
+        ok: boolean;
+        payment?: PaymentVerification;
+        error?: string;
+        message?: string;
+        pending?: boolean;
+        confirmations?: number | null;
+    }>;
+    getMarketRate(options?: {
+        intent?: string;
+        currency?: string;
+        period?: string;
+    }): Promise<MarketRateResponse>;
+    executeSandbox(payload: SandboxExecutePayload): Promise<{
+        ok: boolean;
+        request_id?: string;
+        agent_id?: string;
+        event_published?: boolean;
+        event_id?: string | null;
+        execution?: SandboxExecutionRecord;
+        error?: string;
+        message?: string;
+        details?: unknown;
     }>;
     health(): Promise<{
         ok: boolean;

@@ -31,7 +31,10 @@ export {
   type SurvivalSnapshot,
   type TaskDecision,
   type SurvivalEventType,
-  type SurvivalEventCallback
+  type SurvivalEventCallback,
+  type SurvivalAction,
+  type SurvivalActionType,
+  type SurvivalActionPriority
 } from './survival.js';
 
 // Wallet management (v1.1)

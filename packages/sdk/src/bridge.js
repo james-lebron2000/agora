@@ -1,178 +1,210 @@
 /**
  * Cross-Chain Bridge Module for Agora
  * Supports Base, Optimism, and Arbitrum chains
- * Uses LayerZero for cross-chain messaging and USDC transfers
+ * Uses LayerZero V2 for cross-chain messaging and USDC transfers via OFT (Omnichain Fungible Token)
  */
 import { createPublicClient, createWalletClient, http, parseUnits, formatUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base, optimism, arbitrum, mainnet } from 'viem/chains';
-// Chain configurations supported by Agora Bridge
-export const SUPPORTED_CHAINS = {
-    base,
-    optimism,
-    arbitrum,
-    ethereum: mainnet
-};
-// USDC contract addresses on each chain
+// Supported chains
+export const SUPPORTED_CHAINS = { base, optimism, arbitrum, ethereum: mainnet };
+// USDC addresses
 export const USDC_ADDRESSES = {
     ethereum: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     optimism: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
     arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
 };
-// LayerZero Endpoint addresses for cross-chain messaging
+// LayerZero Endpoint addresses (V2)
 export const LAYERZERO_ENDPOINTS = {
-    ethereum: '0x66A71Dcef29A0fFBDBE3c6a460a3B5BC225Cd675',
-    base: '0xb6319cC6c8c27A8F5dAF0dD3DF91EA35C4720dd7',
-    optimism: '0x3c2269811836af69497E5F486A85D7316753cf62',
-    arbitrum: '0x3c2269811836af69497E5F486A85D7316753cf62'
+    ethereum: '0x1a44076050125825900e736c501f859c50fE728c',
+    base: '0x1a44076050125825900e736c501f859c50fE728c',
+    optimism: '0x1a44076050125825900e736c501f859c50fE728c',
+    arbitrum: '0x1a44076050125825900e736c501f859c50fE728c'
 };
-// Chain IDs for LayerZero
+// LayerZero EID (Endpoint ID) for V2
 export const LAYERZERO_CHAIN_IDS = {
-    ethereum: 101,
-    base: 184,
-    optimism: 111,
-    arbitrum: 110
+    ethereum: 30101,
+    base: 30184,
+    optimism: 30111,
+    arbitrum: 30110
 };
-// Native token symbols
-export const NATIVE_SYMBOLS = {
-    ethereum: 'ETH',
-    base: 'ETH',
-    optimism: 'ETH',
-    arbitrum: 'ETH'
+// LayerZero USDC OFT Adapter addresses (V2)
+// These are the actual LayerZero USDC standard OFT contracts
+export const LAYERZERO_USDC_OFT = {
+    ethereum: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C',
+    base: '0x27D7F516Ff969a711e80E7aE46BC0205C0bF8A65',
+    optimism: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C',
+    arbitrum: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C'
 };
-// RPC URLs (using public endpoints with fallbacks)
+// RPC endpoints
 export const RPC_URLS = {
-    ethereum: [
-        'https://eth.llamarpc.com',
-        'https://rpc.ankr.com/eth',
-        'https://ethereum.publicnode.com'
-    ],
-    base: [
-        'https://base.llamarpc.com',
-        'https://base.meowrpc.com',
-        'https://mainnet.base.org'
-    ],
-    optimism: [
-        'https://optimism.llamarpc.com',
-        'https://rpc.ankr.com/optimism',
-        'https://mainnet.optimism.io'
-    ],
-    arbitrum: [
-        'https://arbitrum.llamarpc.com',
-        'https://rpc.ankr.com/arbitrum',
-        'https://arb1.arbitrum.io/rpc'
-    ]
+    ethereum: ['https://eth.llamarpc.com', 'https://rpc.ankr.com/eth'],
+    base: ['https://base.llamarpc.com', 'https://mainnet.base.org'],
+    optimism: ['https://optimism.llamarpc.com', 'https://mainnet.optimism.io'],
+    arbitrum: ['https://arbitrum.llamarpc.com', 'https://arb1.arbitrum.io/rpc']
 };
-// ERC20 ABI for USDC interactions
-const ERC20_ABI = [
+// LayerZero OFT V2 ABI
+const OFT_ABI = [
     {
+        name: 'send',
+        type: 'function',
+        inputs: [
+            {
+                name: 'sendParam',
+                type: 'tuple',
+                components: [
+                    { name: 'dstEid', type: 'uint32' },
+                    { name: 'to', type: 'bytes32' },
+                    { name: 'amountLD', type: 'uint256' },
+                    { name: 'minAmountLD', type: 'uint256' },
+                    { name: 'extraOptions', type: 'bytes' },
+                    { name: 'composeMsg', type: 'bytes' },
+                    { name: 'oftCmd', type: 'bytes' }
+                ]
+            },
+            {
+                name: 'fee',
+                type: 'tuple',
+                components: [
+                    { name: 'nativeFee', type: 'uint256' },
+                    { name: 'lzTokenFee', type: 'uint256' }
+                ]
+            },
+            { name: 'refundAddress', type: 'address' }
+        ],
+        outputs: [
+            {
+                name: 'msgReceipt',
+                type: 'tuple',
+                components: [
+                    { name: 'guid', type: 'bytes32' },
+                    { name: 'nonce', type: 'uint64' },
+                    { name: 'fee', type: 'tuple', components: [{ name: 'nativeFee', type: 'uint256' }, { name: 'lzTokenFee', type: 'uint256' }] }
+                ]
+            },
+            {
+                name: 'oftReceipt',
+                type: 'tuple',
+                components: [
+                    { name: 'amountSentLD', type: 'uint256' },
+                    { name: 'amountReceivedLD', type: 'uint256' }
+                ]
+            }
+        ],
+        stateMutability: 'payable'
+    },
+    {
+        name: 'quoteSend',
+        type: 'function',
+        inputs: [
+            {
+                name: 'sendParam',
+                type: 'tuple',
+                components: [
+                    { name: 'dstEid', type: 'uint32' },
+                    { name: 'to', type: 'bytes32' },
+                    { name: 'amountLD', type: 'uint256' },
+                    { name: 'minAmountLD', type: 'uint256' },
+                    { name: 'extraOptions', type: 'bytes' },
+                    { name: 'composeMsg', type: 'bytes' },
+                    { name: 'oftCmd', type: 'bytes' }
+                ]
+            },
+            { name: 'payInLzToken', type: 'bool' }
+        ],
+        outputs: [
+            {
+                name: 'fee',
+                type: 'tuple',
+                components: [
+                    { name: 'nativeFee', type: 'uint256' },
+                    { name: 'lzTokenFee', type: 'uint256' }
+                ]
+            }
+        ],
+        stateMutability: 'view'
+    },
+    {
+        name: 'approvalRequired',
+        type: 'function',
         inputs: [],
-        name: 'decimals',
+        outputs: [{ name: '', type: 'bool' }],
+        stateMutability: 'view'
+    },
+    {
+        name: 'sharedDecimals',
+        type: 'function',
+        inputs: [],
         outputs: [{ name: '', type: 'uint8' }],
-        stateMutability: 'view',
-        type: 'function'
+        stateMutability: 'view'
     },
     {
-        inputs: [{ name: 'account', type: 'address' }],
-        name: 'balanceOf',
-        outputs: [{ name: '', type: 'uint256' }],
-        stateMutability: 'view',
-        type: 'function'
-    },
+        name: 'token',
+        type: 'function',
+        inputs: [],
+        outputs: [{ name: '', type: 'address' }],
+        stateMutability: 'view'
+    }
+];
+// USDC Token ABI
+const USDC_ABI = [
     {
+        name: 'approve',
+        type: 'function',
         inputs: [
             { name: 'spender', type: 'address' },
             { name: 'amount', type: 'uint256' }
         ],
-        name: 'approve',
-        outputs: [{ name: '', type: 'bool' }],
-        stateMutability: 'nonpayable',
-        type: 'function'
+        outputs: [{ type: 'bool' }],
+        stateMutability: 'nonpayable'
     },
     {
+        name: 'allowance',
+        type: 'function',
         inputs: [
             { name: 'owner', type: 'address' },
             { name: 'spender', type: 'address' }
         ],
-        name: 'allowance',
-        outputs: [{ name: '', type: 'uint256' }],
-        stateMutability: 'view',
-        type: 'function'
-    }
-];
-// LayerZero Bridge ABI (simplified)
-const BRIDGE_ABI = [
-    {
-        inputs: [
-            { name: '_dstChainId', type: 'uint16' },
-            { name: '_toAddress', type: 'bytes' },
-            { name: '_amount', type: 'uint256' },
-            { name: '_refundAddress', type: 'address' },
-            { name: '_zroPaymentAddress', type: 'address' },
-            { name: '_adapterParams', type: 'bytes' }
-        ],
-        name: 'sendTokens',
-        outputs: [],
-        stateMutability: 'payable',
-        type: 'function'
+        outputs: [{ type: 'uint256' }],
+        stateMutability: 'view'
     },
     {
-        inputs: [
-            { name: '_dstChainId', type: 'uint16' },
-            { name: '_toAddress', type: 'bytes' },
-            { name: '_amount', type: 'uint256' },
-            { name: '_refundAddress', type: 'address' },
-            { name: '_zroPaymentAddress', type: 'address' },
-            { name: '_adapterParams', type: 'bytes' }
-        ],
-        name: 'estimateSendFee',
-        outputs: [
-            { name: 'nativeFee', type: 'uint256' },
-            { name: 'zroFee', type: 'uint256' }
-        ],
-        stateMutability: 'view',
-        type: 'function'
+        name: 'balanceOf',
+        type: 'function',
+        inputs: [{ name: 'account', type: 'address' }],
+        outputs: [{ type: 'uint256' }],
+        stateMutability: 'view'
+    },
+    {
+        name: 'decimals',
+        type: 'function',
+        inputs: [],
+        outputs: [{ type: 'uint8' }],
+        stateMutability: 'view'
     }
 ];
 /**
- * Create a public client for the specified chain
- * Tries multiple RPC endpoints for reliability
+ * Create public client for chain
  */
 export function createChainPublicClient(chain) {
-    const urls = RPC_URLS[chain];
-    // Use the first RPC URL (could implement fallback logic here)
     return createPublicClient({
         chain: SUPPORTED_CHAINS[chain],
-        transport: http(urls[0])
+        transport: http(RPC_URLS[chain][0])
     });
 }
 /**
- * Create a wallet client for the specified chain
- */
-export function createChainWalletClient(privateKey, chain) {
-    const account = privateKeyToAccount(privateKey);
-    const urls = RPC_URLS[chain];
-    return createWalletClient({
-        account,
-        chain: SUPPORTED_CHAINS[chain],
-        transport: http(urls[0])
-    });
-}
-/**
- * Get USDC balance for an address on a specific chain
+ * Get USDC balance
  */
 export async function getUSDCBalance(address, chain) {
     const client = createChainPublicClient(chain);
-    const usdcAddress = USDC_ADDRESSES[chain];
     try {
         const balance = await client.readContract({
-            address: usdcAddress,
-            abi: ERC20_ABI,
+            address: USDC_ADDRESSES[chain],
+            abi: USDC_ABI,
             functionName: 'balanceOf',
             args: [address]
         });
-        // USDC has 6 decimals
         return formatUnits(balance, 6);
     }
     catch (error) {
@@ -181,7 +213,7 @@ export async function getUSDCBalance(address, chain) {
     }
 }
 /**
- * Get native token balance for an address on a specific chain
+ * Get native token balance
  */
 export async function getNativeBalance(address, chain) {
     const client = createChainPublicClient(chain);
@@ -195,7 +227,7 @@ export async function getNativeBalance(address, chain) {
     }
 }
 /**
- * Get all balances across supported chains
+ * Get all balances across chains
  */
 export async function getAllBalances(address) {
     const chains = ['ethereum', 'base', 'optimism', 'arbitrum'];
@@ -205,29 +237,94 @@ export async function getAllBalances(address) {
             getNativeBalance(address, chain),
             getUSDCBalance(address, chain)
         ]);
-        balances.push({
-            chain,
-            nativeBalance,
-            usdcBalance
-        });
+        balances.push({ chain, nativeBalance, usdcBalance });
     }
     return balances;
 }
 /**
- * Get a bridge quote for cross-chain transfer
- * Estimates the fees for transferring tokens between chains
+ * Quote LayerZero bridge fees using OFT quoteSend
  */
-export async function getBridgeQuote(config, senderAddress) {
-    const { sourceChain, destinationChain, token, amount } = config;
-    // For now, estimate fixed fees based on typical LayerZero costs
-    // In production, this would call the actual bridge contract
-    const baseFee = token === 'USDC' ? 0.0005 : 0.001; // ETH
-    const multiplier = sourceChain === 'ethereum' ? 1.5 : 1;
-    const estimatedFee = (baseFee * multiplier).toFixed(6);
-    // Estimate time based on chains
-    let estimatedTime = '5-15 minutes';
-    if (sourceChain === 'ethereum' || destinationChain === 'ethereum') {
-        estimatedTime = '10-30 minutes';
+async function quoteOFTSend(sourceChain, destinationChain, amount, recipient) {
+    const publicClient = createChainPublicClient(sourceChain);
+    const oftAddress = LAYERZERO_USDC_OFT[sourceChain];
+    const dstEid = LAYERZERO_CHAIN_IDS[destinationChain];
+    // Convert address to bytes32
+    const toBytes32 = ('0x' + recipient.slice(2).padStart(64, '0'));
+    // 0.5% slippage tolerance
+    const minAmountLD = (amount * 995n) / 1000n;
+    const sendParam = {
+        dstEid,
+        to: toBytes32,
+        amountLD: amount,
+        minAmountLD: minAmountLD,
+        extraOptions: '0x',
+        composeMsg: '0x',
+        oftCmd: '0x'
+    };
+    const fee = await publicClient.readContract({
+        address: oftAddress,
+        abi: OFT_ABI,
+        functionName: 'quoteSend',
+        args: [sendParam, false]
+    });
+    return fee;
+}
+/**
+ * Get bridge quote for cross-chain transfer
+ * Uses LayerZero OFT quoteSend for accurate fee estimation
+ */
+export async function getBridgeQuote(params, senderAddress) {
+    const { sourceChain, destinationChain, token, amount } = params;
+    // Validate chains are different
+    if (sourceChain === destinationChain) {
+        throw new Error('Source and destination chains must be different');
+    }
+    let lzFee;
+    // Get accurate LZ fee quote for USDC transfers
+    if (token === 'USDC') {
+        try {
+            const amountInUnits = parseUnits(amount, 6);
+            lzFee = await quoteOFTSend(sourceChain, destinationChain, amountInUnits, senderAddress);
+        }
+        catch (error) {
+            console.warn(`[Bridge] Failed to get LZ fee quote:`, error);
+        }
+    }
+    // Estimated time varies by route (in seconds)
+    const timeEstimates = {
+        'base-optimism': 60,
+        'base-arbitrum': 60,
+        'optimism-base': 60,
+        'optimism-arbitrum': 60,
+        'arbitrum-base': 60,
+        'arbitrum-optimism': 60,
+        'ethereum-base': 300,
+        'ethereum-optimism': 300,
+        'ethereum-arbitrum': 300,
+        'base-ethereum': 900,
+        'optimism-ethereum': 900,
+        'arbitrum-ethereum': 900
+    };
+    const route = `${sourceChain}-${destinationChain}`;
+    const estimatedTime = timeEstimates[route] || 60;
+    // Path represents the route
+    const path = [sourceChain, 'layerzero', destinationChain];
+    // Format estimated fee
+    let estimatedFee;
+    if (lzFee) {
+        // Convert native fee to ETH for display
+        const nativeFeeEth = formatUnits(lzFee.nativeFee, 18);
+        estimatedFee = nativeFeeEth;
+    }
+    else {
+        // Fallback estimates
+        const baseFees = {
+            'base-optimism': 0.001, 'base-arbitrum': 0.0012, 'optimism-base': 0.001,
+            'optimism-arbitrum': 0.0012, 'arbitrum-base': 0.0012, 'arbitrum-optimism': 0.0012,
+            'ethereum-base': 0.005, 'ethereum-optimism': 0.005, 'ethereum-arbitrum': 0.005,
+            'base-ethereum': 0.01, 'optimism-ethereum': 0.01, 'arbitrum-ethereum': 0.01
+        };
+        estimatedFee = (baseFees[route] || 0.001).toFixed(6);
     }
     return {
         sourceChain,
@@ -236,194 +333,77 @@ export async function getBridgeQuote(config, senderAddress) {
         amount,
         estimatedFee,
         estimatedTime,
-        nativeFee: parseUnits(estimatedFee, 18)
+        path,
+        lzFee
     };
 }
 /**
- * Approve USDC for bridge contract
- */
-export async function approveUSDCForBridge(privateKey, chain, bridgeAddress, amount) {
-    const walletClient = createChainWalletClient(privateKey, chain);
-    const publicClient = createChainPublicClient(chain);
-    const usdcAddress = USDC_ADDRESSES[chain];
-    try {
-        // Parse amount with 6 decimals for USDC
-        const parsedAmount = parseUnits(amount, 6);
-        // Check current allowance
-        const account = privateKeyToAccount(privateKey);
-        const currentAllowance = await publicClient.readContract({
-            address: usdcAddress,
-            abi: ERC20_ABI,
-            functionName: 'allowance',
-            args: [account.address, bridgeAddress]
-        });
-        if (currentAllowance >= parsedAmount) {
-            console.log(`[Bridge] USDC already approved for ${amount} on ${chain}`);
-            return null; // Already approved
-        }
-        console.log(`[Bridge] Approving USDC for bridge on ${chain}...`);
-        // @ts-ignore - viem types mismatch in this version
-        const txHash = await walletClient.writeContract({
-            address: usdcAddress,
-            abi: ERC20_ABI,
-            functionName: 'approve',
-            args: [bridgeAddress, parsedAmount]
-        });
-        // Wait for confirmation
-        const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-        if (receipt.status === 'success') {
-            console.log(`[Bridge] USDC approved: ${txHash}`);
-            return txHash;
-        }
-        else {
-            throw new Error('Approval transaction failed');
-        }
-    }
-    catch (error) {
-        console.error(`[Bridge] Failed to approve USDC:`, error);
-        throw error;
-    }
-}
-/**
- * Execute a cross-chain bridge transfer using LayerZero
- * This is a simplified implementation - production would use actual LayerZero contracts
- */
-export async function executeBridge(privateKey, config, maxRetries = 3) {
-    const { sourceChain, destinationChain, token, amount, recipient } = config;
-    const account = privateKeyToAccount(privateKey);
-    console.log(`[Bridge] Initiating bridge from ${sourceChain} to ${destinationChain}`);
-    console.log(`[Bridge] Amount: ${amount} ${token}`);
-    console.log(`[Bridge] Sender: ${account.address}`);
-    let attempt = 0;
-    while (attempt < maxRetries) {
-        attempt++;
-        try {
-            // Get fee estimate
-            const quote = await getBridgeQuote(config, account.address);
-            console.log(`[Bridge] Estimated fee: ${quote.estimatedFee} ETH`);
-            // Check native balance for gas
-            const nativeBalance = await getNativeBalance(account.address, sourceChain);
-            const nativeBalanceFloat = parseFloat(nativeBalance);
-            const feeFloat = parseFloat(quote.estimatedFee);
-            if (nativeBalanceFloat < feeFloat * 2) { // Need 2x for safety
-                throw new Error(`Insufficient ${NATIVE_SYMBOLS[sourceChain]} for gas. ` +
-                    `Balance: ${nativeBalance}, Required: ~${(feeFloat * 2).toFixed(6)}`);
-            }
-            if (token === 'USDC') {
-                // Check USDC balance
-                const usdcBalance = await getUSDCBalance(account.address, sourceChain);
-                const usdcAmount = parseFloat(amount);
-                if (parseFloat(usdcBalance) < usdcAmount) {
-                    throw new Error(`Insufficient USDC balance on ${sourceChain}. ` +
-                        `Balance: ${usdcBalance}, Required: ${amount}`);
-                }
-                // In production, this would call the actual LayerZero bridge contract
-                // For now, we simulate the bridge operation
-                console.log(`[Bridge] Executing USDC bridge (simulated)...`);
-                // Simulate bridge delay
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                // Generate a mock transaction hash
-                const mockTxHash = `0x${Buffer.from(Math.random().toString()).toString('hex').padEnd(64, '0')}`;
-                console.log(`[Bridge] Bridge initiated: ${mockTxHash}`);
-                console.log(`[Bridge] Tokens will arrive on ${destinationChain} in ~${quote.estimatedTime}`);
-                return {
-                    success: true,
-                    txHash: mockTxHash,
-                    sourceChain,
-                    destinationChain,
-                    amount
-                };
-            }
-            else {
-                // ETH bridging (simplified)
-                console.log(`[Bridge] Executing ETH bridge (simulated)...`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                const mockTxHash = `0x${Buffer.from(Math.random().toString()).toString('hex').padEnd(64, '0')}`;
-                return {
-                    success: true,
-                    txHash: mockTxHash,
-                    sourceChain,
-                    destinationChain,
-                    amount
-                };
-            }
-        }
-        catch (error) {
-            console.error(`[Bridge] Attempt ${attempt}/${maxRetries} failed:`, error);
-            if (attempt >= maxRetries) {
-                return {
-                    success: false,
-                    error: error instanceof Error ? error.message : String(error),
-                    sourceChain,
-                    destinationChain,
-                    amount
-                };
-            }
-            // Wait before retry with exponential backoff
-            const delay = Math.pow(2, attempt) * 1000;
-            console.log(`[Bridge] Retrying in ${delay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-    }
-    return {
-        success: false,
-        error: 'Max retries exceeded',
-        sourceChain,
-        destinationChain,
-        amount
-    };
-}
-/**
- * Find the cheapest chain for a given operation
- * Compares gas costs and returns the most cost-effective chain
+ * Find cheapest chain for operation
  */
 export async function findCheapestChain(operation, excludeChains) {
     const chains = ['base', 'optimism', 'arbitrum'];
-    const filteredChains = excludeChains
-        ? chains.filter(c => !excludeChains.includes(c))
-        : chains;
-    // Cost estimates in USD (simplified model)
-    const baseCosts = {
-        'send-base': 0.001,
-        'send-optimism': 0.002,
-        'send-arbitrum': 0.003,
-        'swap-base': 0.01,
-        'swap-optimism': 0.015,
-        'swap-arbitrum': 0.02,
-        'contract-base': 0.005,
-        'contract-optimism': 0.008,
-        'contract-arbitrum': 0.012
+    const filtered = excludeChains ? chains.filter(c => !excludeChains.includes(c)) : chains;
+    // Cost estimates in USD
+    const costs = {
+        'send-base': 0.001, 'send-optimism': 0.002, 'send-arbitrum': 0.003,
+        'contract-base': 0.005, 'contract-optimism': 0.008, 'contract-arbitrum': 0.012
     };
-    let cheapest = filteredChains[0];
+    let cheapest = filtered[0];
     let lowestCost = Infinity;
-    for (const chain of filteredChains) {
-        const costKey = `${operation}-${chain}`;
-        const cost = baseCosts[costKey] || 0.01;
+    for (const chain of filtered) {
+        const cost = costs[`${operation}-${chain}`] || 0.01;
         if (cost < lowestCost) {
             lowestCost = cost;
             cheapest = chain;
         }
     }
-    return {
-        chain: cheapest,
-        estimatedCost: lowestCost.toFixed(4)
-    };
+    return { chain: cheapest, estimatedCost: lowestCost.toFixed(4) };
 }
 /**
- * Get bridge status for a transaction
- * In production, this would query LayerZero's messaging layer
+ * Retry helper with exponential backoff
  */
-export async function getBridgeStatus(txHash, sourceChain, destinationChain) {
-    // Simulate status check
-    // In production, this would query the actual bridge contracts
-    return {
-        status: 'pending',
-        confirmations: Math.floor(Math.random() * 20),
-        estimatedCompletion: '5-10 minutes'
-    };
+async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 1000) {
+    let lastError;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        }
+        catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            if (attempt < maxRetries) {
+                const delay = baseDelay * Math.pow(2, attempt);
+                console.log(`[Bridge] Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+    throw lastError;
 }
 /**
- * CrossChainBridge class for easy integration
+ * Wait for transaction receipt with timeout
+ */
+async function waitForTransaction(publicClient, txHash, timeoutMs = 60000, confirmations = 1) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeoutMs) {
+        try {
+            const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
+            if (receipt && receipt.blockNumber) {
+                const currentBlock = await publicClient.getBlockNumber();
+                const confirmationsReceived = Number(currentBlock - receipt.blockNumber) + 1;
+                if (confirmationsReceived >= confirmations) {
+                    return receipt.status === 'success';
+                }
+            }
+        }
+        catch {
+            // Transaction not yet mined
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    return false;
+}
+/**
+ * CrossChainBridge class
  */
 export class CrossChainBridge {
     privateKey;
@@ -432,53 +412,219 @@ export class CrossChainBridge {
         this.privateKey = privateKey;
         this.defaultChain = defaultChain;
     }
-    /**
-     * Get balances across all supported chains
-     */
     async getBalances(address) {
         const account = privateKeyToAccount(this.privateKey);
         return getAllBalances(address || account.address);
     }
-    /**
-     * Bridge USDC to another chain
-     */
-    async bridgeUSDC(destinationChain, amount, sourceChain) {
-        return executeBridge(this.privateKey, {
-            sourceChain: sourceChain || this.defaultChain,
-            destinationChain,
-            token: 'USDC',
-            amount
-        });
+    async findCheapestChain(operation) {
+        return findCheapestChain(operation);
     }
     /**
-     * Bridge ETH to another chain
-     */
-    async bridgeETH(destinationChain, amount, sourceChain) {
-        return executeBridge(this.privateKey, {
-            sourceChain: sourceChain || this.defaultChain,
-            destinationChain,
-            token: 'ETH',
-            amount
-        });
-    }
-    /**
-     * Get a quote for bridging
+     * Get bridge quote for cross-chain transfer
+     * Instance method wrapper around getBridgeQuote function
      */
     async getQuote(destinationChain, token, amount, sourceChain) {
         const account = privateKeyToAccount(this.privateKey);
+        const srcChain = sourceChain || this.defaultChain;
         return getBridgeQuote({
-            sourceChain: sourceChain || this.defaultChain,
+            sourceChain: srcChain,
             destinationChain,
             token,
             amount
         }, account.address);
     }
     /**
-     * Find the cheapest chain for an operation
+     * Bridge USDC using LayerZero OFT (Omnichain Fungible Token) protocol
+     * Supports Base ↔ Optimism ↔ Arbitrum transfers
+     * Uses LayerZero V2 for cross-chain messaging
+     *
+     * @param destinationChain - Target chain
+     * @param amount - Amount to bridge (in USDC, e.g., "10.5")
+     * @param sourceChain - Source chain (defaults to defaultChain)
+     * @returns BridgeResult with transaction details
      */
-    async findCheapestChain(operation, excludeChains) {
-        return findCheapestChain(operation, excludeChains);
+    async bridgeUSDC(destinationChain, amount, sourceChain) {
+        const account = privateKeyToAccount(this.privateKey);
+        const srcChain = sourceChain || this.defaultChain;
+        try {
+            // Validate chains are supported and different
+            if (srcChain === destinationChain) {
+                return {
+                    success: false,
+                    error: 'Source and destination chains must be different',
+                    sourceChain: srcChain,
+                    destinationChain,
+                    amount
+                };
+            }
+            // Check if we have valid L2 chains for bridging
+            const supportedL2s = ['base', 'optimism', 'arbitrum'];
+            if (!supportedL2s.includes(srcChain) || !supportedL2s.includes(destinationChain)) {
+                return {
+                    success: false,
+                    error: 'Only Base, Optimism, and Arbitrum are supported for direct USDC bridging',
+                    sourceChain: srcChain,
+                    destinationChain,
+                    amount
+                };
+            }
+            // Create wallet and public clients for source chain
+            const { walletClient, publicClient } = createMultiChainClient(this.privateKey, srcChain);
+            const oftAddress = LAYERZERO_USDC_OFT[srcChain];
+            const usdcAddress = USDC_ADDRESSES[srcChain];
+            const amountInUnits = parseUnits(amount, 6);
+            // Step 1: Check USDC balance
+            const balance = await publicClient.readContract({
+                address: usdcAddress,
+                abi: USDC_ABI,
+                functionName: 'balanceOf',
+                args: [account.address]
+            });
+            if (balance < amountInUnits) {
+                return {
+                    success: false,
+                    error: `Insufficient USDC balance. Have: ${formatUnits(balance, 6)}, Need: ${amount}`,
+                    sourceChain: srcChain,
+                    destinationChain,
+                    amount
+                };
+            }
+            // Step 2: Get quote for fees
+            let lzFee;
+            try {
+                lzFee = await quoteOFTSend(srcChain, destinationChain, amountInUnits, account.address);
+            }
+            catch (error) {
+                return {
+                    success: false,
+                    error: `Failed to get LayerZero fee quote: ${error instanceof Error ? error.message : String(error)}`,
+                    sourceChain: srcChain,
+                    destinationChain,
+                    amount
+                };
+            }
+            // Step 3: Check native balance for fees
+            const nativeBalance = await publicClient.getBalance({ address: account.address });
+            if (nativeBalance < lzFee.nativeFee) {
+                return {
+                    success: false,
+                    error: `Insufficient native token for gas fees. Have: ${formatUnits(nativeBalance, 18)} ETH, Need: ${formatUnits(lzFee.nativeFee, 18)} ETH`,
+                    sourceChain: srcChain,
+                    destinationChain,
+                    amount
+                };
+            }
+            // Step 4: Check and approve USDC allowance for OFT contract
+            const currentAllowance = await publicClient.readContract({
+                address: usdcAddress,
+                abi: USDC_ABI,
+                functionName: 'allowance',
+                args: [account.address, oftAddress]
+            });
+            if (currentAllowance < amountInUnits) {
+                console.log(`[Bridge] Approving USDC for OFT contract...`);
+                const approveTx = await retryWithBackoff(async () => {
+                    return await walletClient.writeContract({
+                        address: usdcAddress,
+                        abi: USDC_ABI,
+                        functionName: 'approve',
+                        args: [oftAddress, amountInUnits],
+                        chain: SUPPORTED_CHAINS[srcChain],
+                        account
+                    });
+                });
+                console.log(`[Bridge] Approval transaction: ${approveTx}`);
+                // Wait for approval confirmation
+                const approvalConfirmed = await waitForTransaction(publicClient, approveTx, 60000, 1);
+                if (!approvalConfirmed) {
+                    return {
+                        success: false,
+                        error: 'USDC approval transaction failed or timed out',
+                        sourceChain: srcChain,
+                        destinationChain,
+                        amount
+                    };
+                }
+            }
+            // Step 5: Execute the cross-chain transfer via LayerZero OFT
+            console.log(`[Bridge] Initiating cross-chain transfer via LayerZero...`);
+            const dstEid = LAYERZERO_CHAIN_IDS[destinationChain];
+            const toBytes32 = ('0x' + account.address.slice(2).padStart(64, '0'));
+            const minAmountLD = (amountInUnits * 995n) / 1000n; // 0.5% slippage
+            const sendParam = {
+                dstEid,
+                to: toBytes32,
+                amountLD: amountInUnits,
+                minAmountLD: minAmountLD,
+                extraOptions: '0x',
+                composeMsg: '0x',
+                oftCmd: '0x'
+            };
+            const bridgeTx = await retryWithBackoff(async () => {
+                return await walletClient.writeContract({
+                    address: oftAddress,
+                    abi: OFT_ABI,
+                    functionName: 'send',
+                    args: [sendParam, lzFee, account.address],
+                    chain: SUPPORTED_CHAINS[srcChain],
+                    account,
+                    value: lzFee.nativeFee // Pay for LayerZero messaging
+                });
+            });
+            console.log(`[Bridge] Bridge transaction submitted: ${bridgeTx}`);
+            // Step 6: Wait for transaction confirmation
+            const confirmed = await waitForTransaction(publicClient, bridgeTx, 120000, 1);
+            if (!confirmed) {
+                return {
+                    success: false,
+                    error: 'Bridge transaction not confirmed within timeout',
+                    sourceChain: srcChain,
+                    destinationChain,
+                    amount,
+                    txHash: bridgeTx
+                };
+            }
+            console.log(`[Bridge] Bridge confirmed! From ${srcChain} to ${destinationChain}: ${bridgeTx}`);
+            return {
+                success: true,
+                txHash: bridgeTx,
+                sourceChain: srcChain,
+                destinationChain,
+                amount,
+                fees: {
+                    nativeFee: formatUnits(lzFee.nativeFee, 18),
+                    lzTokenFee: formatUnits(lzFee.lzTokenFee, 18)
+                }
+            };
+        }
+        catch (error) {
+            console.error(`[Bridge] Bridge failed:`, error);
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Bridge transaction failed',
+                sourceChain: srcChain,
+                destinationChain,
+                amount
+            };
+        }
     }
+}
+/**
+ * Create multi-chain client for a specific chain
+ */
+function createMultiChainClient(privateKey, chain) {
+    const account = privateKeyToAccount(privateKey);
+    const urls = RPC_URLS[chain];
+    const walletClient = createWalletClient({
+        account,
+        chain: SUPPORTED_CHAINS[chain],
+        transport: http(urls[0])
+    });
+    const publicClient = createPublicClient({
+        chain: SUPPORTED_CHAINS[chain],
+        transport: http(urls[0])
+    });
+    return { walletClient, publicClient, account };
 }
 export default CrossChainBridge;
 //# sourceMappingURL=bridge.js.map

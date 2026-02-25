@@ -7,8 +7,8 @@ export * from './payment.js';
 export * from './escrow.js';
 // Batch escrow operations
 export { batchRelease, batchRefund } from './escrow.js';
-// Echo Survival mechanism (v1.3)
-export { EchoSurvivalManager, getOrCreateSurvivalManager, getSurvivalManager, removeSurvivalManager, DEFAULT_SURVIVAL_CONFIG } from './survival.js';
+// Echo Survival mechanism (v1.4)
+export { EchoSurvivalManager, getOrCreateSurvivalManager, getSurvivalManager, removeSurvivalManager, DEFAULT_SURVIVAL_CONFIG, formatSurvivalReport, shouldAcceptTask } from './survival.js';
 // Wallet management (v1.1)
 export { generateWallet, loadOrCreateWallet, loadWallet, saveEncryptedWallet, getWalletAddress, walletExists, getWalletPath, AGORA_DIR, WALLET_FILE } from './wallet-manager.js';
 // Multi-chain wallet management (v1.2)

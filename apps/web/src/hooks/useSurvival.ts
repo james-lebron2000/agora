@@ -154,7 +154,7 @@ async function fetchSurvivalFromRelay(agentId: string): Promise<SurvivalData> {
  * }
  * ```
  */
-export function useSurvival(agentId: string, refreshInterval = DEFAULT_REFRESH_INTERVAL) {
+export function useSurvival(agentId: string | null | undefined, refreshInterval = DEFAULT_REFRESH_INTERVAL) {
   const [data, setData] = useState<SurvivalData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -162,7 +162,7 @@ export function useSurvival(agentId: string, refreshInterval = DEFAULT_REFRESH_I
   const isMountedRef = useRef<boolean>(true);
 
   const fetchData = useCallback(async () => {
-    if (!agentId) {
+    if (!agentId || agentId === '') {
       setError('Agent ID is required');
       setIsLoading(false);
       return;

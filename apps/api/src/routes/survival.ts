@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { getOrCreateSurvivalManager, type SurvivalSnapshot, type SurvivalAction, type AgentHealthStatus } from '@agora/sdk';
+import { getOrCreateSurvivalManager, type SurvivalSnapshot, type SurvivalAction, type AgentHealthStatus, type SurvivalActionType, type SurvivalActionPriority } from '@agora/sdk';
 import { requirePermission } from '../middleware/auth';
 import { redisService } from '../services/redis';
 import { logger } from '../utils/logger';
@@ -119,8 +119,8 @@ function generatePendingActions(snapshot: SurvivalSnapshot): SurvivalAction[] {
   // Add actions based on conditions
   if (runwayDays < 14) {
     actions.push({
-      type: 'bridge',
-      priority: runwayDays < 7 ? 'critical' : 'high',
+      type: 'bridge' as SurvivalActionType,
+      priority: (runwayDays < 7 ? 'critical' : 'high') as SurvivalActionPriority,
       description: 'Bridge USDC from Ethereum to Base for lower operational costs',
       estimatedImpact: 'Reduce gas costs by ~60%',
       recommendedChain: 'base'
@@ -129,8 +129,8 @@ function generatePendingActions(snapshot: SurvivalSnapshot): SurvivalAction[] {
 
   if (runwayDays < 30 && balance > 100) {
     actions.push({
-      type: 'earn',
-      priority: 'medium',
+      type: 'earn' as SurvivalActionType,
+      priority: 'medium' as SurvivalActionPriority,
       description: 'Accept additional tasks to increase revenue',
       estimatedImpact: 'Potential $50-100 additional daily income'
     });
@@ -138,8 +138,8 @@ function generatePendingActions(snapshot: SurvivalSnapshot): SurvivalAction[] {
 
   if (snapshot.health.status === 'degraded' || snapshot.health.status === 'critical') {
     actions.push({
-      type: 'reduce_cost',
-      priority: 'high',
+      type: 'reduce_cost' as SurvivalActionType,
+      priority: 'high' as SurvivalActionPriority,
       description: 'Reduce non-essential operational costs',
       estimatedImpact: 'Save ~$10-20 per day'
     });
@@ -147,8 +147,8 @@ function generatePendingActions(snapshot: SurvivalSnapshot): SurvivalAction[] {
 
   if (runwayDays > 60 && balance > 1000) {
     actions.push({
-      type: 'optimize_chain',
-      priority: 'low',
+      type: 'optimize_chain' as SurvivalActionType,
+      priority: 'low' as SurvivalActionPriority,
       description: 'Optimize chain selection for current operations',
       estimatedImpact: 'Improve efficiency by 10-15%'
     });

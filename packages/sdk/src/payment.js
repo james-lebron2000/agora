@@ -67,4 +67,18 @@ export async function transferUSDC(options) {
         account,
     });
 }
+function parseNativeAmount(amount, decimals = 18) {
+    if (typeof amount === 'bigint')
+        return amount;
+    return parseUnits(amount.toString(), decimals);
+}
+export async function transferNative(options) {
+    const { walletClient, account } = createClients(options);
+    const value = parseNativeAmount(options.amount, options.decimals);
+    return walletClient.sendTransaction({
+        account,
+        to: options.recipient,
+        value,
+    });
+}
 //# sourceMappingURL=payment.js.map
