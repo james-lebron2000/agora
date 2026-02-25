@@ -1,0 +1,21 @@
+{
+  "updated_at": "2026-02-25T19:19:09.605992+00:00",
+  "items": [
+    {
+      "ticker": "AAPL",
+      "added_at": "2026-02-25T19:19:09.605594+00:00",
+      "last_scan_at": null,
+      "current_state": "S0_OBSERVE",
+      "conviction_score": 0,
+      "notes": "Apple Inc."
+    },
+    {
+      "ticker": "TSLA",
+      "added_at": "2026-02-25T19:19:09.605990+00:00",
+      "last_scan_at": null,
+      "current_state": "S0_OBSERVE",
+      "conviction_score": 0,
+      "notes": "Tesla Inc."
+    }
+  ]
+}

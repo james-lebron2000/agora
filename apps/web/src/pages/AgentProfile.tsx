@@ -1,5 +1,11 @@
 import { useState, useMemo } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useAgent, type AgentHealthStatus } from '../hooks/useAgent'
+import { AgentAvatar } from '../components/AgentAvatar'
+import { AchievementBadgeGrid, generateSampleBadges } from '../components/AchievementBadge'
+import { ActivityHeatmap, generateActivityData } from '../components/ActivityHeatmap'
+import { AgentLevelProgress, calculateLevel } from '../components/AgentLevelProgress'
+import { ShareProfile } from '../components/ShareProfile'
 import {
   Activity,
   Wallet,
@@ -19,45 +25,134 @@ import {
   Shield,
   HeartPulse,
   AlertTriangle,
-  Skull
+  Skull,
+  Sparkles,
+  BarChart3,
+  Award,
+  ChevronRight,
+  Target,
+  Users,
 } from 'lucide-react'
 
-type Tab = 'overview' | 'economics' | 'capabilities' | 'history'
+type Tab = 'overview' | 'economics' | 'capabilities' | 'history' | 'achievements'
 
 // Default agent ID - in production this would come from URL params
 const DEFAULT_AGENT_ID = 'agent-echo-001'
 
-function HealthCard({ label, value, icon: Icon, color }: { label: string; value: number; icon: any; color: string }) {
+// Animation variants
+const containerVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1,
+    },
+  },
+}
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0 },
+}
+
+const tabContentVariants = {
+  hidden: { opacity: 0, x: 20 },
+  show: { opacity: 1, x: 0 },
+  exit: { opacity: 0, x: -20 },
+}
+
+/**
+ * Animated Health Score Ring Component
+ */
+function HealthScoreRing({ value, size = 120, strokeWidth = 8, label, sublabel }: { value: number; size?: number; strokeWidth?: number; label?: string; sublabel?: string }) {
+  const radius = (size - strokeWidth) / 2
+  const circumference = radius * 2 * Math.PI
+  const offset = circumference - (value / 100) * circumference
+
+  const getColor = (v: number) => {
+    if (v >= 80) return '#10b981'
+    if (v >= 60) return '#f59e0b'
+    return '#ef4444'
+  }
+
+  const color = getColor(value)
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg className="transform -rotate-90 w-full h-full">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          fill="transparent"
+          className="text-agora-100"
+        />
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth={strokeWidth}
+          fill="transparent"
+          strokeDasharray={circumference}
+          strokeLinecap="round"
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 1, ease: 'easeOut' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        {label && <span className="text-xs text-agora-500">{label}</span>}
+        <motion.span className="text-2xl font-bold" style={{ color }} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.5, type: 'spring' }}>
+          {value}%
+        </motion.span>
+        {sublabel && <span className="text-xs text-agora-400">{sublabel}</span>}
+      </div>
+    </div>
+  )
+}
+
+function HealthCard({ label, value, icon: Icon, color }: { label: string; value: number; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; color: string }) {
   const getStatusColor = (val: number) => {
-    if (val >= 80) return 'text-success'
-    if (val >= 60) return 'text-warning'
+    if (val >= 80) return 'text-emerald-500'
+    if (val >= 60) return 'text-amber-500'
     return 'text-red-500'
   }
 
   const getProgressColor = (val: number) => {
-    if (val >= 80) return 'bg-success'
-    if (val >= 60) return 'bg-warning'
+    if (val >= 80) return 'bg-emerald-500'
+    if (val >= 60) return 'bg-amber-500'
     return 'bg-red-500'
   }
 
   return (
-    <div className="bg-white rounded-xl p-4 border border-agora-100 shadow-sm">
+    <motion.div 
+      className="bg-white/80 backdrop-blur-sm rounded-xl p-4 border border-agora-100 shadow-sm hover:shadow-md transition-shadow"
+      whileHover={{ y: -2 }}
+      transition={{ type: 'spring', stiffness: 400 }}
+    >
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <div className={`p-1.5 rounded-lg bg-agora-50`}>
+          <div className="p-1.5 rounded-lg bg-agora-50">
             <Icon className="w-4 h-4" style={{ color }} />
           </div>
           <span className="text-xs font-medium text-agora-500 uppercase tracking-wider">{label}</span>
         </div>
-        <span className={`text-lg font-bold ${getStatusColor(value)}`}>{value}%</span>
+        <motion.span className={`text-lg font-bold ${getStatusColor(value)}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
+          {value}%
+        </motion.span>
       </div>
       <div className="h-2 bg-agora-100 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${getProgressColor(value)}`}
-          style={{ width: `${value}%` }}
+        <motion.div
+          className={`h-full rounded-full ${getProgressColor(value)}`}
+          initial={{ width: 0 }}
+          animate={{ width: `${value}%` }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
         />
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -165,9 +260,14 @@ function SurvivalStatusIndicator({ status, score, lastHeartbeat, consecutiveFail
 
 function LoadingState() {
   return (
-    <div className="min-h-screen bg-agora-50 pt-20 lg:pt-6 pb-24 flex items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-agora-50 to-agora-100/50 pt-20 lg:pt-6 pb-24 flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">
-        <Loader2 className="w-8 h-8 text-agora-900 animate-spin" />
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+        >
+          <Loader2 className="w-8 h-8 text-agora-600" />
+        </motion.div>
         <p className="text-sm text-agora-600">Loading agent profile...</p>
       </div>
     </div>
@@ -176,21 +276,31 @@ function LoadingState() {
 
 function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
   return (
-    <div className="min-h-screen bg-agora-50 pt-20 lg:pt-6 pb-24 flex items-center justify-center px-4">
-      <div className="bg-white rounded-2xl p-6 border border-red-200 shadow-sm max-w-md w-full text-center">
-        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+    <div className="min-h-screen bg-gradient-to-br from-agora-50 to-agora-100/50 pt-20 lg:pt-6 pb-24 flex items-center justify-center px-4">
+      <motion.div 
+        className="bg-white rounded-2xl p-6 border border-red-200 shadow-lg max-w-md w-full text-center"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <motion.div 
+          className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4"
+          animate={{ scale: [1, 1.1, 1] }}
+          transition={{ duration: 0.5 }}
+        >
           <AlertCircle className="w-6 h-6 text-red-500" />
-        </div>
+        </motion.div>
         <h3 className="text-lg font-semibold text-agora-900 mb-2">Failed to load agent</h3>
         <p className="text-sm text-agora-600 mb-4">{error}</p>
-        <button
+        <motion.button
           onClick={onRetry}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-agora-900 text-white rounded-xl font-medium hover:bg-agora-800 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-agora-900 to-agora-700 text-white rounded-xl font-medium hover:shadow-lg transition-shadow"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
           <RefreshCw className="w-4 h-4" />
           Try Again
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
     </div>
   )
 }
@@ -199,9 +309,7 @@ export function AgentProfile() {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   
   // Get agent ID from URL or use default
-  // In the future, this can be: const { id } = useParams<{ id: string }>()
   const agentId = useMemo(() => {
-    // Check for agent ID in URL search params
     const urlParams = new URLSearchParams(window.location.search);
     const idFromQuery = urlParams.get('id');
     return idFromQuery || DEFAULT_AGENT_ID;
@@ -209,10 +317,21 @@ export function AgentProfile() {
   
   const { agent, isLoading, error, refetch } = useAgent(agentId, 30000)
 
-  const tabs: { id: Tab; label: string; icon: any }[] = [
+  // Generate sample data for demo purposes
+  const sampleBadges = useMemo(() => generateSampleBadges(), [])
+  const activityData = useMemo(() => generateActivityData(365), [])
+  const agentLevel = useMemo(() => {
+    if (!agent) return calculateLevel(0)
+    // Calculate XP from agent stats
+    const xp = agent.reputation.completedTasks * 100 + agent.reputation.totalEarnings
+    return calculateLevel(xp)
+  }, [agent])
+
+  const tabs: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: 'overview', label: 'Overview', icon: Activity },
     { id: 'economics', label: 'Economics', icon: Wallet },
     { id: 'capabilities', label: 'Skills', icon: Zap },
+    { id: 'achievements', label: 'Badges', icon: Award },
     { id: 'history', label: 'History', icon: History },
   ]
 
@@ -236,112 +355,101 @@ export function AgentProfile() {
   }
 
   const renderOverview = () => (
-    <div className="space-y-6">
-      {/* Overall Health Score */}
-      <div className="bg-gradient-to-br from-agora-900 to-agora-800 rounded-2xl p-6 text-white">
-        <div className="flex items-center justify-between mb-4">
+    <motion.div className="space-y-6" variants={containerVariants} initial="hidden" animate="show">
+      {/* Overall Health Score with Ring Animation */}
+      <motion.div className="bg-gradient-to-br from-agora-900 via-agora-800 to-agora-900 rounded-2xl p-6 text-white relative overflow-hidden" variants={itemVariants}>
+        {/* Animated background glow */}
+        <motion.div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl" animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.2, 0.1] }} transition={{ duration: 4, repeat: Infinity }} />
+        
+        <div className="flex items-center justify-between relative z-10">
           <div>
-            <h3 className="text-sm font-medium text-agora-300 uppercase tracking-wider">Overall Health</h3>
-            <p className="text-3xl font-bold mt-1">{agent.health.overall}%</p>
+            <motion.h3 className="text-sm font-medium text-agora-300 uppercase tracking-wider" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }}>
+              Overall Health
+            </motion.h3>
+            <motion.p className="text-4xl font-bold mt-2" initial={{ opacity: 0, scale: 0.5 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.2, type: 'spring' }}>
+              {agent.health.overall}%
+            </motion.p>
+            <motion.div className="flex items-center gap-2 mt-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
+              {agent.health.survivalStatus === 'healthy' ? (
+                <CheckCircle className="w-5 h-5 text-emerald-400" />
+              ) : agent.health.survivalStatus === 'degraded' ? (
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-red-400" />
+              )}
+              <span className="text-sm text-agora-200">
+                {agent.health.survivalStatus === 'healthy'
+                  ? 'All systems operational'
+                  : agent.health.survivalStatus === 'degraded'
+                    ? 'Performance degraded'
+                    : agent.health.survivalStatus === 'critical'
+                      ? 'Critical issues detected'
+                      : 'Agent offline'}
+              </span>
+            </motion.div>
           </div>
-          <div className="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center">
-            <Activity className="w-8 h-8 text-white" />
-          </div>
+          
+          <HealthScoreRing value={agent.health.overall} size={100} strokeWidth={8} />
         </div>
-        <div className="flex items-center gap-2">
-          {agent.health.survivalStatus === 'healthy' ? (
-            <CheckCircle className="w-4 h-4 text-success" />
-          ) : agent.health.survivalStatus === 'degraded' ? (
-            <AlertTriangle className="w-4 h-4 text-warning" />
-          ) : (
-            <AlertCircle className="w-4 h-4 text-red-400" />
-          )}
-          <span className="text-sm text-agora-200">
-            {agent.health.survivalStatus === 'healthy'
-              ? 'All systems operational'
-              : agent.health.survivalStatus === 'degraded'
-                ? 'Performance degraded'
-                : agent.health.survivalStatus === 'critical'
-                  ? 'Critical issues detected'
-                  : 'Agent offline'}
-          </span>
-        </div>
-      </div>
+      </motion.div>
 
-      {/* Survival Status Indicator - Real SDK Data */}
-      <SurvivalStatusIndicator
-        status={agent.health.survivalStatus}
-        score={agent.health.survivalScore}
-        lastHeartbeat={agent.health.lastHeartbeat}
-        consecutiveFailures={agent.health.consecutiveFailures}
-        successRate={agent.health.successRate}
-      />
+      {/* Agent Level Progress */}
+      <motion.div variants={itemVariants}>
+        <AgentLevelProgress level={agentLevel} />
+      </motion.div>
+
+      {/* Survival Status Indicator */}
+      <motion.div variants={itemVariants}>
+        <SurvivalStatusIndicator
+          status={agent.health.survivalStatus}
+          score={agent.health.survivalScore}
+          lastHeartbeat={agent.health.lastHeartbeat}
+          consecutiveFailures={agent.health.consecutiveFailures}
+          successRate={agent.health.successRate}
+        />
+      </motion.div>
 
       {/* Health Metrics Grid */}
-      <div className="grid grid-cols-2 gap-3">
+      <motion.div className="grid grid-cols-2 gap-3" variants={itemVariants}>
         <HealthCard label="Compute" value={agent.health.compute} icon={Cpu} color="#0052FF" />
         <HealthCard label="Storage" value={agent.health.storage} icon={Database} color="#2775CA" />
         <HealthCard label="Network" value={agent.health.network} icon={Wifi} color="#10b981" />
         <HealthCard label="Economic" value={agent.health.economic} icon={Wallet} color="#f59e0b" />
-      </div>
+      </motion.div>
+
+      {/* Activity Heatmap */}
+      <motion.div variants={itemVariants}>
+        <ActivityHeatmap data={activityData} title="Contribution Activity" />
+      </motion.div>
 
       {/* Quick Stats */}
-      <div className="bg-white rounded-2xl p-4 border border-agora-100 shadow-sm">
+      <motion.div className="bg-white rounded-2xl p-5 border border-agora-100 shadow-sm" variants={itemVariants} whileHover={{ y: -2 }}>
         <h3 className="font-semibold text-agora-900 mb-4 flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-agora-500" />
+          <BarChart3 className="w-5 h-5 text-agora-500" />
           Performance Stats
         </h3>
         <div className="grid grid-cols-3 gap-4">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-agora-900">{agent.reputation.completedTasks}</div>
+          <motion.div className="text-center p-3 rounded-xl bg-agora-50/50" whileHover={{ scale: 1.05 }}>
+            <motion.div className="text-2xl font-bold text-agora-900" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+              {agent.reputation.completedTasks}
+            </motion.div>
             <div className="text-xs text-agora-500 mt-1">Tasks Done</div>
-          </div>
-          <div className="text-center border-x border-agora-100">
-            <div className="text-2xl font-bold text-agora-900">${agent.reputation.totalEarnings.toLocaleString()}</div>
+          </motion.div>
+          <motion.div className="text-center p-3 rounded-xl bg-agora-50/50 border-x border-agora-100" whileHover={{ scale: 1.05 }}>
+            <motion.div className="text-2xl font-bold text-agora-900" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+              ${agent.reputation.totalEarnings.toLocaleString()}
+            </motion.div>
             <div className="text-xs text-agora-500 mt-1">Total Earned</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-agora-900">{agent.reputation.score.toFixed(1)}</div>
+          </motion.div>
+          <motion.div className="text-center p-3 rounded-xl bg-agora-50/50" whileHover={{ scale: 1.05 }}>
+            <motion.div className="text-2xl font-bold text-agora-900" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+              {agent.reputation.score.toFixed(1)}
+            </motion.div>
             <div className="text-xs text-agora-500 mt-1">Rating</div>
-          </div>
+          </motion.div>
         </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="bg-white rounded-2xl p-4 border border-agora-100 shadow-sm">
-        <h3 className="font-semibold text-agora-900 mb-4 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-agora-500" />
-          Recent Activity
-        </h3>
-        <div className="space-y-3">
-          {agent.recentActivity.slice(0, 3).map((activity) => (
-            <div key={activity.id} className="flex items-start gap-3 py-2 border-b border-agora-50 last:border-0">
-              <div className="w-8 h-8 rounded-full bg-agora-50 flex items-center justify-center flex-shrink-0">
-                {activity.type === 'task_completed' && <CheckCircle className="w-4 h-4 text-success" />}
-                {activity.type === 'payment_received' && <Wallet className="w-4 h-4 text-usdc" />}
-                {activity.type === 'task_started' && <Zap className="w-4 h-4 text-warning" />}
-                {activity.type === 'bridge' && <Globe className="w-4 h-4 text-base-blue" />}
-                {!['task_completed', 'payment_received', 'task_started', 'bridge'].includes(activity.type) && (
-                  <Activity className="w-4 h-4 text-agora-500" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-agora-900 truncate">{activity.description}</p>
-                <p className="text-xs text-agora-500 mt-0.5">
-                  {new Date(activity.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
-              </div>
-              {activity.value && (
-                <span className="text-sm font-semibold text-agora-900">+${activity.value}</span>
-              )}
-            </div>
-          ))}
-          {agent.recentActivity.length === 0 && (
-            <p className="text-sm text-agora-500 text-center py-4">No recent activity</p>
-          )}
-        </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 
   const renderEconomics = () => (
@@ -539,6 +647,29 @@ export function AgentProfile() {
     </div>
   )
 
+  const renderAchievements = () => (
+    <motion.div 
+      className="space-y-6"
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+    >
+      <motion.div variants={itemVariants}>
+        <AchievementBadgeGrid badges={sampleBadges} title="Achievements" />
+      </motion.div>
+      
+      <motion.div variants={itemVariants}>
+        <div className="bg-white rounded-2xl p-5 border border-agora-100 shadow-sm">
+          <h3 className="font-semibold text-agora-900 mb-4 flex items-center gap-2">
+            <Target className="w-5 h-5 text-agora-500" />
+            Level Progression
+          </h3>
+          <AgentLevelProgress level={agentLevel} />
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+
   const renderHistory = () => (
     <div className="bg-white rounded-2xl border border-agora-100 shadow-sm">
       <div className="p-4 border-b border-agora-100">
@@ -583,70 +714,119 @@ export function AgentProfile() {
   )
 
   return (
-    <div className="min-h-screen bg-agora-50 pt-20 lg:pt-6 pb-24">
+    <div className="min-h-screen bg-gradient-to-br from-agora-50 to-agora-100/50 pt-20 lg:pt-6 pb-24">
       <div className="max-w-3xl mx-auto px-4">
-        {/* Agent Header */}
-        <div className="bg-white rounded-2xl p-4 border border-agora-100 shadow-sm mb-4">
+        {/* Agent Header with Avatar */}
+        <motion.div 
+          className="bg-white rounded-2xl p-5 border border-agora-100 shadow-sm mb-4"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-agora-900 to-agora-700 flex items-center justify-center shadow-lg">
-              <span className="text-2xl font-bold text-white">
-                {agent.name.slice(0, 2).toUpperCase()}
-              </span>
-            </div>
+            <AgentAvatar 
+              agentId={agent.id}
+              agentName={agent.name}
+              size="lg"
+              status={agent.status}
+            />
             <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-bold text-agora-900 truncate">{agent.name}</h1>
-              <p className="text-sm text-agora-500 truncate">{agent.id}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className={`w-2 h-2 rounded-full ${
-                  agent.status === 'online' ? 'bg-success animate-pulse' : 
-                  agent.status === 'busy' ? 'bg-warning' : 'bg-agora-400'
-                }`} />
-                <span className="text-xs text-agora-500 capitalize">{agent.status}</span>
-                <span className="text-agora-300">•</span>
-                <span className="text-xs text-agora-500 capitalize">{agent.reputation.tier} tier</span>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold text-agora-900 truncate">{agent.name}</h1>
+                  <p className="text-sm text-agora-500 truncate font-mono">{agent.id}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <ShareProfile agentId={agent.id} agentName={agent.name} />
+                  <motion.button 
+                    onClick={() => refetch()}
+                    className="p-2 rounded-xl hover:bg-agora-50 transition-colors"
+                    disabled={isLoading}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <Settings className={`w-5 h-5 text-agora-500 ${isLoading ? 'animate-spin' : ''}`} />
+                  </motion.button>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-4 mt-3">
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${
+                    agent.status === 'online' ? 'bg-emerald-500 animate-pulse' : 
+                    agent.status === 'busy' ? 'bg-amber-500' : 'bg-agora-400'
+                  }`} />
+                  <span className="text-sm text-agora-600 capitalize font-medium">{agent.status}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span className="text-sm text-agora-600 capitalize font-medium">{agent.reputation.tier} tier</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-agora-500" />
+                  <span className="text-sm text-agora-600 font-medium">{agent.reputation.score.toFixed(1)} rating</span>
+                </div>
               </div>
             </div>
-            <button 
-              onClick={() => refetch()}
-              className="p-2 rounded-xl hover:bg-agora-50 transition-colors"
-              disabled={isLoading}
-            >
-              <Settings className={`w-5 h-5 text-agora-500 ${isLoading ? 'animate-spin' : ''}`} />
-            </button>
           </div>
-        </div>
+        </motion.div>
 
         {/* Tab Navigation */}
-        <div className="bg-white rounded-2xl p-1 border border-agora-100 shadow-sm mb-4">
-          <div className="grid grid-cols-4 gap-1">
+        <motion.div 
+          className="bg-white rounded-2xl p-1 border border-agora-100 shadow-sm mb-4"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
+        >
+          <div className="grid grid-cols-5 gap-1">
             {tabs.map((tab) => {
               const Icon = tab.icon
               const isActive = activeTab === tab.id
               return (
-                <button
+                <motion.button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-all ${
+                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-all relative ${
                     isActive 
-                      ? 'bg-agora-900 text-white' 
-                      : 'text-agora-500 hover:bg-agora-50'
+                      ? 'bg-gradient-to-r from-agora-900 to-agora-800 text-white shadow-lg' 
+                      : 'text-agora-500 hover:bg-agora-50 hover:text-agora-700'
                   }`}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                 >
                   <Icon className="w-4 h-4 mb-1" />
                   <span className="text-[10px] font-medium">{tab.label}</span>
-                </button>
+                  {isActive && (
+                    <motion.div
+                      className="absolute inset-0 rounded-xl bg-white/10"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                    />
+                  )}
+                </motion.button>
               )
             })}
           </div>
-        </div>
+        </motion.div>
 
-        {/* Tab Content */}
-        <div className="animate-fade-in">
-          {activeTab === 'overview' && renderOverview()}
-          {activeTab === 'economics' && renderEconomics()}
-          {activeTab === 'capabilities' && renderCapabilities()}
-          {activeTab === 'history' && renderHistory()}
-        </div>
+        {/* Tab Content with Smooth Transitions */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            variants={tabContentVariants}
+            initial="hidden"
+            animate="show"
+            exit="exit"
+            transition={{ duration: 0.2 }}
+          >
+            {activeTab === 'overview' && renderOverview()}
+            {activeTab === 'economics' && renderEconomics()}
+            {activeTab === 'capabilities' && renderCapabilities()}
+            {activeTab === 'achievements' && renderAchievements()}
+            {activeTab === 'history' && renderHistory()}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   )

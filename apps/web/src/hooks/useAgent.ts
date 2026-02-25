@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { resolveRelayUrl } from '../lib/relayUrl';
 import {
   getOrCreateSurvivalManager,
@@ -524,6 +524,12 @@ function getActivityDescription(event: any): string {
 /**
  * Hook for fetching and managing agent data
  * 
+ * Features:
+ * - Auto-refresh with configurable interval
+ * - Memoized data transformations
+ * - Request deduplication
+ * - Error recovery
+ * 
  * @param agentId - The ID of the agent to fetch data for
  * @param refreshInterval - Auto-refresh interval in milliseconds (default: 30000)
  * @returns Agent data, loading state, error state, and refresh function
@@ -554,6 +560,8 @@ export function useAgent(agentId: string | null | undefined, refreshInterval = D
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef<boolean>(true);
+  const lastFetchRef = useRef<number>(0);
+  const pendingFetchRef = useRef<Promise<void> | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!agentId || agentId === '') {
@@ -562,36 +570,54 @@ export function useAgent(agentId: string | null | undefined, refreshInterval = D
       return;
     }
 
+    // Deduplication: if there's a pending fetch, wait for it
+    if (pendingFetchRef.current) {
+      return pendingFetchRef.current;
+    }
+
+    // Rate limiting: prevent fetches more frequent than 1 second
+    const now = Date.now();
+    if (now - lastFetchRef.current < 1000) {
+      return;
+    }
+    lastFetchRef.current = now;
+
     setIsLoading(true);
     setError(null);
 
-    try {
-      // Fetch agent data and activity in parallel
-      const [agentData, activityData] = await Promise.all([
-        fetchAgent(agentId),
-        fetchAgentActivity(agentId),
-      ]);
-      
-      // Only update state if component is still mounted
-      if (isMountedRef.current) {
-        setAgent({
-          ...agentData,
-          recentActivity: activityData,
-        });
-        setError(null);
+    const fetchPromise = (async () => {
+      try {
+        // Fetch agent data and activity in parallel
+        const [agentData, activityData] = await Promise.all([
+          fetchAgent(agentId),
+          fetchAgentActivity(agentId),
+        ]);
+        
+        // Only update state if component is still mounted
+        if (isMountedRef.current) {
+          setAgent({
+            ...agentData,
+            recentActivity: activityData,
+          });
+          setError(null);
+        }
+      } catch (err) {
+        console.error('[useAgent] Failed to fetch agent data:', err);
+        
+        if (isMountedRef.current) {
+          setError(err instanceof Error ? err.message : 'Failed to fetch agent data');
+          // Don't clear existing data on error, just show the error state
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setIsLoading(false);
+        }
+        pendingFetchRef.current = null;
       }
-    } catch (err) {
-      console.error('[useAgent] Failed to fetch agent data:', err);
-      
-      if (isMountedRef.current) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch agent data');
-        // Don't clear existing data on error, just show the error state
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setIsLoading(false);
-      }
-    }
+    })();
+
+    pendingFetchRef.current = fetchPromise;
+    return fetchPromise;
   }, [agentId]);
 
   // Initial fetch and setup auto-refresh
@@ -623,8 +649,23 @@ export function useAgent(agentId: string | null | undefined, refreshInterval = D
     setIsLoading(true);
   }, [agentId]);
 
+  // Memoize derived data to prevent unnecessary re-renders
+  const memoizedAgent = useMemo(() => {
+    if (!agent) return null;
+    
+    return {
+      ...agent,
+      // Pre-computed display values
+      displayName: agent.name || agent.id,
+      statusColor: agent.status === 'online' ? 'success' : agent.status === 'busy' ? 'warning' : 'neutral',
+      formattedEarnings: `$${agent.reputation.totalEarnings.toLocaleString()}`,
+      formattedSuccessRate: `${(agent.health.successRate * 100).toFixed(0)}%`,
+    };
+  }, [agent]);
+
   return {
-    agent,
+    agent: memoizedAgent,
+    rawAgent: agent,
     isLoading,
     error,
     refetch: fetchData,

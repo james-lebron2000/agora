@@ -1,0 +1,12 @@
+# Stock Stalker 项目任务
+
+project: stock_stalker
+type: BUG_FIX
+priority: P1
+description: 修复数据库时间格式问题，确保datetime正确序列化和反序列化
+details: |
+  当前问题: Database测试失败，时间格式解析错误
+  解决方案: 修复Event.from_dict方法中的时间解析逻辑
+  验收标准: 所有Database测试通过
+estimated_time: 30 minutes
+dependencies: []

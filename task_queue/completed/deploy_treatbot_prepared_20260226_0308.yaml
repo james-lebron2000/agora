@@ -1,0 +1,21 @@
+# Treatbot 项目任务
+
+project: treatbot
+type: DEPLOYMENT
+priority: P0
+description: 购买云服务器并部署Treatbot到生产环境
+details: |
+  任务内容:
+  1. 购买腾讯云轻量应用服务器（4C8G，约¥200/月）
+  2. 配置SSH连接
+  3. 运行 ./install-env.sh 安装环境
+  4. 运行 ./setup.sh 配置项目
+  5. 运行 make deploy 部署服务
+  6. 配置Nginx和SSL证书
+  7. 配置微信小程序服务器域名
+  
+  依赖条件: 用户购买服务器并提供IP地址
+estimated_time: 2 hours
+dependencies: []
+blocked: false
+deployment_guide: prepared

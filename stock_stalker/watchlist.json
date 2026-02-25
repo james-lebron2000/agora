@@ -1,0 +1,29 @@
+{
+  "updated_at": "2026-02-25T19:08:03.854206+00:00",
+  "items": [
+    {
+      "ticker": "AAPL",
+      "added_at": "2026-02-25T19:08:03.853615+00:00",
+      "last_scan_at": null,
+      "current_state": "S0_OBSERVE",
+      "conviction_score": 0,
+      "notes": "Apple Inc."
+    },
+    {
+      "ticker": "TSLA",
+      "added_at": "2026-02-25T19:08:03.854050+00:00",
+      "last_scan_at": null,
+      "current_state": "S0_OBSERVE",
+      "conviction_score": 0,
+      "notes": "Tesla Inc."
+    },
+    {
+      "ticker": "NVDA",
+      "added_at": "2026-02-25T19:08:03.854205+00:00",
+      "last_scan_at": null,
+      "current_state": "S0_OBSERVE",
+      "conviction_score": 0,
+      "notes": "NVIDIA Corp"
+    }
+  ]
+}

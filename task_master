@@ -1,0 +1,93 @@
+#!/bin/bash
+# task_master - 任务管理CLI工具
+
+COMMAND=$1
+
+usage() {
+    echo "Task Master - 自动化项目任务管理"
+    echo ""
+    echo "用法:"
+    echo "  ./task_master list                 查看所有任务"
+    echo "  ./task_master status               查看当前状态"
+    echo "  ./task_master report               生成进度报告"
+    echo "  ./task_master add <project> <desc> 添加新任务"
+    echo "  ./task_master install              安装cron定时任务"
+    echo "  ./task_master check                手动检查任务队列"
+    echo ""
+}
+
+case $COMMAND in
+    list)
+        echo "📋 任务队列:"
+        echo ""
+        echo "待办任务:"
+        ls ~/clawd/task_queue/pending/*.yaml 2>/dev/null | while read f; do
+            PRIORITY=$(grep "priority:" "$f" 2>/dev/null | cut -d: -f2 | xargs || echo "P2")
+            DESC=$(grep "description:" "$f" 2>/dev/null | cut -d: -f2- | xargs || echo "No description")
+            echo "  [${PRIORITY}] ${DESC:0:50}"
+        done
+        
+        echo ""
+        echo "进行中任务:"
+        ls ~/clawd/task_queue/in_progress/*.yaml 2>/dev/null | while read f; do
+            echo "  • $(basename $f .yaml)"
+        done || echo "  (无)"
+        
+        echo ""
+        echo "今日完成: $(ls ~/clawd/task_queue/completed/*$(date +%Y%m%d)* 2>/dev/null | wc -l) 个"
+        ;;
+    
+    status)
+        echo "📊 Task Master 状态"
+        echo "=================="
+        echo ""
+        echo "待办: $(ls ~/clawd/task_queue/pending/ 2>/dev/null | wc -l) 个"
+        echo "进行中: $(ls ~/clawd/task_queue/in_progress/ 2>/dev/null | wc -l) 个"
+        echo "今日完成: $(ls ~/clawd/task_queue/completed/*$(date +%Y%m%d)* 2>/dev/null | wc -l) 个"
+        echo ""
+        echo "定时任务状态:"
+        crontab -l | grep -q "task_master" && echo "  ✅ Cron 已安装" || echo "  ❌ Cron 未安装"
+        ;;
+    
+    report)
+        ./task_master_report.sh
+        ;;
+    
+    add)
+        PROJECT=$2
+        DESC=$3
+        
+        if [ -z "$PROJECT" ] || [ -z "$DESC" ]; then
+            echo "用法: ./task_master add <project> <description>"
+            exit 1
+        fi
+        
+        TASK_FILE="~/clawd/task_queue/pending/task_$(date +%Y%m%d_%H%M%S).yaml"
+        
+        cat > $TASK_FILE << EOF
+project: ${PROJECT}
+type: FEATURE
+priority: P2
+description: ${DESC}
+details: |
+  用户添加的任务
+  添加时间: $(date '+%Y-%m-%d %H:%M')
+estimated_time: 1 hour
+dependencies: []
+EOF
+        
+        echo "✅ 任务已添加: $DESC"
+        ;;
+    
+    install)
+        ./install_cron.sh
+        ;;
+    
+    check)
+        ./task_master_check.sh
+        ;;
+    
+    *)
+        usage
+        ;;
+esac

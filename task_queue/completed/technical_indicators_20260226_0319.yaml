@@ -1,0 +1,24 @@
+project: stock_stalker
+type: FEATURE
+priority: P2
+description: 添加技术指标计算模块 (RSI, MACD, Bollinger Bands, SMA, EMA)
+details: |
+  完成情况:
+  1. 创建 analysis/technical_indicators.py
+  2. 实现指标: RSI, MACD, SMA(20/50/200), EMA, Bollinger Bands, OBV, Pivot Points
+  3. 创建增强版扫描器 core/enhanced_scanner.py
+  4. 技术指标自动影响 Conviction Score
+  5. 测试通过，信号生成正常
+  
+  信号类型:
+  - RSI_OVERSOLD / RSI_OVERBOUGHT
+  - MACD_BULLISH / MACD_BEARISH
+  - MA_GOLDEN_CROSS / MA_DEATH_CROSS
+  - BB_SQUEEZE
+  
+  文件:
+  - analysis/technical_indicators.py
+  - analysis/__init__.py
+  - core/enhanced_scanner.py
+  - tests/test_technical_indicators.py
+completed_at: $(date -Iseconds)

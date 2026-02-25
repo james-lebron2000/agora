@@ -1,0 +1,15 @@
+# Copy this file to config/config.yaml and fill your credentials.
+
+sec:
+  user_agent: "stock-stalker/1.0 (your_email@example.com)"
+
+yahoo:
+  enabled: true
+
+openai:
+  api_key: "YOUR_OPENAI_API_KEY"
+  model: "gpt-4.1"
+
+risk:
+  max_single_name_pct: 0.20
+  default_stop_loss_pct: 0.04
