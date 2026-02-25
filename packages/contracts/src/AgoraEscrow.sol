@@ -35,6 +35,8 @@ contract AgoraEscrow {
   event Released(bytes32 indexed requestId, address indexed seller, uint256 amount, uint256 fee);
   event Refunded(bytes32 indexed requestId, address indexed buyer, uint256 amount);
   event TreasuryUpdated(address indexed previousTreasury, address indexed newTreasury);
+  event BatchReleased(bytes32[] requestIds, uint256 totalAmount, uint256 totalFee);
+  event BatchRefunded(bytes32[] requestIds, uint256 totalAmount);
 
   modifier onlyTreasury() {
     require(msg.sender == treasury, 'not treasury');
@@ -75,6 +77,69 @@ contract AgoraEscrow {
   }
 
   function release(bytes32 requestId) external {
+    _release(requestId);
+  }
+
+  function refund(bytes32 requestId) external {
+    _refund(requestId);
+  }
+
+  // Batch operations for gas efficiency
+  function batchRelease(bytes32[] calldata requestIds) external {
+    uint256 totalAmount = 0;
+    uint256 totalFee = 0;
+    
+    for (uint256 i = 0; i < requestIds.length; i++) {
+      Escrow storage escrow = escrows[requestIds[i]];
+      if (escrow.status != Status.Deposited) continue;
+      
+      bool timedOut = block.timestamp >= uint256(escrow.createdAt) + TIMEOUT;
+      bool isAuthorized = msg.sender == escrow.buyer || 
+                          msg.sender == treasury || 
+                          (timedOut && msg.sender == escrow.seller);
+      if (!isAuthorized) continue;
+
+      escrow.status = Status.Released;
+      uint256 fee = (escrow.amount * FEE_BPS) / 10_000;
+      uint256 payout = escrow.amount - fee;
+      
+      totalAmount += payout;
+      totalFee += fee;
+
+      require(usdc.transfer(escrow.seller, payout), 'payout failed');
+      if (fee > 0) {
+        require(usdc.transfer(treasury, fee), 'fee failed');
+      }
+      emit Released(requestIds[i], escrow.seller, payout, fee);
+    }
+    
+    emit BatchReleased(requestIds, totalAmount, totalFee);
+  }
+
+  function batchRefund(bytes32[] calldata requestIds) external {
+    uint256 totalAmount = 0;
+    
+    for (uint256 i = 0; i < requestIds.length; i++) {
+      Escrow storage escrow = escrows[requestIds[i]];
+      if (escrow.status != Status.Deposited) continue;
+      
+      bool timedOut = block.timestamp >= uint256(escrow.createdAt) + TIMEOUT;
+      bool isAuthorized = (msg.sender == escrow.buyer && timedOut) || 
+                          msg.sender == treasury;
+      if (!isAuthorized) continue;
+
+      escrow.status = Status.Refunded;
+      totalAmount += escrow.amount;
+
+      require(usdc.transfer(escrow.buyer, escrow.amount), 'refund failed');
+      emit Refunded(requestIds[i], escrow.buyer, escrow.amount);
+    }
+    
+    emit BatchRefunded(requestIds, totalAmount);
+  }
+
+  // Internal functions
+  function _release(bytes32 requestId) internal {
     Escrow storage escrow = escrows[requestId];
     require(escrow.status == Status.Deposited, 'not deposited');
 
@@ -97,7 +162,7 @@ contract AgoraEscrow {
     emit Released(requestId, escrow.seller, payout, fee);
   }
 
-  function refund(bytes32 requestId) external {
+  function _refund(bytes32 requestId) internal {
     Escrow storage escrow = escrows[requestId];
     require(escrow.status == Status.Deposited, 'not deposited');
 
