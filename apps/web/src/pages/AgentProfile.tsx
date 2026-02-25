@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useAgent } from '../hooks/useAgent'
+import { useAgent, type AgentHealthStatus } from '../hooks/useAgent'
 import {
   Activity,
   Wallet,
@@ -15,7 +15,11 @@ import {
   History,
   Settings,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Shield,
+  HeartPulse,
+  AlertTriangle,
+  Skull
 } from 'lucide-react'
 
 type Tab = 'overview' | 'economics' | 'capabilities' | 'history'
@@ -48,10 +52,112 @@ function HealthCard({ label, value, icon: Icon, color }: { label: string; value:
         <span className={`text-lg font-bold ${getStatusColor(value)}`}>{value}%</span>
       </div>
       <div className="h-2 bg-agora-100 rounded-full overflow-hidden">
-        <div 
+        <div
           className={`h-full rounded-full transition-all duration-500 ${getProgressColor(value)}`}
           style={{ width: `${value}%` }}
         />
+      </div>
+    </div>
+  )
+}
+
+function SurvivalStatusIndicator({ status, score, lastHeartbeat, consecutiveFailures, successRate }: {
+  status: AgentHealthStatus
+  score: number
+  lastHeartbeat: number
+  consecutiveFailures: number
+  successRate: number
+}) {
+  const getStatusConfig = (s: AgentHealthStatus) => {
+    switch (s) {
+      case 'healthy':
+        return {
+          icon: Shield,
+          color: 'text-success',
+          bgColor: 'bg-success/10',
+          borderColor: 'border-success/30',
+          label: 'Healthy',
+          pulse: 'animate-pulse'
+        }
+      case 'degraded':
+        return {
+          icon: AlertTriangle,
+          color: 'text-warning',
+          bgColor: 'bg-warning/10',
+          borderColor: 'border-warning/30',
+          label: 'Degraded',
+          pulse: ''
+        }
+      case 'critical':
+        return {
+          icon: HeartPulse,
+          color: 'text-red-500',
+          bgColor: 'bg-red-500/10',
+          borderColor: 'border-red-500/30',
+          label: 'Critical',
+          pulse: 'animate-pulse'
+        }
+      case 'dead':
+        return {
+          icon: Skull,
+          color: 'text-gray-500',
+          bgColor: 'bg-gray-500/10',
+          borderColor: 'border-gray-500/30',
+          label: 'Offline',
+          pulse: ''
+        }
+      default:
+        return {
+          icon: Shield,
+          color: 'text-agora-500',
+          bgColor: 'bg-agora-50',
+          borderColor: 'border-agora-200',
+          label: 'Unknown',
+          pulse: ''
+        }
+    }
+  }
+
+  const config = getStatusConfig(status)
+  const StatusIcon = config.icon
+  const timeSinceHeartbeat = Date.now() - lastHeartbeat
+  const heartbeatAgo = timeSinceHeartbeat < 60000
+    ? 'Just now'
+    : timeSinceHeartbeat < 3600000
+      ? `${Math.floor(timeSinceHeartbeat / 60000)}m ago`
+      : `${Math.floor(timeSinceHeartbeat / 3600000)}h ago`
+
+  return (
+    <div className={`rounded-xl p-4 border ${config.borderColor} ${config.bgColor}`}>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-xl bg-white ${config.color} ${config.pulse}`}>
+            <StatusIcon className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-agora-900">Survival Status</h3>
+            <p className={`text-sm ${config.color} font-medium`}>{config.label}</p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-bold text-agora-900">{score}</p>
+          <p className="text-xs text-agora-500">Survival Score</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="bg-white/50 rounded-lg p-2">
+          <p className="text-lg font-semibold text-agora-900">{(successRate * 100).toFixed(0)}%</p>
+          <p className="text-xs text-agora-500">Success Rate</p>
+        </div>
+        <div className="bg-white/50 rounded-lg p-2">
+          <p className="text-lg font-semibold text-agora-900">{consecutiveFailures}</p>
+          <p className="text-xs text-agora-500">Failures</p>
+        </div>
+        <div className="bg-white/50 rounded-lg p-2">
+          <p className="text-xs font-semibold text-agora-900">{heartbeatAgo}</p>
+          <p className="text-xs text-agora-500">Last Beat</p>
+        </div>
       </div>
     </div>
   )
@@ -143,10 +249,33 @@ export function AgentProfile() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-success" />
-          <span className="text-sm text-agora-200">All systems operational</span>
+          {agent.health.survivalStatus === 'healthy' ? (
+            <CheckCircle className="w-4 h-4 text-success" />
+          ) : agent.health.survivalStatus === 'degraded' ? (
+            <AlertTriangle className="w-4 h-4 text-warning" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-red-400" />
+          )}
+          <span className="text-sm text-agora-200">
+            {agent.health.survivalStatus === 'healthy'
+              ? 'All systems operational'
+              : agent.health.survivalStatus === 'degraded'
+                ? 'Performance degraded'
+                : agent.health.survivalStatus === 'critical'
+                  ? 'Critical issues detected'
+                  : 'Agent offline'}
+          </span>
         </div>
       </div>
+
+      {/* Survival Status Indicator - Real SDK Data */}
+      <SurvivalStatusIndicator
+        status={agent.health.survivalStatus}
+        score={agent.health.survivalScore}
+        lastHeartbeat={agent.health.lastHeartbeat}
+        consecutiveFailures={agent.health.consecutiveFailures}
+        successRate={agent.health.successRate}
+      />
 
       {/* Health Metrics Grid */}
       <div className="grid grid-cols-2 gap-3">
@@ -293,25 +422,56 @@ export function AgentProfile() {
         </div>
       </div>
 
-      {/* Chain Distribution */}
+      {/* Chain Distribution - Real Cross-Chain Data */}
       <div className="bg-white rounded-2xl p-4 border border-agora-100 shadow-sm">
         <h3 className="font-semibold text-agora-900 mb-4 flex items-center gap-2">
           <Globe className="w-5 h-5 text-agora-500" />
-          Chain Distribution
+          Cross-Chain Assets
+          <span className="text-xs text-agora-400 font-normal">(Live)</span>
         </h3>
+
+        {/* Total Net Worth */}
+        <div className="bg-gradient-to-r from-agora-50 to-transparent rounded-xl p-4 mb-4">
+          <p className="text-sm text-agora-500 mb-1">Total Net Worth</p>
+          <p className="text-2xl font-bold text-agora-900">
+            ${agent.economics.netWorthUSD?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '0.00'}
+          </p>
+          <div className="flex gap-4 mt-2 text-sm">
+            <span className="text-agora-600">
+              USDC: <strong>${agent.economics.totalUSDC?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '0.00'}</strong>
+            </span>
+            <span className="text-agora-600">
+              Native: <strong>${agent.economics.totalNativeUSD?.toLocaleString(undefined, { maximumFractionDigits: 2 }) || '0.00'}</strong>
+            </span>
+          </div>
+        </div>
+
+        {/* Chain Distribution */}
         <div className="space-y-3">
           {agent.economics.chains.length > 0 ? (
             agent.economics.chains.map((chain) => (
-              <div key={chain.name}>
+              <div key={chain.name} className="group">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-medium text-agora-700">{chain.name}</span>
-                  <span className="text-sm font-bold text-agora-900">{chain.percentage}%</span>
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: chain.color }}
+                    />
+                    <span className="text-sm font-medium text-agora-700">{chain.name}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-bold text-agora-900">{chain.percentage}%</span>
+                  </div>
                 </div>
-                <div className="h-2 bg-agora-100 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full rounded-full transition-all duration-500"
+                <div className="h-2 bg-agora-100 rounded-full overflow-hidden mb-1">
+                  <div
+                    className="h-full rounded-full transition-all duration-500 group-hover:opacity-80"
                     style={{ width: `${chain.percentage}%`, backgroundColor: chain.color }}
                   />
+                </div>
+                <div className="flex justify-between text-xs text-agora-500">
+                  <span>{chain.usdcBalance.toFixed(2)} USDC</span>
+                  <span>{chain.nativeBalance.toFixed(4)} ETH</span>
                 </div>
               </div>
             ))
@@ -319,6 +479,25 @@ export function AgentProfile() {
             <p className="text-sm text-agora-500 text-center py-4">No chain distribution data</p>
           )}
         </div>
+
+        {/* Raw Balances Table */}
+        {agent.economics.rawBalances && agent.economics.rawBalances.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-agora-100">
+            <p className="text-xs text-agora-500 uppercase tracking-wider mb-2">On-Chain Balances</p>
+            <div className="space-y-1">
+              {agent.economics.rawBalances.map((balance) => (
+                <div key={balance.chain} className="flex justify-between text-sm py-1">
+                  <span className="capitalize text-agora-600">{balance.chain}</span>
+                  <div className="text-right">
+                    <span className="font-medium text-agora-900">{parseFloat(balance.usdcBalance).toFixed(2)} USDC</span>
+                    <span className="text-agora-400 mx-1">|</span>
+                    <span className="text-agora-600">{parseFloat(balance.nativeBalance).toFixed(4)} ETH</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

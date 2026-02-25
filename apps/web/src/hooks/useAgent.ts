@@ -1,5 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { resolveRelayUrl } from '../lib/relayUrl';
+import {
+  getOrCreateSurvivalManager,
+  type AgentHealthStatus,
+  type SurvivalSnapshot
+} from '@agora/sdk/survival';
+import {
+  getAllBalances,
+  type SupportedChain,
+  type ChainBalance
+} from '@agora/sdk/bridge';
+import { createPublicClient, http, formatUnits, type Address } from 'viem';
+import { base, optimism, arbitrum, mainnet } from 'viem/chains';
 
 export type AgentStatus = 'online' | 'offline' | 'busy';
 export type AgentTier = 'bronze' | 'silver' | 'gold' | 'platinum';
@@ -17,6 +29,25 @@ export interface AgentHealth {
   network: number;
   economic: number;
   overall: number;
+  /** Real survival status from EchoSurvivalManager */
+  survivalStatus: AgentHealthStatus;
+  /** Survival score (0-100) */
+  survivalScore: number;
+  /** Last heartbeat timestamp */
+  lastHeartbeat: number;
+  /** Consecutive failures count */
+  consecutiveFailures: number;
+  /** Success rate (0-1) */
+  successRate: number;
+}
+
+export interface ChainDistribution {
+  name: string;
+  percentage: number;
+  color: string;
+  usdcBalance: number;
+  nativeBalance: number;
+  chainId: SupportedChain;
 }
 
 export interface AgentEconomics {
@@ -24,11 +55,15 @@ export interface AgentEconomics {
   runwayDays: number;
   dailyBurn: number;
   efficiency: number;
-  chains: Array<{
-    name: string;
-    percentage: number;
-    color: string;
-  }>;
+  chains: ChainDistribution[];
+  /** Raw chain balances from CrossChainBridge */
+  rawBalances: ChainBalance[];
+  /** Total USDC across all chains */
+  totalUSDC: number;
+  /** Total native token value in USD */
+  totalNativeUSD: number;
+  /** Net worth in USD */
+  netWorthUSD: number;
 }
 
 export interface AgentCapability {
@@ -67,12 +102,129 @@ export interface AgentResponse {
 // API configuration
 const DEFAULT_REFRESH_INTERVAL = 30000; // 30 seconds
 
+// Chain configuration for viem
+const SUPPORTED_CHAINS = { ethereum: mainnet, base, optimism, arbitrum } as const;
+
+// USDC addresses
+const USDC_ADDRESSES: Record<SupportedChain, Address> = {
+  ethereum: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+  optimism: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+  arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
+};
+
+// RPC endpoints
+const RPC_URLS: Record<SupportedChain, string> = {
+  ethereum: 'https://eth.llamarpc.com',
+  base: 'https://base.llamarpc.com',
+  optimism: 'https://optimism.llamarpc.com',
+  arbitrum: 'https://arbitrum.llamarpc.com'
+};
+
+// Chain colors for UI
+const CHAIN_COLORS: Record<SupportedChain, string> = {
+  ethereum: '#627EEA',
+  base: '#0052FF',
+  optimism: '#FF0420',
+  arbitrum: '#28A0F0'
+};
+
+// Cache for survival managers and balance data
+const survivalManagerCache = new Map<string, ReturnType<typeof getOrCreateSurvivalManager>>();
+const balanceCache = new Map<string, { data: ChainBalance[]; timestamp: number }>();
+const BALANCE_CACHE_TTL = 30000; // 30 seconds
+
 /**
- * Fetch agent data from the relay/API
+ * Get USDC balance for an address on a specific chain
+ */
+async function getUSDCBalance(address: Address, chain: SupportedChain): Promise<string> {
+  try {
+    const client = createPublicClient({
+      chain: SUPPORTED_CHAINS[chain],
+      transport: http(RPC_URLS[chain])
+    });
+    
+    const balance = await client.readContract({
+      address: USDC_ADDRESSES[chain],
+      abi: [{
+        name: 'balanceOf',
+        type: 'function',
+        inputs: [{ name: 'account', type: 'address' }],
+        outputs: [{ type: 'uint256' }],
+        stateMutability: 'view'
+      }],
+      functionName: 'balanceOf',
+      args: [address]
+    });
+    return formatUnits(balance, 6);
+  } catch (error) {
+    console.error(`[useAgent] Failed to get USDC balance on ${chain}:`, error);
+    return '0';
+  }
+}
+
+/**
+ * Get native token balance for an address on a specific chain
+ */
+async function getNativeBalance(address: Address, chain: SupportedChain): Promise<string> {
+  try {
+    const client = createPublicClient({
+      chain: SUPPORTED_CHAINS[chain],
+      transport: http(RPC_URLS[chain])
+    });
+    const balance = await client.getBalance({ address });
+    return formatUnits(balance, 18);
+  } catch (error) {
+    console.error(`[useAgent] Failed to get native balance on ${chain}:`, error);
+    return '0';
+  }
+}
+
+/**
+ * Get all balances across chains with caching
+ */
+async function getAllBalancesCached(address: Address): Promise<ChainBalance[]> {
+  const cacheKey = address.toLowerCase();
+  const cached = balanceCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < BALANCE_CACHE_TTL) {
+    return cached.data;
+  }
+  
+  const chains: SupportedChain[] = ['ethereum', 'base', 'optimism', 'arbitrum'];
+  const balances: ChainBalance[] = [];
+  
+  await Promise.all(
+    chains.map(async (chain) => {
+      const [nativeBalance, usdcBalance] = await Promise.all([
+        getNativeBalance(address, chain),
+        getUSDCBalance(address, chain)
+      ]);
+      balances.push({ chain, nativeBalance, usdcBalance });
+    })
+  );
+  
+  balanceCache.set(cacheKey, { data: balances, timestamp: Date.now() });
+  return balances;
+}
+
+/**
+ * Get or create survival manager for an agent
+ */
+function getSurvivalManager(agentId: string, address: Address) {
+  const cacheKey = `${agentId}:${address}`;
+  if (!survivalManagerCache.has(cacheKey)) {
+    survivalManagerCache.set(cacheKey, getOrCreateSurvivalManager(agentId, address));
+  }
+  return survivalManagerCache.get(cacheKey)!;
+}
+
+/**
+ * Fetch agent data from the relay/API with SDK integration
  */
 async function fetchAgent(agentId: string): Promise<Agent> {
   const relayUrl = resolveRelayUrl();
-  
+
   try {
     // Fetch agents list and find the specific agent
     const response = await fetch(`${relayUrl}/v1/agents`, {
@@ -87,20 +239,20 @@ async function fetchAgent(agentId: string): Promise<Agent> {
     }
 
     const result = await response.json();
-    
+
     if (!result.ok || !Array.isArray(result.agents)) {
       throw new Error('Invalid API response');
     }
 
     // Find the specific agent
     const agentData = result.agents.find((a: any) => a.id === agentId);
-    
+
     if (!agentData) {
       throw new Error(`Agent ${agentId} not found`);
     }
 
-    // Transform API data to Agent interface
-    return transformAgentData(agentData);
+    // Transform API data to Agent interface (now async for SDK calls)
+    return await transformAgentData(agentData);
   } catch (error) {
     console.error('[useAgent] Failed to fetch agent:', error);
     throw error;
@@ -153,36 +305,83 @@ async function fetchAgentActivity(agentId: string): Promise<AgentActivity[]> {
 }
 
 /**
- * Transform raw API agent data to Agent interface
+ * Transform raw API agent data to Agent interface with SDK integration
  */
-function transformAgentData(data: any): Agent {
+async function transformAgentData(data: any): Promise<Agent> {
   const reputation = data.reputation || {};
   const wallet = data.wallet || {};
-  const balances = wallet.balances || [];
+  const address = data.address as Address | undefined;
   
-  // Calculate totals
+  // Get balances from CrossChainBridge SDK (real on-chain data)
+  let rawBalances: ChainBalance[] = [];
   let totalUSDC = 0;
   let totalNative = 0;
   const nativePriceUSD = 3000; // ETH price
   
-  for (const bal of balances) {
-    totalUSDC += parseFloat(bal.usdcBalance || '0');
-    totalNative += parseFloat(bal.nativeBalance || '0');
+  if (address) {
+    try {
+      rawBalances = await getAllBalancesCached(address);
+      for (const bal of rawBalances) {
+        totalUSDC += parseFloat(bal.usdcBalance || '0');
+        totalNative += parseFloat(bal.nativeBalance || '0');
+      }
+    } catch (error) {
+      console.error('[useAgent] Failed to fetch balances:', error);
+    }
+  }
+  
+  // Fallback to API data if SDK fetch fails
+  if (rawBalances.length === 0 && wallet.balances) {
+    for (const bal of wallet.balances) {
+      totalUSDC += parseFloat(bal.usdcBalance || '0');
+      totalNative += parseFloat(bal.nativeBalance || '0');
+    }
+    rawBalances = wallet.balances.map((b: any) => ({
+      chain: b.chain as SupportedChain,
+      nativeBalance: b.nativeBalance || '0',
+      usdcBalance: b.usdcBalance || '0'
+    }));
   }
   
   const totalNativeUSD = totalNative * nativePriceUSD;
   const netWorthUSD = totalUSDC + totalNativeUSD;
   
+  // Get survival data from EchoSurvivalManager SDK
+  let survivalSnapshot: SurvivalSnapshot | null = null;
+  let survivalScore = 50;
+  let survivalStatus: AgentHealthStatus = 'healthy';
+  let lastHeartbeat = Date.now();
+  let consecutiveFailures = 0;
+  let successRate = 1.0;
+  
+  if (address) {
+    try {
+      const survivalManager = getSurvivalManager(data.id, address);
+      survivalSnapshot = await survivalManager.performSurvivalCheck(rawBalances);
+      survivalStatus = survivalSnapshot.health.status;
+      survivalScore = survivalSnapshot.health.overall;
+      
+      // Get detailed health metrics
+      const health = survivalManager.checkHealth(data.id);
+      lastHeartbeat = health.lastHeartbeat;
+      consecutiveFailures = health.consecutiveFailures;
+      successRate = health.successRate;
+    } catch (error) {
+      console.error('[useAgent] Failed to fetch survival data:', error);
+    }
+  }
+  
   // Calculate runway
   const dailyBurn = parseFloat(data.daily_burn_rate || '0.80');
   const runwayDays = dailyBurn > 0 ? Math.floor(netWorthUSD / dailyBurn) : 999;
   
-  // Calculate health score
+  // Calculate overall health combining reputation and survival
   const repScore = reputation.score || 0;
-  const overallHealth = Math.min(100, Math.round(repScore * 20) + 20);
+  const repHealth = Math.min(100, Math.round(repScore * 20) + 20);
+  const overallHealth = Math.round((repHealth + survivalScore) / 2);
   
   // Calculate chain distribution
-  const chainDistribution = calculateChainDistribution(balances, netWorthUSD, nativePriceUSD);
+  const chainDistribution = calculateChainDistribution(rawBalances, netWorthUSD, nativePriceUSD);
   
   // Get tier
   const tier = getTierFromScore(repScore);
@@ -203,6 +402,11 @@ function transformAgentData(data: any): Agent {
       network: data.metrics?.network || 82,
       economic: data.metrics?.economic || Math.min(100, Math.round(totalUSDC * 2)),
       overall: overallHealth,
+      survivalStatus,
+      survivalScore,
+      lastHeartbeat,
+      consecutiveFailures,
+      successRate,
     },
     economics: {
       balances: {
@@ -213,6 +417,10 @@ function transformAgentData(data: any): Agent {
       dailyBurn,
       efficiency: Math.round((totalUSDC > 0 ? 60 : 40) + (runwayDays > 30 ? 20 : runwayDays / 3)),
       chains: chainDistribution,
+      rawBalances,
+      totalUSDC,
+      totalNativeUSD,
+      netWorthUSD,
     },
     capabilities: transformCapabilities(data.capabilities || []),
     recentActivity: [], // Will be populated separately
@@ -223,32 +431,29 @@ function transformAgentData(data: any): Agent {
  * Calculate chain distribution from balances
  */
 function calculateChainDistribution(
-  balances: any[], 
-  netWorthUSD: number, 
+  balances: ChainBalance[],
+  netWorthUSD: number,
   nativePriceUSD: number
-): Array<{ name: string; percentage: number; color: string }> {
-  const chainColors: Record<string, string> = {
-    ethereum: '#627EEA',
-    base: '#0052FF',
-    optimism: '#FF0420',
-    arbitrum: '#28A0F0',
-  };
-  
-  const chains = ['ethereum', 'base', 'optimism', 'arbitrum'];
-  
+): ChainDistribution[] {
+  const chains: SupportedChain[] = ['ethereum', 'base', 'optimism', 'arbitrum'];
+
   return chains.map(chain => {
-    const balance = balances.find((b: any) => b.chain === chain);
+    const balance = balances.find((b) => b.chain === chain);
     const usdc = parseFloat(balance?.usdcBalance || '0');
-    const native = parseFloat(balance?.nativeBalance || '0') * nativePriceUSD;
-    const total = usdc + native;
+    const native = parseFloat(balance?.nativeBalance || '0');
+    const nativeUSD = native * nativePriceUSD;
+    const total = usdc + nativeUSD;
     const percentage = netWorthUSD > 0 ? Math.round((total / netWorthUSD) * 100) : 0;
-    
+
     return {
       name: chain.charAt(0).toUpperCase() + chain.slice(1),
       percentage,
-      color: chainColors[chain] || '#999',
+      color: CHAIN_COLORS[chain],
+      usdcBalance: usdc,
+      nativeBalance: native,
+      chainId: chain,
     };
-  }).filter(c => c.percentage > 0);
+  }).filter(c => c.percentage > 0).sort((a, b) => b.percentage - a.percentage);
 }
 
 /**
