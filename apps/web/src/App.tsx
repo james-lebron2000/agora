@@ -12,6 +12,7 @@ import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 import { Echo } from './pages/Echo'
 import { Analytics as Tokenomics } from './pages/Analytics'
 import { ARHud } from './pages/ARHud'
+import { AgentProfilePage } from './pages/AgentProfile'
 // import { AgentChat } from './components/AgentChat'
 
 type EventsResp = { ok: boolean; events: AgoraEvent[]; lastTs: string | null }
@@ -50,7 +51,7 @@ const MOCK_METRICS: NetworkMetrics = {
   volume24h: 12450,
 }
 
-type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge'
+type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge' | 'profile'
 
 const FALLBACK_AGENTS: AgentSummary[] = [
   {
@@ -136,6 +137,7 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
     if (window.location.pathname === '/echo') return 'echo'
     if (window.location.pathname === '/tokenomics') return 'tokenomics'
     if (window.location.pathname === '/bridge') return 'bridge'
+    if (window.location.pathname === '/profile') return 'profile'
     if (window.location.pathname.startsWith('/analytics')) return 'analytics'
     return 'home'
   }
@@ -159,7 +161,9 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
               ? '/ar'
               : next === 'bridge'
                 ? '/bridge'
-                : '/'
+                : next === 'profile'
+                  ? '/profile'
+                  : '/'
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path)
       setRoute(next)
@@ -578,6 +582,12 @@ function AppContent() {
         active={route === 'bridge'}
         onClick={() => navigate('bridge')}
       />
+      <NavLink
+        label="Profile"
+        href="/profile"
+        active={route === 'profile'}
+        onClick={() => navigate('profile')}
+      />
     </>
   )
 
@@ -615,6 +625,10 @@ function AppContent() {
   
   if (route === 'ar') {
     return <ARHud />
+  }
+
+  if (route === 'profile') {
+    return <AgentProfilePage />
   }
 
   return (
