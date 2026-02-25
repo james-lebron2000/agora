@@ -9,7 +9,28 @@ import {
   Image,
   Dimensions,
   ActivityIndicator,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
+import {
+  scale,
+  verticalScale,
+  moderateScale,
+  responsiveFontSize,
+  spacing,
+  SCREEN_WIDTH,
+} from '../utils/responsive';
+
+// Helper to get spacing value
+const getSpacing = (value: number): number => {
+  if (value <= 4) return spacing.xs;
+  if (value <= 8) return spacing.sm;
+  if (value <= 12) return spacing.md;
+  if (value <= 16) return spacing.lg;
+  if (value <= 20) return spacing.xl;
+  return spacing['2xl'];
+};
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Rect, Text as SvgText, Line } from 'react-native-svg';
@@ -43,7 +64,7 @@ import type { Task } from '../types/navigation';
 
 type SurvivalStatus = 'healthy' | 'stable' | 'degraded' | 'critical' | 'dying';
 
-const { width: screenWidth } = Dimensions.get('window');
+const screenWidth = SCREEN_WIDTH;
 
 const statusMeta: Record<SurvivalStatus, { color: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = {
   healthy: { color: '#10b981', label: 'Healthy', icon: 'checkmark-circle' },
@@ -215,9 +236,9 @@ export default function ProfileScreen() {
 
   // Calculate agent level from stats
   const agentLevel = useMemo(() => {
-    const totalXP = (stats?.completedTasks ?? 0) * 100 + (stats?.totalEarnings ?? 0);
+    const totalXP = (stats?.tasksCompleted ?? 0) * 100 + (parseFloat(profile?.totalEarned || '0') ?? 0);
     return calculateLevel(totalXP);
-  }, [stats]);
+  }, [stats, profile]);
 
   // Generate leaderboard entries
   const leaderboardEntries = useMemo(() => {
@@ -343,8 +364,16 @@ export default function ProfileScreen() {
   } : { totalEarned: '0', totalSpent: '0' };
 
   return (
-    <>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidingView}
+      >
+        <ScrollView
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
         {/* Enhanced Header with AgentAvatar */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.editPill} onPress={() => setIsEditOpen(true)}>
@@ -550,21 +579,22 @@ export default function ProfileScreen() {
           <Text style={styles.disconnectText}>Disconnect Wallet</Text>
         </TouchableOpacity>
 
-        <Text style={styles.version}>Agora Mobile v1.2.0</Text>
-      </ScrollView>
+          <Text style={styles.version}>Agora Mobile v1.2.0</Text>
+        </ScrollView>
 
-      <ProfileEditModal
-        visible={isEditOpen}
-        initialUsername={displayName}
-        initialNickname={nickname}
-        initialAvatarUri={avatarUri}
-        isSaving={isSavingProfile}
-        isUploading={isUploadingAvatar}
-        onClose={() => setIsEditOpen(false)}
-        onSave={handleProfileSave}
-        onPickAvatar={handleAvatarPick}
-      />
-    </>
+        <ProfileEditModal
+          visible={isEditOpen}
+          initialUsername={displayName}
+          initialNickname={nickname}
+          initialAvatarUri={avatarUri}
+          isSaving={isSavingProfile}
+          isUploading={isUploadingAvatar}
+          onClose={() => setIsEditOpen(false)}
+          onSave={handleProfileSave}
+          onPickAvatar={handleAvatarPick}
+        />
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
@@ -573,96 +603,102 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8fafc',
   },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   sdkBadge: {
     backgroundColor: '#6366f1',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(2),
+    borderRadius: moderateScale(10),
   },
   sdkBadgeText: {
     color: '#ffffff',
-    fontSize: 10,
+    fontSize: responsiveFontSize(10),
     fontWeight: '700',
   },
   loadingSection: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 24,
+    paddingVertical: verticalScale(24),
   },
   loadingText: {
-    fontSize: 13,
+    fontSize: responsiveFontSize(13),
     color: '#64748b',
-    marginTop: 8,
+    marginTop: verticalScale(8),
   },
   header: {
     alignItems: 'center',
-    padding: 24,
+    padding: spacing.lg,
     backgroundColor: 'white',
     position: 'relative',
   },
   editPill: {
     position: 'absolute',
-    top: 16,
-    right: 16,
+    top: verticalScale(16),
+    right: scale(16),
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: scale(4),
     backgroundColor: '#eef2ff',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(6),
+    borderRadius: moderateScale(20),
   },
   editPillText: {
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     fontWeight: '600',
     color: '#4f46e5',
   },
   avatarWrapper: {
-    marginBottom: 12,
+    marginBottom: verticalScale(12),
   },
   avatarImage: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+    width: moderateScale(96),
+    height: moderateScale(96),
+    borderRadius: moderateScale(48),
     backgroundColor: '#e2e8f0',
   },
   userName: {
-    fontSize: 22,
+    fontSize: responsiveFontSize(22),
     fontWeight: '700',
     color: '#1e293b',
   },
   nickname: {
-    fontSize: 13,
+    fontSize: responsiveFontSize(13),
     color: '#6366f1',
-    marginTop: 2,
-    marginBottom: 10,
+    marginTop: verticalScale(2),
+    marginBottom: verticalScale(10),
   },
   walletLabel: {
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     color: '#94a3b8',
-    marginBottom: 3,
+    marginBottom: verticalScale(3),
   },
   walletAddress: {
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     fontWeight: '600',
     color: '#1e293b',
     fontFamily: 'monospace',
   },
   shareButton: {
-    marginTop: 16,
+    marginTop: verticalScale(16),
   },
   survivalCard: {
     backgroundColor: 'white',
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 14,
-    padding: 16,
+    marginHorizontal: scale(16),
+    marginTop: verticalScale(16),
+    borderRadius: moderateScale(14),
+    padding: spacing.lg,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -675,40 +711,40 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: responsiveFontSize(16),
     color: '#0f172a',
     fontWeight: '700',
   },
   cardSubTitle: {
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     color: '#64748b',
-    marginTop: 3,
+    marginTop: verticalScale(3),
   },
   survivalStatus: {
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    borderRadius: moderateScale(20),
+    paddingHorizontal: scale(10),
+    paddingVertical: verticalScale(5),
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: scale(4),
   },
   survivalStatusText: {
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     fontWeight: '700',
   },
   survivalScore: {
-    marginTop: 10,
-    fontSize: 26,
+    marginTop: verticalScale(10),
+    fontSize: responsiveFontSize(26),
     fontWeight: '700',
     color: '#0f172a',
   },
   statsContainer: {
     flexDirection: 'row',
     backgroundColor: 'white',
-    margin: 16,
-    marginBottom: 12,
-    borderRadius: 14,
-    padding: 18,
+    margin: scale(16),
+    marginBottom: verticalScale(12),
+    borderRadius: moderateScale(14),
+    padding: spacing.lg,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -724,22 +760,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
   },
   statValue: {
-    fontSize: 22,
+    fontSize: responsiveFontSize(22),
     fontWeight: 'bold',
     color: '#1e293b',
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     color: '#94a3b8',
-    marginTop: 4,
+    marginTop: verticalScale(4),
   },
   section: {
     backgroundColor: 'white',
-    margin: 16,
+    margin: scale(16),
     marginTop: 0,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: moderateScale(14),
+    padding: spacing.lg,
+    marginBottom: verticalScale(12),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -750,59 +786,59 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   sectionTitle: {
-    fontSize: 17,
+    fontSize: responsiveFontSize(17),
     fontWeight: '700',
     color: '#1e293b',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   sectionHint: {
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     color: '#64748b',
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   seeAll: {
     color: '#6366f1',
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     fontWeight: '600',
   },
   chartContainer: {
     backgroundColor: '#f8fafc',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 2,
+    borderRadius: moderateScale(10),
+    paddingVertical: verticalScale(8),
+    paddingHorizontal: scale(2),
   },
   balanceWrapper: {
-    maxHeight: 520,
+    maxHeight: verticalScale(520),
   },
   emptyTasks: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: verticalScale(24),
   },
   emptyText: {
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     color: '#64748b',
-    marginTop: 8,
-    marginBottom: 12,
+    marginTop: verticalScale(8),
+    marginBottom: verticalScale(12),
   },
   createButton: {
     backgroundColor: '#6366f1',
-    paddingHorizontal: 20,
-    paddingVertical: 11,
-    borderRadius: 8,
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(11),
+    borderRadius: moderateScale(8),
   },
   createButtonText: {
     color: 'white',
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     fontWeight: '600',
   },
   taskRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: verticalScale(12),
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
@@ -810,28 +846,28 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   taskTitle: {
-    fontSize: 15,
+    fontSize: responsiveFontSize(15),
     fontWeight: '500',
     color: '#1e293b',
-    marginBottom: 4,
+    marginBottom: verticalScale(4),
   },
   taskDate: {
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     color: '#94a3b8',
   },
   taskMeta: {
     alignItems: 'flex-end',
   },
   taskBudget: {
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     fontWeight: '600',
     color: '#6366f1',
-    marginBottom: 4,
+    marginBottom: verticalScale(4),
   },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(2),
+    borderRadius: moderateScale(10),
   },
   status_open: {
     backgroundColor: '#dbeafe',
@@ -846,7 +882,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fee2e2',
   },
   statusText: {
-    fontSize: 10,
+    fontSize: responsiveFontSize(10),
     fontWeight: '500',
     textTransform: 'capitalize',
   },
@@ -855,21 +891,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fee2e2',
-    margin: 16,
-    marginTop: 2,
-    padding: 14,
-    borderRadius: 12,
+    margin: scale(16),
+    marginTop: verticalScale(2),
+    padding: spacing.lg,
+    borderRadius: moderateScale(12),
   },
   disconnectText: {
     color: '#ef4444',
-    fontSize: 15,
+    fontSize: responsiveFontSize(15),
     fontWeight: '700',
-    marginLeft: 8,
+    marginLeft: scale(8),
   },
   version: {
     textAlign: 'center',
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     color: '#94a3b8',
-    marginBottom: 26,
+    marginBottom: verticalScale(26),
   },
 });

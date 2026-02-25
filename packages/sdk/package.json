@@ -21,6 +21,14 @@
     "./bridge": {
       "import": "./dist/bridge.js",
       "types": "./dist/bridge.d.ts"
+    },
+    "./profile": {
+      "import": "./dist/profile.js",
+      "types": "./dist/profile.d.ts"
+    },
+    "./performance": {
+      "import": "./dist/performance.js",
+      "types": "./dist/performance.d.ts"
     }
   },
   "scripts": {

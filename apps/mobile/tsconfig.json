@@ -4,8 +4,11 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@agora/sdk": ["../../packages/sdk/src/index.ts"],
+      "@agora/sdk/*": ["../../packages/sdk/src/*.ts"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx"]
+  "include": ["**/*.ts", "**/*.tsx", "../../packages/sdk/src/**/*.ts"],
+  "exclude": ["node_modules", "../../packages/sdk/node_modules"]
 }

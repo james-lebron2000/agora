@@ -17,18 +17,15 @@ export { ShareProfile } from './ShareProfile';
 export { ProfileStats } from './ProfileStats';
 export { AchievementGallery, type Achievement, type AchievementTier } from './AchievementGallery';
 
-// Responsive utilities (re-export from utils)
+// Responsive utilities
 export {
   scale,
   verticalScale,
   moderateScale,
+  responsiveFontSize,
+  spacing,
   isSmallScreen,
   isTablet,
-  hasNotch,
-  getSafeAreaPadding,
-  fontSize,
-  spacing,
-  touchTarget,
   SCREEN_WIDTH,
   SCREEN_HEIGHT,
 } from '../utils/responsive';

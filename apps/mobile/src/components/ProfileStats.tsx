@@ -41,7 +41,7 @@ const StatCard: React.FC<StatCardProps> = ({ icon, label, value, subtext, color,
 );
 
 export const ProfileStats: React.FC<ProfileStatsProps> = ({ stats, earnings }) => {
-  const cards: Omit<StatCardProps, 'icon'> & { icon: keyof typeof Ionicons.glyphMap }[] = [
+  const cards: StatCardProps[] = [
     {
       icon: 'checkmark-circle-outline',
       label: 'Tasks Done',

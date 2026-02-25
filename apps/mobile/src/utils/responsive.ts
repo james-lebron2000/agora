@@ -1,4 +1,4 @@
-import { Dimensions, PixelRatio, Platform } from 'react-native';
+import { Dimensions, PixelRatio, Platform, StatusBar, useWindowDimensions } from 'react-native';
 
 // Base dimensions (iPhone 14/15 reference)
 const BASE_WIDTH = 390;
@@ -70,7 +70,27 @@ export const getSafeAreaPadding = () => {
       bottom: hasNotch() ? 34 : 20,
     };
   }
-  return { top: 24, bottom: 24 };
+  return { top: StatusBar.currentHeight || 24, bottom: 24 };
+};
+
+// Device categorization based on screen width
+export const DeviceType = {
+  SMALL: 'small',     // < 375px (iPhone SE, mini)
+  MEDIUM: 'medium',   // 375px - 414px (iPhone 14, 15)
+  LARGE: 'large',     // 415px - 430px (iPhone 14/15 Pro Max)
+  XLARGE: 'xlarge',   // > 430px (iPad, tablets)
+} as const;
+
+export type DeviceTypeValue = typeof DeviceType[keyof typeof DeviceType];
+
+/**
+ * Get device type based on screen width
+ */
+export const getDeviceType = (width: number = SCREEN_WIDTH): DeviceTypeValue => {
+  if (width < 375) return DeviceType.SMALL;
+  if (width < 415) return DeviceType.MEDIUM;
+  if (width <= 430) return DeviceType.LARGE;
+  return DeviceType.XLARGE;
 };
 
 /**
@@ -101,6 +121,64 @@ export const spacing = {
 };
 
 /**
+ * Get responsive spacing based on device type
+ */
+export const getResponsiveSpacing = () => {
+  const deviceType = getDeviceType();
+  
+  switch (deviceType) {
+    case DeviceType.SMALL:
+      return {
+        xs: 2,
+        sm: 4,
+        md: 8,
+        lg: 12,
+        xl: 16,
+        xxl: 24,
+      };
+    case DeviceType.MEDIUM:
+      return {
+        xs: 4,
+        sm: 8,
+        md: 12,
+        lg: 16,
+        xl: 20,
+        xxl: 28,
+      };
+    case DeviceType.LARGE:
+      return {
+        xs: 4,
+        sm: 8,
+        md: 16,
+        lg: 20,
+        xl: 24,
+        xxl: 32,
+      };
+    case DeviceType.XLARGE:
+      return {
+        xs: 8,
+        sm: 12,
+        md: 20,
+        lg: 28,
+        xl: 36,
+        xxl: 48,
+      };
+    default:
+      return {
+        xs: 4,
+        sm: 8,
+        md: 16,
+        lg: 24,
+        xl: 32,
+        xxl: 48,
+      };
+  }
+};
+
+// Alias for backward compatibility - returns the responsive spacing object
+export const responsiveSpacing = getResponsiveSpacing();
+
+/**
  * Touch target size (minimum 44x44)
  */
 export const touchTarget = {
@@ -119,11 +197,79 @@ export const responsiveFontSize = (size: number): number => {
 };
 
 /**
- * Responsive spacing helper
- * Alias for scale optimized for spacing
+ * Get responsive avatar size
  */
-export const responsiveSpacing = (size: number): number => {
-  return scale(size);
+export const getAvatarSize = (size: 'sm' | 'md' | 'lg' | 'xl'): number => {
+  const sizes = {
+    sm: moderateScale(32),
+    md: moderateScale(40),
+    lg: moderateScale(48),
+    xl: moderateScale(64),
+  };
+  return sizes[size];
+};
+
+/**
+ * Get responsive button height
+ */
+export const getButtonHeight = (): number => {
+  const deviceType = getDeviceType();
+  switch (deviceType) {
+    case DeviceType.SMALL:
+      return 40;
+    case DeviceType.MEDIUM:
+      return 48;
+    case DeviceType.LARGE:
+      return 52;
+    case DeviceType.XLARGE:
+      return 56;
+    default:
+      return 48;
+  }
+};
+
+/**
+ * Check if screen is in landscape mode
+ */
+export const isLandscape = (width: number = SCREEN_WIDTH, height: number = SCREEN_HEIGHT): boolean => {
+  return width > height;
+};
+
+/**
+ * Get responsive card width for grid layouts
+ * @param columns - Number of columns
+ * @param gap - Gap between cards
+ */
+export const getCardWidth = (columns: number, gap: number = 16): number => {
+  const totalGap = gap * (columns + 1);
+  return (SCREEN_WIDTH - totalGap) / columns;
+};
+
+/**
+ * Hook for responsive dimensions that updates on orientation change
+ */
+export const useResponsiveDimensions = () => {
+  const { width, height, scale: pixelScale, fontScale } = useWindowDimensions();
+  
+  const widthS = width / BASE_WIDTH;
+  const heightS = height / BASE_HEIGHT;
+  
+  return {
+    width,
+    height,
+    pixelScale,
+    fontScale,
+    deviceType: getDeviceType(width),
+    isLandscape: width > height,
+    scale: (size: number): number => Math.round(size * widthS),
+    verticalScale: (size: number): number => Math.round(size * heightS),
+    moderateScale: (size: number, factor: number = 0.5): number => {
+      return Math.round(size + (Math.round(size * widthS) - size) * factor);
+    },
+    responsiveFontSize: (size: number): number => {
+      return Math.round(size + (Math.round(size * widthS) - size) * 0.4);
+    },
+  };
 };
 
 export {

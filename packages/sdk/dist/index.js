@@ -18,4 +18,8 @@ export { generateWallet, loadOrCreateWallet, loadWallet, saveEncryptedWallet, ge
 export { createMultiChainClient, createMultiChainWallet, loadOrCreateMultiChainWallet, refreshBalances, getTotalUSDCBalance, getChainWithHighestBalance, getCheapestChainForOperations, hasSufficientBalance, selectOptimalChain, MultiChainWalletManager } from './wallet-manager.js';
 // Cross-chain bridge (v1.2)
 export { CrossChainBridge, createChainPublicClient, getUSDCBalance, getNativeBalance, getAllBalances, getBridgeQuote, findCheapestChain, SUPPORTED_CHAINS, USDC_ADDRESSES, LAYERZERO_ENDPOINTS, LAYERZERO_CHAIN_IDS, LAYERZERO_USDC_OFT, RPC_URLS, BridgeTransactionHistory, getBridgeHistory } from './bridge.js';
+// Performance Optimization module (v1.0)
+export { PerformanceMonitor, createPerformanceMonitor, benchmark, measureLatency, measureLatencyAsync, withLatencyTracking, withLatencyTrackingAsync, trackMemory, generateOptimizationReport, } from './performance.js';
+// Agent Profile module (v1.0)
+export { ProfileManager, createProfileManager, calculateLevel, xpForNextLevel, levelProgress, getTierColor, getDefaultAchievements, } from './profile.js';
 //# sourceMappingURL=index.js.map

@@ -10,11 +10,27 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  scale,
+  verticalScale,
+  moderateScale,
+  responsiveFontSize,
+  spacing,
+} from '../utils/responsive';
 import { useBridgeSDK } from '../hooks/useSDK';
 import { useWalletStore } from '../store/walletStore';
-import type { SupportedChain, ChainBalance } from '@agora/sdk/bridge';
+
+// Type definitions for SDK compatibility
+type SupportedChain = 'base' | 'optimism' | 'arbitrum' | 'ethereum';
+interface ChainBalance {
+  chain: SupportedChain;
+  usdcBalance: string;
+  nativeBalance: string;
+}
 
 // Supported chains from SDK
 const SUPPORTED_CHAINS: SupportedChain[] = ['base', 'optimism', 'arbitrum', 'ethereum'];
@@ -246,12 +262,20 @@ export default function BridgeScreen({ navigation }: BridgeScreenProps) {
     );
   };
 
+  const insets = useSafeAreaInsets();
+
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView style={styles.scrollView}>
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={insets.top + 44}
+      >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={{ paddingBottom: insets.bottom + spacing.lg }}
+          keyboardShouldPersistTaps="handled"
+        >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerIcon}>

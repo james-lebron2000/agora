@@ -6,7 +6,16 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  SafeAreaView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  scale,
+  verticalScale,
+  moderateScale,
+  responsiveFontSize,
+  spacing,
+} from '../utils/responsive';
 import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
@@ -94,13 +103,17 @@ export default function HomeScreen() {
   const topAgents = agents.slice(0, 3);
   const recentTasks = tasks.slice(0, 3);
 
+  const insets = useSafeAreaInsets();
+
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-    >
+    <SafeAreaView style={styles.container}>
+      <ScrollView
+        style={[styles.scrollView, { paddingBottom: insets.bottom }]}
+        contentContainerStyle={{ paddingBottom: insets.bottom + spacing.lg }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
       {/* Wallet Summary */}
       <View style={styles.walletSection}>
         <Text style={styles.sectionTitle}>My Wallet</Text>
@@ -205,7 +218,8 @@ export default function HomeScreen() {
           />
         ))}
       </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -214,85 +228,90 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8fafc',
   },
+  scrollView: {
+    flex: 1,
+  },
   walletSection: {
-    padding: 16,
+    padding: spacing.md,
   },
   survivalSection: {
-    paddingHorizontal: 16,
-    marginBottom: 16,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
   },
   walletCard: {
     backgroundColor: '#6366f1',
-    borderRadius: 16,
-    padding: 20,
-    marginTop: 12,
+    borderRadius: moderateScale(16),
+    padding: scale(20),
+    marginTop: verticalScale(12),
   },
   balanceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: verticalScale(16),
   },
   balanceLabel: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     textTransform: 'uppercase',
-    marginBottom: 4,
+    marginBottom: verticalScale(4),
   },
   balanceValue: {
     color: 'white',
-    fontSize: 24,
+    fontSize: responsiveFontSize(24),
     fontWeight: 'bold',
   },
   walletAddress: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
   },
   actionsSection: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingHorizontal: 16,
-    marginBottom: 24,
+    paddingHorizontal: spacing.md,
+    marginBottom: verticalScale(24),
   },
   actionButton: {
     alignItems: 'center',
+    minWidth: scale(60),
+    minHeight: scale(44),
   },
   actionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: moderateScale(56),
+    height: moderateScale(56),
+    borderRadius: moderateScale(28),
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: verticalScale(8),
   },
   actionText: {
-    fontSize: 12,
+    fontSize: responsiveFontSize(12),
     color: '#64748b',
     fontWeight: '500',
   },
   section: {
-    padding: 16,
+    padding: spacing.md,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: verticalScale(12),
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: responsiveFontSize(18),
     fontWeight: 'bold',
     color: '#1e293b',
   },
   seeAll: {
     color: '#6366f1',
-    fontSize: 14,
+    fontSize: responsiveFontSize(14),
     fontWeight: '500',
   },
   agentCard: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: moderateScale(12),
+    padding: spacing.md,
+    marginBottom: verticalScale(12),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -305,16 +324,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: moderateScale(48),
+    height: moderateScale(48),
+    borderRadius: moderateScale(24),
     backgroundColor: '#6366f1',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
     color: 'white',
-    fontSize: 20,
+    fontSize: responsiveFontSize(20),
     fontWeight: 'bold',
   },
   agentInfo: {
