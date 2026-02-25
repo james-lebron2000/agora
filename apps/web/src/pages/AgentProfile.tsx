@@ -6,6 +6,8 @@ import { AchievementBadgeGrid, generateSampleBadges } from '../components/Achiev
 import { ActivityHeatmap, generateActivityData } from '../components/ActivityHeatmap'
 import { AgentLevelProgress, calculateLevel } from '../components/AgentLevelProgress'
 import { ShareProfile } from '../components/ShareProfile'
+import { AgentLeaderboard } from '../components/AgentLeaderboard'
+import { useLeaderboard } from '../hooks/useLeaderboard'
 import {
   Activity,
   Wallet,
@@ -32,9 +34,10 @@ import {
   ChevronRight,
   Target,
   Users,
+  Trophy,
 } from 'lucide-react'
 
-type Tab = 'overview' | 'economics' | 'capabilities' | 'history' | 'achievements'
+type Tab = 'overview' | 'economics' | 'capabilities' | 'history' | 'achievements' | 'leaderboard'
 
 // Default agent ID - in production this would come from URL params
 const DEFAULT_AGENT_ID = 'agent-echo-001'
@@ -332,6 +335,7 @@ export function AgentProfile() {
     { id: 'economics', label: 'Economics', icon: Wallet },
     { id: 'capabilities', label: 'Skills', icon: Zap },
     { id: 'achievements', label: 'Badges', icon: Award },
+    { id: 'leaderboard', label: 'Ranks', icon: Trophy },
     { id: 'history', label: 'History', icon: History },
   ]
 
@@ -647,6 +651,37 @@ export function AgentProfile() {
     </div>
   )
 
+  // Leaderboard state
+  const [leaderboardPeriod, setLeaderboardPeriod] = useState<TimePeriod>('all-time')
+  const [leaderboardSort, setLeaderboardSort] = useState<SortMetric>('earnings')
+  const { entries, isLoading: leaderboardLoading, error: leaderboardError, refetch: refetchLeaderboard } = useLeaderboard({
+    period: leaderboardPeriod,
+    sortBy: leaderboardSort,
+    limit: 20,
+    currentUserId: agent.id,
+  })
+
+  const renderLeaderboard = () => (
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+    >
+      <motion.div variants={itemVariants}>
+        <AgentLeaderboard
+          entries={entries}
+          isLoading={leaderboardLoading}
+          error={leaderboardError}
+          period={leaderboardPeriod}
+          sortBy={leaderboardSort}
+          onPeriodChange={setLeaderboardPeriod}
+          onSortChange={setLeaderboardSort}
+          onRefresh={refetchLeaderboard}
+        />
+      </motion.div>
+    </motion.div>
+  )
+
   const renderAchievements = () => (
     <motion.div 
       className="space-y-6"
@@ -824,6 +859,7 @@ export function AgentProfile() {
             {activeTab === 'economics' && renderEconomics()}
             {activeTab === 'capabilities' && renderCapabilities()}
             {activeTab === 'achievements' && renderAchievements()}
+            {activeTab === 'leaderboard' && renderLeaderboard()}
             {activeTab === 'history' && renderHistory()}
           </motion.div>
         </AnimatePresence>
