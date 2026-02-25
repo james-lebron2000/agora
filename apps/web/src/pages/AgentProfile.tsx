@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { useAgent } from '../hooks/useAgent'
 import {
   Activity,
   Wallet,
@@ -12,55 +13,15 @@ import {
   AlertCircle,
   CheckCircle,
   History,
-  Settings
+  Settings,
+  Loader2,
+  RefreshCw
 } from 'lucide-react'
 
 type Tab = 'overview' | 'economics' | 'capabilities' | 'history'
 
-// Mock data for demonstration
-const mockAgentData = {
-  id: 'agora:consultant:v1',
-  name: 'Consultant Pro',
-  status: 'online' as const,
-  reputation: {
-    score: 4.8,
-    tier: 'gold',
-    completedTasks: 156,
-    totalEarnings: 12580.50,
-  },
-  health: {
-    compute: 85,
-    storage: 72,
-    network: 90,
-    economic: 78,
-    overall: 81,
-  },
-  economics: {
-    balances: {
-      USDC: 2450.75,
-      ETH: 1.25,
-    },
-    runwayDays: 45,
-    dailyBurn: 54.50,
-    efficiency: 92,
-    chains: [
-      { name: 'Base', percentage: 45, color: '#0052FF' },
-      { name: 'Optimism', percentage: 35, color: '#FF0420' },
-      { name: 'Arbitrum', percentage: 20, color: '#28A0F0' },
-    ],
-  },
-  capabilities: [
-    { id: 'consulting', name: 'Business Consulting', level: 95, tasks: 89, earnings: 8500 },
-    { id: 'analysis', name: 'Data Analysis', level: 88, tasks: 42, earnings: 3200 },
-    { id: 'strategy', name: 'Strategy Planning', level: 82, tasks: 25, earnings: 1800 },
-  ],
-  recentActivity: [
-    { id: 1, type: 'task_completed', description: 'Completed market analysis for TechCorp', timestamp: '2026-02-25T10:30:00Z', value: 150 },
-    { id: 2, type: 'payment_received', description: 'Received USDC payment', timestamp: '2026-02-25T09:15:00Z', value: 150 },
-    { id: 3, type: 'task_started', description: 'Started financial audit for StartupXYZ', timestamp: '2026-02-25T08:00:00Z', value: null },
-    { id: 4, type: 'bridge', description: 'Bridged 500 USDC to Optimism', timestamp: '2026-02-24T16:45:00Z', value: 500 },
-  ],
-}
+// Default agent ID - in production this would come from URL params
+const DEFAULT_AGENT_ID = 'agent-echo-001'
 
 function HealthCard({ label, value, icon: Icon, color }: { label: string; value: number; icon: any; color: string }) {
   const getStatusColor = (val: number) => {
@@ -96,9 +57,51 @@ function HealthCard({ label, value, icon: Icon, color }: { label: string; value:
   )
 }
 
+function LoadingState() {
+  return (
+    <div className="min-h-screen bg-agora-50 pt-20 lg:pt-6 pb-24 flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="w-8 h-8 text-agora-900 animate-spin" />
+        <p className="text-sm text-agora-600">Loading agent profile...</p>
+      </div>
+    </div>
+  )
+}
+
+function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
+  return (
+    <div className="min-h-screen bg-agora-50 pt-20 lg:pt-6 pb-24 flex items-center justify-center px-4">
+      <div className="bg-white rounded-2xl p-6 border border-red-200 shadow-sm max-w-md w-full text-center">
+        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <AlertCircle className="w-6 h-6 text-red-500" />
+        </div>
+        <h3 className="text-lg font-semibold text-agora-900 mb-2">Failed to load agent</h3>
+        <p className="text-sm text-agora-600 mb-4">{error}</p>
+        <button
+          onClick={onRetry}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-agora-900 text-white rounded-xl font-medium hover:bg-agora-800 transition-colors"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Try Again
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function AgentProfile() {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const agent = mockAgentData
+  
+  // Get agent ID from URL or use default
+  // In the future, this can be: const { id } = useParams<{ id: string }>()
+  const agentId = useMemo(() => {
+    // Check for agent ID in URL search params
+    const urlParams = new URLSearchParams(window.location.search);
+    const idFromQuery = urlParams.get('id');
+    return idFromQuery || DEFAULT_AGENT_ID;
+  }, []);
+  
+  const { agent, isLoading, error, refetch } = useAgent(agentId, 30000)
 
   const tabs: { id: Tab; label: string; icon: any }[] = [
     { id: 'overview', label: 'Overview', icon: Activity },
@@ -106,6 +109,25 @@ export function AgentProfile() {
     { id: 'capabilities', label: 'Skills', icon: Zap },
     { id: 'history', label: 'History', icon: History },
   ]
+
+  if (isLoading && !agent) {
+    return <LoadingState />
+  }
+
+  if (error && !agent) {
+    return <ErrorState error={error} onRetry={refetch} />
+  }
+
+  if (!agent) {
+    return (
+      <div className="min-h-screen bg-agora-50 pt-20 lg:pt-6 pb-24 flex items-center justify-center px-4">
+        <div className="bg-white rounded-2xl p-6 border border-agora-200 shadow-sm max-w-md w-full text-center">
+          <h3 className="text-lg font-semibold text-agora-900 mb-2">Agent not found</h3>
+          <p className="text-sm text-agora-600">The requested agent could not be found.</p>
+        </div>
+      </div>
+    )
+  }
 
   const renderOverview = () => (
     <div className="space-y-6">
@@ -150,7 +172,7 @@ export function AgentProfile() {
             <div className="text-xs text-agora-500 mt-1">Total Earned</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-agora-900">{agent.reputation.score}</div>
+            <div className="text-2xl font-bold text-agora-900">{agent.reputation.score.toFixed(1)}</div>
             <div className="text-xs text-agora-500 mt-1">Rating</div>
           </div>
         </div>
@@ -170,6 +192,9 @@ export function AgentProfile() {
                 {activity.type === 'payment_received' && <Wallet className="w-4 h-4 text-usdc" />}
                 {activity.type === 'task_started' && <Zap className="w-4 h-4 text-warning" />}
                 {activity.type === 'bridge' && <Globe className="w-4 h-4 text-base-blue" />}
+                {!['task_completed', 'payment_received', 'task_started', 'bridge'].includes(activity.type) && (
+                  <Activity className="w-4 h-4 text-agora-500" />
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-agora-900 truncate">{activity.description}</p>
@@ -182,6 +207,9 @@ export function AgentProfile() {
               )}
             </div>
           ))}
+          {agent.recentActivity.length === 0 && (
+            <p className="text-sm text-agora-500 text-center py-4">No recent activity</p>
+          )}
         </div>
       </div>
     </div>
@@ -200,7 +228,9 @@ export function AgentProfile() {
               </div>
               <span className="font-medium text-agora-900">USDC</span>
             </div>
-            <span className="text-xl font-bold text-agora-900">{agent.economics.balances.USDC.toLocaleString()}</span>
+            <span className="text-xl font-bold text-agora-900">
+              {agent.economics.balances.USDC?.toLocaleString() || '0'}
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -209,7 +239,9 @@ export function AgentProfile() {
               </div>
               <span className="font-medium text-agora-900">ETH</span>
             </div>
-            <span className="text-xl font-bold text-agora-900">{agent.economics.balances.ETH}</span>
+            <span className="text-xl font-bold text-agora-900">
+              {agent.economics.balances.ETH?.toFixed(4) || '0'}
+            </span>
           </div>
         </div>
       </div>
@@ -252,7 +284,7 @@ export function AgentProfile() {
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-agora-500">Daily Burn Rate</span>
-            <span className="font-medium text-agora-900">${agent.economics.dailyBurn}/day</span>
+            <span className="font-medium text-agora-900">${agent.economics.dailyBurn.toFixed(2)}/day</span>
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-agora-500">Efficiency Score</span>
@@ -268,20 +300,24 @@ export function AgentProfile() {
           Chain Distribution
         </h3>
         <div className="space-y-3">
-          {agent.economics.chains.map((chain) => (
-            <div key={chain.name}>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-medium text-agora-700">{chain.name}</span>
-                <span className="text-sm font-bold text-agora-900">{chain.percentage}%</span>
+          {agent.economics.chains.length > 0 ? (
+            agent.economics.chains.map((chain) => (
+              <div key={chain.name}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-medium text-agora-700">{chain.name}</span>
+                  <span className="text-sm font-bold text-agora-900">{chain.percentage}%</span>
+                </div>
+                <div className="h-2 bg-agora-100 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${chain.percentage}%`, backgroundColor: chain.color }}
+                  />
+                </div>
               </div>
-              <div className="h-2 bg-agora-100 rounded-full overflow-hidden">
-                <div 
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{ width: `${chain.percentage}%`, backgroundColor: chain.color }}
-                />
-              </div>
-            </div>
-          ))}
+            ))
+          ) : (
+            <p className="text-sm text-agora-500 text-center py-4">No chain distribution data</p>
+          )}
         </div>
       </div>
     </div>
@@ -289,32 +325,38 @@ export function AgentProfile() {
 
   const renderCapabilities = () => (
     <div className="space-y-4">
-      {agent.capabilities.map((cap) => (
-        <div key={cap.id} className="bg-white rounded-2xl p-4 border border-agora-100 shadow-sm">
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <h3 className="font-semibold text-agora-900">{cap.name}</h3>
-              <p className="text-xs text-agora-500 mt-0.5">{cap.tasks} tasks completed</p>
+      {agent.capabilities.length > 0 ? (
+        agent.capabilities.map((cap) => (
+          <div key={cap.id} className="bg-white rounded-2xl p-4 border border-agora-100 shadow-sm">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <h3 className="font-semibold text-agora-900">{cap.name}</h3>
+                <p className="text-xs text-agora-500 mt-0.5">{cap.tasks} tasks completed</p>
+              </div>
+              <div className="text-right">
+                <span className="text-lg font-bold text-agora-900">{cap.level}%</span>
+                <p className="text-xs text-agora-500">Proficiency</p>
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-lg font-bold text-agora-900">{cap.level}%</span>
-              <p className="text-xs text-agora-500">Proficiency</p>
+            
+            <div className="h-2 bg-agora-100 rounded-full overflow-hidden mb-3">
+              <div 
+                className="h-full bg-gradient-to-r from-agora-600 to-agora-400 rounded-full transition-all duration-500"
+                style={{ width: `${cap.level}%` }}
+              />
+            </div>
+            
+            <div className="flex items-center justify-between pt-3 border-t border-agora-50">
+              <span className="text-xs text-agora-500">Total Earnings</span>
+              <span className="text-sm font-semibold text-agora-900">${cap.earnings.toLocaleString()}</span>
             </div>
           </div>
-          
-          <div className="h-2 bg-agora-100 rounded-full overflow-hidden mb-3">
-            <div 
-              className="h-full bg-gradient-to-r from-agora-600 to-agora-400 rounded-full transition-all duration-500"
-              style={{ width: `${cap.level}%` }}
-            />
-          </div>
-          
-          <div className="flex items-center justify-between pt-3 border-t border-agora-50">
-            <span className="text-xs text-agora-500">Total Earnings</span>
-            <span className="text-sm font-semibold text-agora-900">${cap.earnings.toLocaleString()}</span>
-          </div>
+        ))
+      ) : (
+        <div className="bg-white rounded-2xl p-6 border border-agora-100 shadow-sm text-center">
+          <p className="text-sm text-agora-500">No capabilities registered</p>
         </div>
-      ))}
+      )}
     </div>
   )
 
@@ -324,30 +366,39 @@ export function AgentProfile() {
         <h3 className="font-semibold text-agora-900">Activity History</h3>
       </div>
       <div className="divide-y divide-agora-50">
-        {agent.recentActivity.map((activity) => (
-          <div key={activity.id} className="p-4 flex items-start gap-3">
-            <div className="w-10 h-10 rounded-xl bg-agora-50 flex items-center justify-center flex-shrink-0">
-              {activity.type === 'task_completed' && <CheckCircle className="w-5 h-5 text-success" />}
-              {activity.type === 'payment_received' && <Wallet className="w-5 h-5 text-usdc" />}
-              {activity.type === 'task_started' && <Zap className="w-5 h-5 text-warning" />}
-              {activity.type === 'bridge' && <Globe className="w-5 h-5 text-base-blue" />}
+        {agent.recentActivity.length > 0 ? (
+          agent.recentActivity.map((activity) => (
+            <div key={activity.id} className="p-4 flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-agora-50 flex items-center justify-center flex-shrink-0">
+                {activity.type === 'task_completed' && <CheckCircle className="w-5 h-5 text-success" />}
+                {activity.type === 'payment_received' && <Wallet className="w-5 h-5 text-usdc" />}
+                {activity.type === 'task_started' && <Zap className="w-5 h-5 text-warning" />}
+                {activity.type === 'bridge' && <Globe className="w-5 h-5 text-base-blue" />}
+                {!['task_completed', 'payment_received', 'task_started', 'bridge'].includes(activity.type) && (
+                  <Activity className="w-5 h-5 text-agora-500" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-agora-900">{activity.description}</p>
+                <p className="text-xs text-agora-500 mt-0.5">
+                  {new Date(activity.timestamp).toLocaleString([], { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                  })}
+                </p>
+              </div>
+              {activity.value && (
+                <span className="text-sm font-semibold text-success">+${activity.value}</span>
+              )}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-agora-900">{activity.description}</p>
-              <p className="text-xs text-agora-500 mt-0.5">
-                {new Date(activity.timestamp).toLocaleString([], { 
-                  month: 'short', 
-                  day: 'numeric', 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
-                })}
-              </p>
-            </div>
-            {activity.value && (
-              <span className="text-sm font-semibold text-success">+${activity.value}</span>
-            )}
+          ))
+        ) : (
+          <div className="p-8 text-center">
+            <p className="text-sm text-agora-500">No activity history available</p>
           </div>
-        ))}
+        )}
       </div>
     </div>
   )
@@ -367,14 +418,21 @@ export function AgentProfile() {
               <h1 className="text-xl font-bold text-agora-900 truncate">{agent.name}</h1>
               <p className="text-sm text-agora-500 truncate">{agent.id}</p>
               <div className="flex items-center gap-2 mt-1">
-                <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+                <span className={`w-2 h-2 rounded-full ${
+                  agent.status === 'online' ? 'bg-success animate-pulse' : 
+                  agent.status === 'busy' ? 'bg-warning' : 'bg-agora-400'
+                }`} />
                 <span className="text-xs text-agora-500 capitalize">{agent.status}</span>
                 <span className="text-agora-300">•</span>
-                <span className="text-xs text-agora-500">{agent.reputation.tier} tier</span>
+                <span className="text-xs text-agora-500 capitalize">{agent.reputation.tier} tier</span>
               </div>
             </div>
-            <button className="p-2 rounded-xl hover:bg-agora-50 transition-colors">
-              <Settings className="w-5 h-5 text-agora-500" />
+            <button 
+              onClick={() => refetch()}
+              className="p-2 rounded-xl hover:bg-agora-50 transition-colors"
+              disabled={isLoading}
+            >
+              <Settings className={`w-5 h-5 text-agora-500 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
