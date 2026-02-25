@@ -8,14 +8,14 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vectoricons';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useWalletStore } from '../store/walletStore';
 import { useTasks } from '../hooks/useApi';
-import type { RootStackParamList, Task } from '../types/navigation';
+import type { Task } from '../types/navigation';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type NavigationProp = any;
 
 const TaskRow: React.FC<{ task: Task; onPress: () => void }> = ({ task, onPress }) => (
   <TouchableOpacity style={styles.taskRow} onPress={onPress}>
@@ -35,7 +35,10 @@ const TaskRow: React.FC<{ task: Task; onPress: () => void }> = ({ task, onPress 
 export default function ProfileScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { address, disconnect } = useWalletStore();
-  const { myTasks } = useTasks();
+  const { tasks } = useTasks();
+  
+  // Filter tasks for current user
+  const myTasks = tasks.filter((t: Task) => t.creator?.walletAddress === address);
 
   const handleDisconnect = () => {
     Alert.alert(

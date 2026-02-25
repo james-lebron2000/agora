@@ -9,14 +9,16 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vectoricons';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useAgents } from '../hooks/useApi';
-import type { RootStackParamList, Agent } from '../types/navigation';
+import type { RootStackParamList, MainTabParamList, Agent } from '../types/navigation';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type NavigationProp = any;
 
 const AGENT_TAGS = ['All', 'trading', 'content', 'data', 'coding', 'legal', 'marketing'];
 

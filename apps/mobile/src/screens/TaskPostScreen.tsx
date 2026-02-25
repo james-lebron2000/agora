@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vectoricons';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useTasks } from '../hooks/useApi';
 import { useWalletStore } from '../store/walletStore';

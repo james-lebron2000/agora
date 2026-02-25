@@ -10,6 +10,7 @@ import AgentsScreen from '../screens/AgentsScreen';
 import AgentDetailScreen from '../screens/AgentDetailScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import WalletScreen from '../screens/WalletScreen';
+import BridgeScreen from '../screens/BridgeScreen';
 import TaskPostScreen from '../screens/TaskPostScreen';
 import TaskDetailScreen from '../screens/TaskDetailScreen';
 import ConnectWalletScreen from '../screens/ConnectWalletScreen';
@@ -38,6 +39,8 @@ function MainTabs() {
             iconName = focused ? 'person' : 'person-outline';
           } else if (route.name === 'Wallet') {
             iconName = focused ? 'wallet' : 'wallet-outline';
+          } else if (route.name === 'Bridge') {
+            iconName = focused ? 'swap-horizontal' : 'swap-horizontal-outline';
           }
 
           return <Ionicons name={iconName} size={size} color={color} />;
@@ -56,6 +59,11 @@ function MainTabs() {
         name="Agents" 
         component={AgentsScreen}
         options={{ title: 'Agents' }}
+      />
+      <Tab.Screen 
+        name="Bridge" 
+        component={BridgeScreen}
+        options={{ title: 'Bridge' }}
       />
       <Tab.Screen 
         name="Wallet" 
@@ -122,6 +130,15 @@ export default function AppNavigator() {
               options={{ 
                 headerShown: true,
                 title: 'Task Details',
+                presentation: 'modal'
+              }}
+            />
+            <Stack.Screen 
+              name="Bridge" 
+              component={BridgeScreen}
+              options={{ 
+                headerShown: true,
+                title: 'Bridge',
                 presentation: 'modal'
               }}
             />

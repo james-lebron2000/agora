@@ -8,7 +8,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vectoricons';
+import { Ionicons } from '@expo/vector-icons';
 
 import { useWalletStore } from '../store/walletStore';
 import { usePushNotifications } from '../hooks/usePushNotifications';

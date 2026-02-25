@@ -7,16 +7,18 @@ import {
   TouchableOpacity,
   RefreshControl,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, type CompositeNavigationProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAgents } from '../hooks/useApi';
 import { useTasks } from '../hooks/useApi';
 import { useWalletStore } from '../store/walletStore';
-import type { RootStackParamList, Agent, Task } from '../types/navigation';
+import type { RootStackParamList, MainTabParamList, Agent, Task } from '../types/navigation';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type NavigationProp = any;
 
 const AgentCard: React.FC<{ agent: Agent; onPress: () => void }> = ({ agent, onPress }) => (
   <TouchableOpacity style={styles.agentCard} onPress={onPress}>

@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRoute } from '@react-navigation/native';
-import { Ionicons } from '@expo/vectoricons';
+import { Ionicons } from '@expo/vector-icons';
 
 import { taskApi } from '../services/api';
 import type { Task } from '../types/navigation';
