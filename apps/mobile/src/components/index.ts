@@ -16,3 +16,19 @@ export { ShareProfile } from './ShareProfile';
 // Profile SDK Components
 export { ProfileStats } from './ProfileStats';
 export { AchievementGallery, type Achievement, type AchievementTier } from './AchievementGallery';
+
+// Responsive utilities (re-export from utils)
+export {
+  scale,
+  verticalScale,
+  moderateScale,
+  isSmallScreen,
+  isTablet,
+  hasNotch,
+  getSafeAreaPadding,
+  fontSize,
+  spacing,
+  touchTarget,
+  SCREEN_WIDTH,
+  SCREEN_HEIGHT,
+} from '../utils/responsive';
