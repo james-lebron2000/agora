@@ -1,0 +1,139 @@
+/* Agora Brand Colors:
+ * Primary Blue: #3b82f6
+ * Success Green: #10b981
+ * Warning Orange: #f59e0b
+ */
+
+:root {
+  --vp-c-brand-1: #3b82f6;
+  --vp-c-brand-2: #2563eb;
+  --vp-c-brand-3: #1d4ed8;
+  --vp-c-brand-soft: rgba(59, 130, 246, 0.14);
+
+  --vp-button-brand-bg: #3b82f6;
+  --vp-button-brand-hover-bg: #2563eb;
+  --vp-button-brand-active-bg: #1d4ed8;
+
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #3b82f6 30%, #10b981);
+  --vp-home-hero-image-background-image: linear-gradient(-45deg, #3b82f6 50%, #10b981 50%);
+  --vp-home-hero-image-filter: blur(44px);
+
+  --vp-custom-block-tip-border: #10b981;
+  --vp-custom-block-tip-text: #047857;
+  --vp-custom-block-tip-bg: rgba(16, 185, 129, 0.14);
+
+  --vp-custom-block-warning-border: #f59e0b;
+  --vp-custom-block-warning-text: #b45309;
+  --vp-custom-block-warning-bg: rgba(245, 158, 11, 0.14);
+}
+
+.dark {
+  --vp-c-brand-1: #60a5fa;
+  --vp-c-brand-2: #3b82f6;
+  --vp-c-brand-3: #2563eb;
+
+  --vp-custom-block-tip-text: #34d399;
+  --vp-custom-block-warning-text: #fbbf24;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vp-c-bg-soft);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vp-c-brand-2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vp-c-brand-1);
+}
+
+/* Hero section improvements */
+.VPHero .image-bg {
+  opacity: 0.8;
+}
+
+.VPHero .image-src {
+  max-height: 200px;
+}
+
+/* Code block improvements */
+.vp-doc div[class*='language-'] {
+  border-radius: 8px;
+}
+
+/* Custom block styling */
+.vp-doc .custom-block {
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.vp-doc .custom-block.tip {
+  border-left: 4px solid #10b981;
+}
+
+.vp-doc .custom-block.warning {
+  border-left: 4px solid #f59e0b;
+}
+
+.vp-doc .custom-block.danger {
+  border-left: 4px solid #ef4444;
+}
+
+/* Feature icons */
+.VPFeatures .icon {
+  background: linear-gradient(135deg, var(--vp-c-brand-1), var(--vp-c-brand-3));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Navigation improvements */
+.VPNavBar .title {
+  font-weight: 700;
+}
+
+/* Search styling */
+.DocSearch-Button {
+  border-radius: 8px;
+}
+
+/* Sidebar improvements */
+.VPSidebarItem .text {
+  font-weight: 500;
+}
+
+.VPSidebarItem.is-active .text {
+  font-weight: 600;
+}
+
+/* Table styling */
+.vp-doc table {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+}
+
+.vp-doc th {
+  background: var(--vp-c-bg-soft);
+  font-weight: 600;
+}
+
+/* Mermaid diagrams */
+.mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 24px 0;
+}
+
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
