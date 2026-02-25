@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,16 +6,29 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Rect, Text as SvgText, Line } from 'react-native-svg';
 
+import { MultiChainBalance, ProfileEditModal, AchievementBadge } from '../components';
 import { useWalletStore } from '../store/walletStore';
-import { useTasks } from '../hooks/useApi';
+import { useTasks, useSurvival, useProfileApi } from '../hooks/useApi';
 import type { Task } from '../types/navigation';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type NavigationProp = any;
+ type NavigationProp = any;
+
+type SurvivalStatus = 'healthy' | 'stable' | 'degraded' | 'critical' | 'dying';
+
+const statusMeta: Record<SurvivalStatus, { color: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  healthy: { color: '#10b981', label: 'Healthy', icon: 'checkmark-circle' },
+  stable: { color: '#3b82f6', label: 'Stable', icon: 'shield-checkmark' },
+  degraded: { color: '#f59e0b', label: 'Degraded', icon: 'warning' },
+  critical: { color: '#ef4444', label: 'Critical', icon: 'alert-circle' },
+  dying: { color: '#7f1d1d', label: 'Dying', icon: 'skull' },
+};
 
 const TaskRow: React.FC<{ task: Task; onPress: () => void }> = ({ task, onPress }) => (
   <TouchableOpacity style={styles.taskRow} onPress={onPress}>
@@ -32,13 +45,83 @@ const TaskRow: React.FC<{ task: Task; onPress: () => void }> = ({ task, onPress 
   </TouchableOpacity>
 );
 
+const MiniTaskChart: React.FC<{ posted: number; completed: number; inProgress: number; cancelled: number }> = ({
+  posted,
+  completed,
+  inProgress,
+  cancelled,
+}) => {
+  const width = 320;
+  const height = 170;
+  const chartHeight = 110;
+  const maxValue = Math.max(posted, completed, inProgress, cancelled, 1);
+  const data = [
+    { label: 'Posted', value: posted, color: '#6366f1' },
+    { label: 'Done', value: completed, color: '#10b981' },
+    { label: 'Progress', value: inProgress, color: '#f59e0b' },
+    { label: 'Canceled', value: cancelled, color: '#ef4444' },
+  ];
+
+  return (
+    <View style={styles.chartContainer}>
+      <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+        <Line x1={18} y1={chartHeight + 18} x2={width - 10} y2={chartHeight + 18} stroke="#cbd5e1" strokeWidth={1} />
+
+        {data.map((item, index) => {
+          const barWidth = 48;
+          const gap = 28;
+          const x = 28 + index * (barWidth + gap);
+          const barHeight = (item.value / maxValue) * chartHeight;
+          const y = chartHeight + 18 - barHeight;
+
+          return (
+            <React.Fragment key={item.label}>
+              <Rect x={x} y={y} width={barWidth} height={barHeight} rx={6} fill={item.color} />
+              <SvgText x={x + barWidth / 2} y={y - 6} fontSize={11} fill="#334155" textAnchor="middle">
+                {item.value}
+              </SvgText>
+              <SvgText x={x + barWidth / 2} y={height - 8} fontSize={10} fill="#64748b" textAnchor="middle">
+                {item.label}
+              </SvgText>
+            </React.Fragment>
+          );
+        })}
+      </Svg>
+    </View>
+  );
+};
+
 export default function ProfileScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { address, disconnect } = useWalletStore();
   const { tasks } = useTasks();
-  
-  // Filter tasks for current user
-  const myTasks = tasks.filter((t: Task) => t.creator?.walletAddress === address);
+  const { snapshot } = useSurvival(address);
+  const {
+    profile,
+    stats,
+    isSavingProfile,
+    isUploadingAvatar,
+    saveProfile,
+    uploadUserAvatar,
+  } = useProfileApi(address);
+
+  const [isEditOpen, setIsEditOpen] = useState(false);
+
+  const myTasks = useMemo(
+    () => tasks.filter((t: Task) => t.creator?.walletAddress === address),
+    [tasks, address]
+  );
+
+  const postedCount = stats?.postedTasks ?? myTasks.length;
+  const completedCount = stats?.completedTasks ?? myTasks.filter((t) => t.status === 'completed').length;
+  const inProgressCount = stats?.inProgressTasks ?? myTasks.filter((t) => t.status === 'in_progress').length;
+  const cancelledCount = stats?.cancelledTasks ?? myTasks.filter((t) => t.status === 'cancelled').length;
+  const completionRate = stats?.completionRate ?? (postedCount > 0 ? (completedCount / postedCount) * 100 : 0);
+
+  const survivalStatus = (snapshot?.health?.status || 'stable') as SurvivalStatus;
+  const survivalScore = snapshot?.health?.overall ?? stats?.survivalHealth ?? 72;
+
+  const achievements = stats?.achievements ?? [];
 
   const handleDisconnect = () => {
     Alert.alert(
@@ -55,99 +138,194 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleProfileSave = async (payload: { username: string; nickname: string }) => {
+    if (!address) return;
+
+    await saveProfile(payload);
+    setIsEditOpen(false);
+  };
+
+  const handleAvatarPick = async () => {
+    if (!address) return;
+
+    try {
+      const moduleName = 'expo-image-picker';
+      const picker: any = await import(moduleName);
+
+      const permission = await picker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Needed', 'Please allow photo library access to update avatar.');
+        return;
+      }
+
+      const result = await picker.launchImageLibraryAsync({
+        mediaTypes: picker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets?.[0]?.uri) {
+        return;
+      }
+
+      const localUri = result.assets[0].uri;
+      const uploadedAvatar = await uploadUserAvatar(localUri);
+      if (uploadedAvatar) {
+        await saveProfile({ avatarUrl: uploadedAvatar });
+      }
+    } catch {
+      Alert.alert(
+        'Album Picker Unavailable',
+        'expo-image-picker is not installed in this environment. Install it to enable album selection.'
+      );
+    }
+  };
+
+  const displayName = profile?.username || (address ? `User ${address.slice(0, 6)}` : 'Guest');
+  const nickname = profile?.nickname || 'Echo Agent';
+  const avatarUri = profile?.avatarUrl;
+
   return (
-    <ScrollView style={styles.container}>
-      {/* Profile Header */}
-      <View style={styles.header}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>?</Text>
-        </View>
-        <Text style={styles.walletLabel}>Connected Wallet</Text>
-        <Text style={styles.walletAddress}>
-          {address ? `${address.slice(0, 8)}...${address.slice(-8)}` : 'Not connected'}
-        </Text>
-      </View>
-
-      {/* Stats */}
-      <View style={styles.statsContainer}>
-        <View style={styles.stat}>
-          <Text style={styles.statValue}>{myTasks.length}</Text>
-          <Text style={styles.statLabel}>Posted</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.stat}>
-          <Text style={styles.statValue}>
-            {myTasks.filter((t) => t.status === 'completed').length}
-          </Text>
-          <Text style={styles.statLabel}>Completed</Text>
-        </View>
-        <View style={styles.statDivider} />
-        <View style={styles.stat}>
-          <Text style={styles.statValue}>
-            {myTasks.filter((t) => t.status === 'in_progress').length}
-          </Text>
-          <Text style={styles.statLabel}>In Progress</Text>
-        </View>
-      </View>
-
-      {/* My Tasks */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>My Tasks</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('TaskPost')}>
-            <Text style={styles.seeAll}>+ New</Text>
+    <>
+      <ScrollView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.editPill} onPress={() => setIsEditOpen(true)}>
+            <Ionicons name="create-outline" size={14} color="#4f46e5" />
+            <Text style={styles.editPillText}>Edit</Text>
           </TouchableOpacity>
+
+          {avatarUri ? (
+            <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+          ) : (
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{displayName.slice(0, 1).toUpperCase()}</Text>
+            </View>
+          )}
+
+          <Text style={styles.userName}>{displayName}</Text>
+          <Text style={styles.nickname}>@{nickname}</Text>
+          <Text style={styles.walletLabel}>Connected Wallet</Text>
+          <Text style={styles.walletAddress}>
+            {address ? `${address.slice(0, 8)}...${address.slice(-8)}` : 'Not connected'}
+          </Text>
         </View>
-        {myTasks.length === 0 ? (
-          <View style={styles.emptyTasks}>
-            <Ionicons name="document-text-outline" size={48} color="#cbd5e1" />
-            <Text style={styles.emptyText}>No tasks yet</Text>
-            <TouchableOpacity
-              style={styles.createButton}
-              onPress={() => navigation.navigate('TaskPost')}
-            >
-              <Text style={styles.createButtonText}>Create Your First Task</Text>
+
+        <View style={styles.survivalCard}>
+          <View>
+            <Text style={styles.cardTitle}>Echo Survival</Text>
+            <Text style={styles.cardSubTitle}>Real-time economic self-preservation status</Text>
+          </View>
+          <View style={[styles.survivalStatus, { backgroundColor: `${statusMeta[survivalStatus].color}20` }]}>
+            <Ionicons name={statusMeta[survivalStatus].icon} size={16} color={statusMeta[survivalStatus].color} />
+            <Text style={[styles.survivalStatusText, { color: statusMeta[survivalStatus].color }]}>
+              {statusMeta[survivalStatus].label}
+            </Text>
+          </View>
+          <Text style={styles.survivalScore}>{survivalScore}/100</Text>
+        </View>
+
+        <View style={styles.statsContainer}>
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>{postedCount}</Text>
+            <Text style={styles.statLabel}>Posted</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>{completedCount}</Text>
+            <Text style={styles.statLabel}>Completed</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.stat}>
+            <Text style={styles.statValue}>{Math.round(completionRate)}%</Text>
+            <Text style={styles.statLabel}>Completion</Text>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Task Statistics</Text>
+          <MiniTaskChart
+            posted={postedCount}
+            completed={completedCount}
+            inProgress={inProgressCount}
+            cancelled={cancelledCount}
+          />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Multi-Chain Wallet</Text>
+          <Text style={styles.sectionHint}>Track balances across Ethereum, Base, Optimism, and Arbitrum</Text>
+          <View style={styles.balanceWrapper}>
+            <MultiChainBalance address={address} />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Achievement Badges</Text>
+          {achievements.length === 0 ? (
+            <Text style={styles.emptyText}>No achievements yet. Complete tasks to unlock badges.</Text>
+          ) : (
+            achievements.map((badge) => (
+              <AchievementBadge
+                key={badge.id}
+                title={badge.title}
+                description={badge.description}
+                icon={badge.icon}
+                rarity={badge.rarity}
+                unlocked={badge.unlocked}
+                progress={badge.progress}
+              />
+            ))
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>My Tasks</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('TaskPost')}>
+              <Text style={styles.seeAll}>+ New</Text>
             </TouchableOpacity>
           </View>
-        ) : (
-          myTasks.slice(0, 5).map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              onPress={() => navigation.navigate('TaskDetail', { taskId: task.id })}
-            />
-          ))
-        )}
-      </View>
 
-      {/* Settings */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Settings</Text>
-        <TouchableOpacity style={styles.settingRow}>
-          <Ionicons name="notifications-outline" size={24} color="#64748b" />
-          <Text style={styles.settingText}>Notifications</Text>
-          <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.settingRow}>
-          <Ionicons name="shield-outline" size={24} color="#64748b" />
-          <Text style={styles.settingText}>Security</Text>
-          <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.settingRow}>
-          <Ionicons name="help-circle-outline" size={24} color="#64748b" />
-          <Text style={styles.settingText}>Help & Support</Text>
-          <Ionicons name="chevron-forward" size={20} color="#cbd5e1" />
-        </TouchableOpacity>
-      </View>
+          {myTasks.length === 0 ? (
+            <View style={styles.emptyTasks}>
+              <Ionicons name="document-text-outline" size={48} color="#cbd5e1" />
+              <Text style={styles.emptyText}>No tasks yet</Text>
+              <TouchableOpacity style={styles.createButton} onPress={() => navigation.navigate('TaskPost')}>
+                <Text style={styles.createButtonText}>Create Your First Task</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            myTasks.slice(0, 4).map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                onPress={() => navigation.navigate('TaskDetail', { taskId: task.id })}
+              />
+            ))
+          )}
+        </View>
 
-      {/* Disconnect */}
-      <TouchableOpacity style={styles.disconnectButton} onPress={handleDisconnect}>
-        <Ionicons name="log-out-outline" size={24} color="#ef4444" />
-        <Text style={styles.disconnectText}>Disconnect Wallet</Text>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.disconnectButton} onPress={handleDisconnect}>
+          <Ionicons name="log-out-outline" size={22} color="#ef4444" />
+          <Text style={styles.disconnectText}>Disconnect Wallet</Text>
+        </TouchableOpacity>
 
-      <Text style={styles.version}>Agora Mobile v1.0.0</Text>
-    </ScrollView>
+        <Text style={styles.version}>Agora Mobile v1.1.0</Text>
+      </ScrollView>
+
+      <ProfileEditModal
+        visible={isEditOpen}
+        initialUsername={displayName}
+        initialNickname={nickname}
+        initialAvatarUri={avatarUri}
+        isSaving={isSavingProfile}
+        isUploading={isUploadingAvatar}
+        onClose={() => setIsEditOpen(false)}
+        onSave={handleProfileSave}
+        onPickAvatar={handleAvatarPick}
+      />
+    </>
   );
 }
 
@@ -158,40 +336,118 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    padding: 32,
+    padding: 24,
     backgroundColor: 'white',
+    position: 'relative',
+  },
+  editPill: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#eef2ff',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  editPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4f46e5',
   },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     backgroundColor: '#6366f1',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
+  },
+  avatarImage: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    marginBottom: 12,
+    backgroundColor: '#e2e8f0',
   },
   avatarText: {
     color: 'white',
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: 'bold',
   },
+  userName: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  nickname: {
+    fontSize: 13,
+    color: '#6366f1',
+    marginTop: 2,
+    marginBottom: 10,
+  },
   walletLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#94a3b8',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   walletAddress: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#1e293b',
     fontFamily: 'monospace',
+  },
+  survivalCard: {
+    backgroundColor: 'white',
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 14,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  cardTitle: {
+    fontSize: 16,
+    color: '#0f172a',
+    fontWeight: '700',
+  },
+  cardSubTitle: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 3,
+    marginBottom: 10,
+  },
+  survivalStatus: {
+    alignSelf: 'flex-start',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  survivalStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  survivalScore: {
+    marginTop: 10,
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#0f172a',
   },
   statsContainer: {
     flexDirection: 'row',
     backgroundColor: 'white',
     margin: 16,
-    borderRadius: 16,
-    padding: 20,
+    marginBottom: 12,
+    borderRadius: 14,
+    padding: 18,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -207,7 +463,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: '#1e293b',
   },
@@ -220,40 +476,55 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     margin: 16,
     marginTop: 0,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: '#1e293b',
+    marginBottom: 8,
+  },
+  sectionHint: {
+    fontSize: 12,
+    color: '#64748b',
+    marginBottom: 12,
   },
   seeAll: {
     color: '#6366f1',
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  chartContainer: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+  },
+  balanceWrapper: {
+    maxHeight: 520,
   },
   emptyTasks: {
     alignItems: 'center',
-    paddingVertical: 32,
+    paddingVertical: 24,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#64748b',
-    marginTop: 12,
-    marginBottom: 16,
+    marginTop: 8,
+    marginBottom: 12,
   },
   createButton: {
     backgroundColor: '#6366f1',
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingVertical: 11,
     borderRadius: 8,
   },
   createButtonText: {
@@ -313,39 +584,26 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textTransform: 'capitalize',
   },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  settingText: {
-    flex: 1,
-    fontSize: 16,
-    color: '#1e293b',
-    marginLeft: 12,
-  },
   disconnectButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fee2e2',
     margin: 16,
-    marginTop: 0,
-    padding: 16,
+    marginTop: 2,
+    padding: 14,
     borderRadius: 12,
   },
   disconnectText: {
     color: '#ef4444',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     marginLeft: 8,
   },
   version: {
     textAlign: 'center',
     fontSize: 12,
     color: '#94a3b8',
-    marginBottom: 32,
+    marginBottom: 26,
   },
 });
