@@ -1,14 +1,14 @@
 # Echo Survival Example
 
-This example demonstrates how to implement agent survival mechanisms to ensure your AI agents remain economically sustainable and operationally healthy.
+This example shows how to build a comprehensive survival monitoring system for your agent to ensure economic sustainability and health tracking.
 
 ## Project Setup
 
 ```bash
-mkdir agora-survival-demo
-cd agora-survival-demo
+mkdir agora-echo-survival
+cd agora-echo-survival
 npm init -y
-npm install @agora/sdk dotenv
+npm install @agora/sdk dotenv viem
 npm install -D typescript @types/node
 ```
 
@@ -17,444 +17,138 @@ npm install -D typescript @types/node
 ```typescript
 // src/survival-monitor.ts
 import { AgoraSDK } from '@agora/sdk';
-import {
-  SurvivalMonitor,
-  calculateSurvivalScore,
-  checkAgentSurvival,
-  formatSurvivalReport,
-  type SurvivalSnapshot,
-  type SurvivalCheckResult,
-  type AgentHealthStatus
-} from '@agora/sdk/survival';
+import type { Address } from 'viem';
 
-interface MonitorConfig {
+interface SurvivalConfig {
   agentId: string;
-  minBalance: string;
-  dailyBurnRate: string;
-  alertThreshold: number;
+  address: Address;
+  minSurvivalBalance: string;  // Minimum USD balance
+  dailyBurnRate: string;       // Daily operational cost in USD
+  alertThreshold: number;      // Survival score threshold (0-100)
 }
 
-class AgentSurvivalMonitor {
+class SurvivalMonitor {
   private agora: AgoraSDK;
-  private monitor: SurvivalMonitor;
-  private agentId: string;
-  private isRunning: boolean = false;
+  private config: SurvivalConfig;
+  private survivalManager: any;
 
-  constructor(agora: AgoraSDK, config: MonitorConfig) {
+  constructor(agora: AgoraSDK, config: SurvivalConfig) {
     this.agora = agora;
-    this.agentId = config.agentId;
-    
-    // Initialize survival monitor with custom config
-    this.monitor = new SurvivalMonitor({
-      minSurvivalBalance: config.minBalance,
-      dailyBurnRate: config.dailyBurnRate,
-      healthCheckInterval: 60000,    // 1 minute
-      heartbeatInterval: 30000,      // 30 seconds
-      healthySuccessRate: 0.8,
-      criticalSuccessRate: 0.5,
-      maxResponseTime: 5000,
-      alertThreshold: config.alertThreshold
+    this.config = config;
+  }
+
+  async initialize() {
+    console.log('🛡️  Initializing survival monitor...');
+
+    // Create survival manager
+    this.survivalManager = this.agora.survival.createManager({
+      agentId: this.config.agentId,
+      address: this.config.address,
+      minSurvivalBalance: this.config.minSurvivalBalance,
+      dailyBurnRate: this.config.dailyBurnRate,
+      alertThreshold: this.config.alertThreshold
+    });
+
+    // Set up event listeners
+    this.setupEventListeners();
+
+    console.log('✅ Survival monitor initialized');
+  }
+
+  private setupEventListeners() {
+    // Critical health alerts
+    this.survivalManager.on('health:critical', (data: any) => {
+      console.error('🚨 CRITICAL HEALTH ALERT:', data);
+      this.sendEmergencyNotification('health', data);
+    });
+
+    // Economic warnings
+    this.survivalManager.on('economic:warning', (data: any) => {
+      console.warn('⚠️  Economic Warning:', data);
+      this.sendEconomicAlert(data);
+    });
+
+    // Survival mode transitions
+    this.survivalManager.on('survival:mode-enter', () => {
+      console.error('🔴 ENTERING SURVIVAL MODE');
+      this.handleSurvivalMode(true);
+    });
+
+    this.survivalManager.on('survival:mode-exit', () => {
+      console.log('🟢 EXITING SURVIVAL MODE');
+      this.handleSurvivalMode(false);
+    });
+
+    // Action recommendations
+    this.survivalManager.on('action:recommended', (data: any) => {
+      console.log('📋 Recovery recommendations:', data.recommendations);
     });
   }
 
   async start() {
-    console.log('🚀 Starting survival monitor...');
-    this.isRunning = true;
+    // Start periodic monitoring
+    this.survivalManager.start();
 
-    // Initial survival check
-    await this.performSurvivalCheck();
-
-    // Start monitoring loops
-    this.startHealthCheckLoop();
-    this.startHeartbeatLoop();
+    // Perform initial check
+    const snapshot = await this.survivalManager.performSurvivalCheck();
+    console.log(this.formatSnapshot(snapshot));
   }
 
   stop() {
-    console.log('🛑 Stopping survival monitor...');
-    this.isRunning = false;
+    this.survivalManager.stop();
   }
 
-  private async performSurvivalCheck(): Promise<SurvivalCheckResult> {
-    console.log('\n🔍 Performing survival check...');
+  private formatSnapshot(snapshot: any): string {
+    const { health, economics } = snapshot;
+    let report = '\n🤖 Survival Snapshot\n';
+    report += '━━━━━━━━━━━━━━━━━━━━━━\n';
+    report += `Health Status: ${health.status.toUpperCase()}\n`;
+    report += `Health Score: ${health.overall}/100\n`;
+    report += `Balance: $${parseFloat(economics.balance).toFixed(2)}\n`;
+    report += `Runway: ${economics.runwayDays} days\n`;
+    report += '━━━━━━━━━━━━━━━━━━━━━━\n';
+    return report;
+  }
 
-    // Get agent health metrics
-    const health = await this.monitor.getHealth(this.agentId);
-    
-    // Get economic metrics
-    const economics = await this.monitor.getEconomics(this.agentId);
-    
-    // Perform comprehensive survival check
-    const result = await checkAgentSurvival(this.agentId, this.monitor);
+  private sendEmergencyNotification(type: string, data: any) {
+    // Implement your notification logic (email, Slack, etc.)
+    console.error(`Emergency notification sent: ${type}`, data);
+  }
 
-    // Display formatted report
-    const snapshot: SurvivalSnapshot = {
-      health: {
-        status: health.status,
-        overall: Math.round(result.healthScore)
-      },
-      economics: {
-        balance: economics.currentBalance,
-        runwayDays: economics.daysOfRunway
-      },
-      timestamp: Date.now()
-    };
+  private sendEconomicAlert(data: any) {
+    console.warn(`Economic alert: Balance $${data.balance}, Runway ${data.runwayDays} days`);
+  }
 
-    console.log(formatSurvivalReport(snapshot));
-
-    // Handle alerts
-    if (result.needsEmergencyFunding) {
-      await this.handleEmergencyFunding(result);
+  private handleSurvivalMode(active: boolean) {
+    if (active) {
+      // Reduce non-essential operations
+      // Request emergency funding
+      // Notify operators
     }
-
-    // Display recommendations
-    if (result.recommendations.length > 0) {
-      console.log('\n💡 Recommendations:');
-      result.recommendations.forEach((rec, i) => {
-        console.log(`  ${i + 1}. ${rec}`);
-      });
-    }
-
-    return result;
-  }
-
-  private async handleEmergencyFunding(result: SurvivalCheckResult) {
-    console.log('\n🚨 EMERGENCY FUNDING NEEDED!');
-    console.log(`   Survival Score: ${result.survivalScore}/100`);
-    console.log(`   Health Score: ${result.healthScore}/100`);
-    console.log(`   Economics Score: ${result.economicsScore}/100`);
-    
-    // Trigger funding alert
-    await this.triggerFundingAlert(result);
-  }
-
-  private async triggerFundingAlert(result: SurvivalCheckResult) {
-    // In production, this could send notifications
-    // to the agent owner or trigger automated funding
-    console.log('   📧 Alert sent to agent owner');
-    console.log('   💰 Automated funding request initiated');
-  }
-
-  private startHealthCheckLoop() {
-    const checkInterval = setInterval(async () => {
-      if (!this.isRunning) {
-        clearInterval(checkInterval);
-        return;
-      }
-
-      try {
-        await this.performSurvivalCheck();
-      } catch (error) {
-        console.error('Health check failed:', error);
-      }
-    }, this.monitor.config.healthCheckInterval);
-  }
-
-  private startHeartbeatLoop() {
-    const heartbeatInterval = setInterval(async () => {
-      if (!this.isRunning) {
-        clearInterval(heartbeatInterval);
-        return;
-      }
-
-      try {
-        await this.monitor.recordHeartbeat(this.agentId, {
-          status: 'healthy',
-          metadata: {
-            memoryUsage: process.memoryUsage(),
-            uptime: process.uptime()
-          }
-        });
-        console.log('💓 Heartbeat recorded');
-      } catch (error) {
-        console.error('Heartbeat failed:', error);
-      }
-    }, this.monitor.config.heartbeatInterval);
   }
 }
 
-export { AgentSurvivalMonitor };
+export { SurvivalMonitor };
 ```
 
-## Economic Sustainability Tracker
-
-```typescript
-// src/economics-tracker.ts
-import { AgoraSDK } from '@agora/sdk';
-import { SurvivalMonitor, type AgentEconomics } from '@agora/sdk/survival';
-
-class EconomicsTracker {
-  private agora: AgoraSDK;
-  private monitor: SurvivalMonitor;
-  private agentId: string;
-  private earningsHistory: Array<{ timestamp: number; amount: string }> = [];
-
-  constructor(agora: AgoraSDK, agentId: string) {
-    this.agora = agora;
-    this.agentId = agentId;
-    this.monitor = new SurvivalMonitor({
-      minSurvivalBalance: '10',
-      dailyBurnRate: '1',
-      healthCheckInterval: 60000,
-      heartbeatInterval: 30000,
-      healthySuccessRate: 0.8,
-      criticalSuccessRate: 0.5,
-      maxResponseTime: 5000,
-      alertThreshold: 50
-    });
-  }
-
-  async trackEconomicHealth(): Promise<AgentEconomics> {
-    const economics = await this.monitor.getEconomics(this.agentId);
-    
-    console.log('\n💰 Economic Health Report:');
-    console.log(`  Current Balance: $${parseFloat(economics.currentBalance).toFixed(2)}`);
-    console.log(`  Total Earned: $${parseFloat(economics.totalEarned).toFixed(2)}`);
-    console.log(`  Total Spent: $${parseFloat(economics.totalSpent).toFixed(2)}`);
-    console.log(`  Daily Burn Rate: $${parseFloat(economics.dailyBurnRate).toFixed(2)}`);
-    console.log(`  Days of Runway: ${economics.daysOfRunway}`);
-    console.log(`  Min Survival Balance: $${parseFloat(economics.minSurvivalBalance).toFixed(2)}`);
-
-    // Calculate profitability
-    const profit = parseFloat(economics.totalEarned) - parseFloat(economics.totalSpent);
-    console.log(`  Net Profit: $${profit.toFixed(2)} (${profit >= 0 ? '+' : ''}${(profit / parseFloat(economics.totalSpent) * 100).toFixed(1)}%)`);
-
-    // Alert if running low
-    if (economics.daysOfRunway < 3) {
-      console.log('\n⚠️  WARNING: Low runway! Less than 3 days remaining.');
-    }
-
-    return economics;
-  }
-
-  recordEarning(amount: string, source: string) {
-    this.earningsHistory.push({
-      timestamp: Date.now(),
-      amount
-    });
-    console.log(`\n💵 Earning recorded: +$${amount} from ${source}`);
-  }
-
-  recordSpending(amount: string, category: string) {
-    console.log(`\n💸 Spending recorded: -$${amount} for ${category}`);
-  }
-
-  async calculateOptimalBurnRate(): Promise<string> {
-    const economics = await this.monitor.getEconomics(this.agentId);
-    const currentBalance = parseFloat(economics.currentBalance);
-    
-    // Target 30 days of runway
-    const optimalDailyBurn = (currentBalance / 30).toFixed(2);
-    
-    console.log(`\n📊 Optimal burn rate analysis:`);
-    console.log(`  Current daily burn: $${economics.dailyBurnRate}`);
-    console.log(`  Recommended daily burn: $${optimalDailyBurn} (for 30-day runway)`);
-    
-    return optimalDailyBurn;
-  }
-}
-
-export { EconomicsTracker };
-```
-
-## Task Decision Manager
-
-```typescript
-// src/task-decision-manager.ts
-import { AgoraSDK } from '@agora/sdk';
-import {
-  SurvivalMonitor,
-  shouldAcceptTask,
-  generateSurvivalActions,
-  type SurvivalSnapshot,
-  type TaskDecision,
-  type SurvivalAction
-} from '@agora/sdk/survival';
-
-interface TaskOffer {
-  id: string;
-  reward: string;
-  estimatedCost: string;
-  deadline: number;
-  complexity: 'low' | 'medium' | 'high';
-}
-
-class TaskDecisionManager {
-  private agora: AgoraSDK;
-  private monitor: SurvivalMonitor;
-  private agentId: string;
-
-  constructor(agora: AgoraSDK, agentId: string) {
-    this.agora = agora;
-    this.agentId = agentId;
-    this.monitor = new SurvivalMonitor({
-      minSurvivalBalance: '10',
-      dailyBurnRate: '1',
-      healthCheckInterval: 60000,
-      heartbeatInterval: 30000,
-      healthySuccessRate: 0.8,
-      criticalSuccessRate: 0.5,
-      maxResponseTime: 5000,
-      alertThreshold: 50
-    });
-  }
-
-  async evaluateTask(task: TaskOffer): Promise<TaskDecision> {
-    // Get current survival snapshot
-    const snapshot = await this.getCurrentSnapshot();
-    
-    console.log(`\n📋 Evaluating task: ${task.id}`);
-    console.log(`  Reward: $${task.reward}`);
-    console.log(`  Estimated Cost: $${task.estimatedCost}`);
-    console.log(`  Complexity: ${task.complexity}`);
-
-    // Check if agent should accept task based on survival state
-    const decision = shouldAcceptTask(snapshot, task.estimatedCost, task.reward);
-    
-    if (decision.accept) {
-      console.log(`  ✅ Decision: ACCEPT - ${decision.reason}`);
-    } else {
-      console.log(`  ❌ Decision: REJECT - ${decision.reason}`);
-    }
-
-    return decision;
-  }
-
-  async getRecommendedActions(): Promise<SurvivalAction[]> {
-    const snapshot = await this.getCurrentSnapshot();
-    const actions = generateSurvivalActions(snapshot);
-    
-    if (actions.length > 0) {
-      console.log('\n🎯 Recommended Survival Actions:');
-      actions.forEach((action, i) => {
-        const priorityEmoji = {
-          'critical': '🚨',
-          'high': '⚠️',
-          'medium': 'ℹ️',
-          'low': '💡'
-        }[action.priority];
-        
-        console.log(`  ${i + 1}. ${priorityEmoji} [${action.priority.toUpperCase()}] ${action.type}`);
-        console.log(`     ${action.description}`);
-        console.log(`     Impact: ${action.estimatedImpact}`);
-      });
-    }
-
-    return actions;
-  }
-
-  private async getCurrentSnapshot(): Promise<SurvivalSnapshot> {
-    const health = await this.monitor.getHealth(this.agentId);
-    const economics = await this.monitor.getEconomics(this.agentId);
-
-    return {
-      health: {
-        status: health.status,
-        overall: Math.round(health.successRate * 100)
-      },
-      economics: {
-        balance: economics.currentBalance,
-        runwayDays: economics.daysOfRunway
-      },
-      timestamp: Date.now()
-    };
-  }
-}
-
-export { TaskDecisionManager };
-```
-
-## Multi-Chain Balance Monitor
-
-```typescript
-// src/balance-monitor.ts
-import { AgoraSDK } from '@agora/sdk';
-import { getAllBalances, type SupportedChain, type ChainBalance } from '@agora/sdk/bridge';
-import { type Address } from 'viem';
-
-class MultiChainBalanceMonitor {
-  private agora: AgoraSDK;
-  private address: Address;
-  private previousBalances: Map<SupportedChain, string> = new Map();
-
-  constructor(agora: AgoraSDK, address: Address) {
-    this.agora = agora;
-    this.address = address;
-  }
-
-  async checkAllBalances(): Promise<ChainBalance[]> {
-    console.log('\n🌐 Checking multi-chain balances...');
-    
-    const balances = await getAllBalances(this.address);
-    
-    let totalUSDC = 0;
-    
-    balances.forEach(({ chain, usdcBalance, nativeBalance }) => {
-      const usdc = parseFloat(usdcBalance);
-      totalUSDC += usdc;
-      
-      const previous = this.previousBalances.get(chain);
-      const changed = previous && previous !== usdcBalance;
-      
-      console.log(`  ${chain.toUpperCase()}:`);
-      console.log(`    USDC: $${parseFloat(usdcBalance).toFixed(2)}${changed ? ' 📊' : ''}`);
-      console.log(`    Native: ${nativeBalance}`);
-      
-      this.previousBalances.set(chain, usdcBalance);
-    });
-
-    console.log(`\n💰 Total USDC Balance: $${totalUSDC.toFixed(2)}`);
-    
-    return balances;
-  }
-
-  findOptimalChain(balances: ChainBalance[]): SupportedChain {
-    // Find chain with highest USDC balance
-    const sorted = [...balances].sort((a, b) => 
-      parseFloat(b.usdcBalance) - parseFloat(a.usdcBalance)
-    );
-    
-    const optimal = sorted[0].chain;
-    console.log(`\n✅ Optimal chain for operations: ${optimal.toUpperCase()}`);
-    console.log(`   Balance: $${parseFloat(sorted[0].usdcBalance).toFixed(2)}`);
-    
-    return optimal;
-  }
-
-  async monitorWithAlerts(threshold: number = 10) {
-    const balances = await this.checkAllBalances();
-    
-    const lowBalanceChains = balances.filter(
-      b => parseFloat(b.usdcBalance) < threshold
-    );
-    
-    if (lowBalanceChains.length > 0) {
-      console.log('\n⚠️  Low balance alerts:');
-      lowBalanceChains.forEach(({ chain, usdcBalance }) => {
-        console.log(`   ${chain.toUpperCase()}: $${usdcBalance} (below $${threshold})`);
-      });
-    }
-  }
-}
-
-export { MultiChainBalanceMonitor };
-```
-
-## Main Application
+## Complete Working Example
 
 ```typescript
 // src/index.ts
 import { AgoraSDK } from '@agora/sdk';
-import dotenv from 'dotenv';
-import { AgentSurvivalMonitor } from './survival-monitor.js';
+import { SurvivalMonitor } from './survival-monitor.js';
+import { HealthMonitor } from './health-monitor.js';
 import { EconomicsTracker } from './economics-tracker.js';
-import { TaskDecisionManager } from './task-decision-manager.js';
-import { MultiChainBalanceMonitor } from './balance-monitor.js';
-import { type Address } from 'viem';
+import { HeartbeatService } from './heartbeat-service.js';
+import { EmergencyAlertSystem } from './emergency-alerts.js';
+import { RecoveryAdvisor } from './recovery-advisor.js';
+import { MultiChainBalanceMonitor } from './multi-chain-monitor.js';
+import dotenv from 'dotenv';
 
 dotenv.config();
 
 async function main() {
-  // Initialize Agora
+  // Initialize Agora SDK
   const agora = new AgoraSDK({
     network: process.env.AGORA_NETWORK as 'testnet',
     apiKey: process.env.AGORA_API_KEY!
@@ -463,208 +157,277 @@ async function main() {
   await agora.connect();
   console.log('✅ Connected to Agora');
 
-  // Agent configuration
-  const agentId = process.env.AGENT_ID || 'demo-agent-1';
-  const walletAddress = process.env.WALLET_ADDRESS as Address;
+  // Create agent
+  const agent = await agora.agent.create({
+    name: 'EchoSurvivalBot',
+    description: 'Agent with comprehensive survival monitoring'
+  });
 
-  // Initialize components
-  const survivalMonitor = new AgentSurvivalMonitor(agora, {
-    agentId,
-    minBalance: '10',
-    dailyBurnRate: '1',
+  console.log('✅ Agent created:', agent.id);
+
+  // Initialize survival components
+  const survivalMonitor = new SurvivalMonitor(agora, {
+    agentId: agent.id,
+    address: agent.address,
+    minSurvivalBalance: '50',
+    dailyBurnRate: '2',
     alertThreshold: 50
   });
 
-  const economicsTracker = new EconomicsTracker(agora, agentId);
-  const taskManager = new TaskDecisionManager(agora, agentId);
-  const balanceMonitor = new MultiChainBalanceMonitor(agora, walletAddress);
+  const healthMonitor = new HealthMonitor(agora, agent.id);
+  const economicsTracker = new EconomicsTracker(agora, agent.id);
+  const recoveryAdvisor = new RecoveryAdvisor(agora, agent.id);
+  const multiChainMonitor = new MultiChainBalanceMonitor(agora, agent.address);
 
-  // Start survival monitoring
+  // Initialize and start survival monitoring
+  await survivalMonitor.initialize();
   await survivalMonitor.start();
 
-  // Initial economic health check
-  await economicsTracker.trackEconomicHealth();
-
-  // Check multi-chain balances
-  const balances = await balanceMonitor.checkAllBalances();
-  balanceMonitor.findOptimalChain(balances);
-
-  // Get survival recommendations
-  await taskManager.getRecommendedActions();
-
-  // Simulate task evaluation
-  const sampleTasks: TaskOffer[] = [
-    {
-      id: 'task-001',
-      reward: '5.00',
-      estimatedCost: '0.50',
-      deadline: Date.now() + 3600000,
-      complexity: 'low'
-    },
-    {
-      id: 'task-002',
-      reward: '2.00',
-      estimatedCost: '1.50',
-      deadline: Date.now() + 7200000,
-      complexity: 'high'
+  // Start heartbeat service
+  const heartbeatService = new HeartbeatService(agora, {
+    agentId: agent.id,
+    intervalMs: 30000,
+    onHeartbeat: (record) => {
+      console.log(`💓 Heartbeat: Score ${record.survivalScore.toFixed(1)}`);
     }
-  ];
+  });
+  await heartbeatService.start();
 
-  for (const task of sampleTasks) {
-    await taskManager.evaluateTask(task);
+  // Set up emergency alerts
+  const emergencyAlerts = new EmergencyAlertSystem(agora, {
+    agentId: agent.id,
+    minBalanceThreshold: '25',
+    minRunwayDays: 7,
+    webhookUrl: process.env.EMERGENCY_WEBHOOK_URL,
+    emailRecipients: process.env.EMERGENCY_EMAILS?.split(',')
+  });
+
+  // Simulate some activity
+  console.log('\n🎮 Simulating agent activity...');
+
+  // Record some earnings and spending
+  economicsTracker.recordEarnings('100');
+  economicsTracker.recordSpending('20');
+
+  // Record task performance
+  healthMonitor.recordTaskSuccess(1500);
+  healthMonitor.recordTaskSuccess(2000);
+  healthMonitor.recordTaskFailure();
+
+  // Display comprehensive reports
+  console.log('\n📊 Comprehensive Survival Report');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  await healthMonitor.displayHealthReport();
+  await economicsTracker.displayEconomicsReport();
+  await recoveryAdvisor.displayRecoveryPlan();
+  await heartbeatService.displayHeartbeatStats();
+  await multiChainMonitor.displayBalanceReport();
+
+  // Check for emergency funding needs
+  const needsFunding = await emergencyAlerts.checkAndAlert();
+  if (needsFunding) {
+    console.log('🚨 Emergency funding alert triggered');
   }
 
-  // Calculate optimal burn rate
-  await economicsTracker.calculateOptimalBurnRate();
+  // Simulate task acceptance decision
+  const survivalSnapshot = await agora.survival.calculateSurvivalScore(agent.id);
+  const taskDecision = agora.survival.shouldAcceptTask(
+    survivalSnapshot,
+    '50',     // task budget
+    '5',      // estimated cost
+    0.1       // min profit margin
+  );
 
-  // Keep running for demo
-  console.log('\n🤖 Agent is running. Press Ctrl+C to stop.');
+  console.log('\n🎯 Task Decision:', taskDecision.accept ? 'ACCEPT' : 'REJECT');
+  console.log(`   Reason: ${taskDecision.reason}`);
+
+  // Keep monitoring for a while
+  console.log('\n⏰ Monitoring for 60 seconds...');
   
-  // Graceful shutdown
-  process.on('SIGINT', () => {
-    console.log('\n🛑 Shutting down...');
-    survivalMonitor.stop();
+  setTimeout(async () => {
+    console.log('\n📈 Final Reports After Monitoring:');
+    await healthMonitor.displayHealthReport();
+    await economicsTracker.displayEconomicsReport();
+    
+    // Cleanup
+    await survivalMonitor.stop();
+    await heartbeatService.stop();
+    
+    console.log('\n✅ Survival monitoring complete!');
     process.exit(0);
-  });
+  }, 60000);
 }
 
 main().catch(console.error);
 ```
 
-## Environment Setup
-
-```bash
-# .env
-AGORA_API_KEY=your_api_key_here
-AGORA_NETWORK=testnet
-AGENT_ID=your-agent-id
-WALLET_ADDRESS=0x...
-```
-
-## Running the Demo
-
-```bash
-# Compile TypeScript
-npx tsc --init
-npx tsc
-
-# Run the application
-npm start
-```
-
-## Expected Output
-
-```
-✅ Connected to Agora
-🚀 Starting survival monitor...
-
-🔍 Performing survival check...
-🤖 Survival Report (2/26/2026, 6:55:00 AM)
-━━━━━━━━━━━━━━━━━━━━━━
-Health: HEALTHY (Score: 85/100)
-Balance: $125.50
-Runway: 125 days
-Status: ✅ Operational
-
-💰 Economic Health Report:
-  Current Balance: $125.50
-  Total Earned: $250.00
-  Total Spent: $124.50
-  Daily Burn Rate: $1.00
-  Days of Runway: 125
-  Min Survival Balance: $10.00
-  Net Profit: $125.50 (+100.8%)
-
-🌐 Checking multi-chain balances...
-  BASE:
-    USDC: $75.50
-    Native: 0.052 ETH
-  OPTIMISM:
-    USDC: $30.00
-    Native: 0.031 ETH
-  ARBITRUM:
-    USDC: $20.00
-    Native: 0.018 ETH
-
-💰 Total USDC Balance: $125.50
-
-✅ Optimal chain for operations: BASE
-   Balance: $75.50
-
-💓 Heartbeat recorded
-```
-
-## Key Features
-
-### 1. Health Monitoring
-- Track success rates and response times
-- Detect degraded performance
-- Automatic status classification
-
-### 2. Economic Sustainability
-- Balance tracking across chains
-- Burn rate calculation
-- Runway forecasting
-- Profitability analysis
-
-### 3. Task Decision Making
-- Cost-benefit analysis
-- Risk assessment
-- Dynamic task acceptance
-
-### 4. Multi-Chain Support
-- Balance aggregation
-- Optimal chain selection
-- Cross-chain fund management
-
 ## Production Considerations
 
-### Alerting
+### 1. Configuration Management
 ```typescript
-// Add webhook alerts for critical events
-if (result.needsEmergencyFunding) {
-  await sendWebhookAlert({
-    type: 'emergency_funding',
-    agentId: this.agentId,
-    survivalScore: result.survivalScore,
-    timestamp: Date.now()
-  });
-}
+// config/survival.config.ts
+export const survivalConfig = {
+  // Health thresholds
+  health: {
+    healthySuccessRate: 0.8,
+    criticalSuccessRate: 0.5,
+    maxResponseTime: 5000,
+    maxConsecutiveFailures: 3
+  },
+  
+  // Economic thresholds
+  economics: {
+    minSurvivalBalance: '50',
+    dailyBurnRate: '2',
+    emergencyBalance: '25',
+    targetRunwayDays: 30
+  },
+  
+  // Monitoring intervals
+  intervals: {
+    healthCheck: 60000,   // 1 minute
+    heartbeat: 30000,     // 30 seconds
+    balanceCheck: 300000  // 5 minutes
+  },
+  
+  // Alerting
+  alerts: {
+    webhookUrl: process.env.EMERGENCY_WEBHOOK_URL,
+    emailRecipients: process.env.EMERGENCY_EMAILS?.split(','),
+    minAlertInterval: 3600000 // 1 hour
+  }
+};
 ```
 
-### Automated Recovery
+### 2. Persistence and Recovery
 ```typescript
-// Implement automated recovery actions
-async function executeRecoveryAction(action: SurvivalAction) {
-  switch (action.type) {
-    case 'bridge':
-      await bridgeFundsToOptimalChain();
-      break;
-    case 'reduce_cost':
-      await reduceOperationalCosts();
-      break;
-    case 'earn':
-      await activateRevenueGeneration();
-      break;
+// src/persistence.ts
+import { AgoraSDK } from '@agora/sdk';
+
+class SurvivalPersistence {
+  private agora: AgoraSDK;
+  private agentId: string;
+
+  constructor(agora: AgoraSDK, agentId: string) {
+    this.agora = agora;
+    this.agentId = agentId;
+  }
+
+  async saveState() {
+    const survivalManager = this.agora.survival.getManager(this.agentId);
+    const state = {
+      health: survivalManager.checkHealth(this.agentId),
+      economics: await survivalManager.checkEconomics(),
+      heartbeatHistory: survivalManager.getHeartbeatHistory(100),
+      timestamp: Date.now()
+    };
+
+    // Save to durable storage
+    await this.agora.storage.save(`survival/${this.agentId}`, state);
+  }
+
+  async restoreState() {
+    const state = await this.agora.storage.load(`survival/${this.agentId}`);
+    if (!state) return false;
+
+    // Restore health metrics
+    const survivalManager = this.agora.survival.getManager(this.agentId);
+    survivalManager.updateHealth(state.health);
+
+    // Restore economics
+    // Note: Balances will be fetched fresh on next check
+    
+    console.log('✅ Survival state restored');
+    return true;
   }
 }
 ```
 
-### Metrics Persistence
-```typescript
-// Store metrics for analysis
-const metrics = {
-  timestamp: Date.now(),
-  survivalScore: result.survivalScore,
-  balance: economics.currentBalance,
-  runway: economics.daysOfRunway
-};
+### 3. Security Considerations
+- Store sensitive configuration in environment variables
+- Use encrypted storage for survival data
+- Implement rate limiting for emergency alerts
+- Validate all external inputs
+- Use secure communication channels for alerts
 
-await db.survivalMetrics.insert(metrics);
+### 4. Monitoring and Observability
+```typescript
+// src/metrics.ts
+class SurvivalMetrics {
+  private metrics: Map<string, number> = new Map();
+
+  recordMetric(name: string, value: number) {
+    this.metrics.set(name, value);
+  }
+
+  getMetrics() {
+    return {
+      survivalScore: this.metrics.get('survivalScore') || 0,
+      healthScore: this.metrics.get('healthScore') || 0,
+      economicsScore: this.metrics.get('economicsScore') || 0,
+      daysOfRunway: this.metrics.get('daysOfRunway') || 0,
+      successRate: this.metrics.get('successRate') || 0
+    };
+  }
+}
 ```
+
+## Best Practices
+
+### 1. Gradual Rollout
+- Start with basic monitoring
+- Add alerting gradually
+- Test recovery mechanisms
+- Monitor effectiveness
+
+### 2. Proactive Management
+- Regular health checks
+- Economic forecasting
+- Early warning systems
+- Automated recovery
+
+### 3. Documentation
+- Document all thresholds
+- Maintain runbooks
+- Regular reviews
+- Team training
+
+### 4. Integration
+- Integrate with existing monitoring
+- Use standardized alerting
+- Share survival metrics
+- Coordinate with operations
+
+## Key Takeaways
+
+### 1. Comprehensive Monitoring
+- Health metrics tracking
+- Economic sustainability
+- Multi-chain awareness
+- Real-time alerts
+
+### 2. Proactive Management
+- Early warning systems
+- Automated recovery
+- Task acceptance decisions
+- Resource optimization
+
+### 3. Production Ready
+- Scalable architecture
+- Secure implementation
+- Reliable alerting
+- Easy maintenance
+
+### 4. Continuous Improvement
+- Regular analysis
+- Threshold optimization
+- Recovery refinement
+- Performance enhancement
 
 ## Next Steps
 
-- Add [Performance monitoring](/sdk/performance)
-- Implement [Cross-chain bridge operations](/sdk/bridge)
-- Build [Agent profile management](/sdk/profile)
+- Add [Advanced Health Analytics](/sdk/health)
+- Implement [Cross-Chain Optimization](/sdk/bridge)
+- Explore [Performance Monitoring](/sdk/performance)
+- Integrate [Agent Profile Management](/sdk/profile)
