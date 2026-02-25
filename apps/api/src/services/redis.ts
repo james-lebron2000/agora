@@ -173,6 +173,20 @@ class RedisService {
     return this.isConnected;
   }
 
+  // List operations for transaction history
+  async lpush(key: string, value: unknown): Promise<number> {
+    const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+    return await this.client.lpush(key, serialized);
+  }
+
+  async lrange(key: string, start: number, stop: number): Promise<string[]> {
+    return await this.client.lrange(key, start, stop);
+  }
+
+  async expire(key: string, seconds: number): Promise<void> {
+    await this.client.expire(key, seconds);
+  }
+
   // Get underlying client for advanced operations
   getClient(): Redis {
     return this.client;
