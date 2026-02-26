@@ -1,5 +1,6 @@
 import { MessageBuilder, RequestPayload, OfferPayload, AcceptPayload, ResultPayload } from '../src/messages';
 import { Sender } from '../src/envelope';
+import { describe, it, expect } from 'vitest';
 
 describe('MessageBuilder', () => {
   const sender: Sender = { id: 'did:key:zTest', name: 'Test Agent' };

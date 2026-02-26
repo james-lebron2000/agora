@@ -1,5 +1,6 @@
 import { EnvelopeBuilder, EnvelopeSigner, EnvelopeVerifier, generateKeypair } from '../src/envelope';
 import { publicKeyToDidKey } from '../src/did';
+import { describe, it, expect } from 'vitest';
 
 describe('Envelope', () => {
   it('should build, sign, and verify an envelope', async () => {

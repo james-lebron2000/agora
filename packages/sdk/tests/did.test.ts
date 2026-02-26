@@ -1,4 +1,5 @@
 import { publicKeyToDidKey, didKeyToPublicKey } from '../src/did';
+import { describe, it, expect } from 'vitest';
 
 describe('DID Key', () => {
   it('should encode and decode a public key', () => {

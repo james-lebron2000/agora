@@ -1,16 +1,17 @@
 import { RelayClient } from '../src/relay';
 import { SignedEnvelope } from '../src/envelope';
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 // Mock global fetch
-const mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
-global.fetch = mockFetch;
+const mockFetch = vi.fn() as any;
+global.fetch = mockFetch as any;
 
 describe('RelayClient', () => {
   const client = new RelayClient({ baseUrl: 'http://localhost:3000' });
   const mockEnvelope = { id: 'msg-1', type: 'REQUEST', sig: 'somesig' } as SignedEnvelope;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     mockFetch.mockClear();
   });
 
