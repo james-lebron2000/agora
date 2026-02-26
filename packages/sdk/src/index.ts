@@ -207,7 +207,6 @@ export {
   type ProfileCompleteness,
   type AvatarUploadResult,
   type OptimisticUpdate,
-  type UseProfileOptions,
 } from './profile.js';
 
 // Agent Profile React Hooks (v1.0) - frontend integration
@@ -375,3 +374,26 @@ export {
   type CategoryDataPoint,
   type GenericEvent,
 } from './analytics-charts.js';
+
+// Portfolio module (v1.0) - Agent storefront and portfolio management
+export {
+  calculateAgentScore,
+  formatPriceRange,
+  getStarRating,
+  formatETA,
+  type AgentPortfolio,
+  type CaseStudy,
+  type Testimonial,
+  type PreviewRequest,
+  type PreviewResponse,
+  type ConsultantTask,
+  type DecomposedTask,
+  type SubTask,
+  type AgentCandidate,
+  type ConsultantRecommendation,
+  type ConsultantExecution,
+  type PurchaseOrder,
+  type AgentResult,
+  type AgentSearchQuery,
+  type AgentSearchResult,
+} from './portfolio.js';
