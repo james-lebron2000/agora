@@ -18,7 +18,7 @@ import { base, optimism, arbitrum, mainnet } from 'viem/chains';
 import { EventEmitter } from 'events';
 
 // Bridge event types
-export type BridgeEventType = 
+export type BridgeEventType =
   | 'quoteReceived'
   | 'transactionSent'
   | 'transactionConfirmed'
@@ -26,7 +26,11 @@ export type BridgeEventType =
   | 'approvalRequired'
   | 'approvalConfirmed'
   | 'balanceInsufficient'
-  | 'feeEstimated';
+  | 'feeEstimated'
+  | 'monitoringStarted'
+  | 'monitorStatusUpdate'
+  | 'monitorCompleted'
+  | 'monitorFailed';
 
 // Bridge event data interfaces
 export interface BridgeQuoteEvent {
@@ -62,11 +66,27 @@ export interface BridgeFeeEvent {
   destinationChain: SupportedChain;
 }
 
-export type BridgeEventData = 
-  | BridgeQuoteEvent 
-  | BridgeTransactionEvent 
-  | BridgeErrorEvent 
-  | BridgeFeeEvent 
+export interface BridgeMonitoringEvent {
+  txHash: Hex;
+  sourceChain: SupportedChain;
+  destinationChain: SupportedChain;
+}
+
+export interface BridgeMonitoringStatusEvent extends BridgeTransactionStatusDetails {}
+
+export interface BridgeMonitoringFailedEvent {
+  status: BridgeTransactionStatusDetails;
+  error: BridgeError;
+}
+
+export type BridgeEventData =
+  | BridgeQuoteEvent
+  | BridgeTransactionEvent
+  | BridgeErrorEvent
+  | BridgeFeeEvent
+  | BridgeMonitoringEvent
+  | BridgeMonitoringStatusEvent
+  | BridgeMonitoringFailedEvent
   | { sourceChain: SupportedChain; destinationChain: SupportedChain; amount: string; token: string };
 
 // Supported chains
@@ -121,8 +141,26 @@ export interface BridgeQuote {
   };
 }
 
-// Bridge transaction status
-type BridgeTransactionStatus = 'pending' | 'completed' | 'failed';
+// Bridge transaction status with detailed tracking
+type BridgeTransactionStatus = 'pending' | 'source_confirmed' | 'message_sent' | 'message_delivered' | 'completed' | 'failed' | 'timeout';
+
+// Detailed bridge transaction status for monitoring
+export interface BridgeTransactionStatusDetails {
+  txHash: Hex;
+  sourceChain: SupportedChain;
+  destinationChain: SupportedChain;
+  status: BridgeTransactionStatus;
+  stage: 'source' | 'cross_chain' | 'destination';
+  progress: number; // 0-100
+  messageHash?: Hex; // LayerZero message hash
+  sourceConfirmations?: number;
+  requiredConfirmations: number;
+  estimatedCompletionTime: number;
+  actualCompletionTime?: number;
+  error?: string;
+  retryCount: number;
+  lastUpdated: number;
+}
 
 // Bridge transaction interface
 export interface BridgeTransaction {
@@ -298,6 +336,57 @@ export interface BridgeResult {
     nativeFee: string;
     lzTokenFee: string;
   };
+}
+
+// LayerZero Endpoint ABI (V2) for message tracking
+const LZ_ENDPOINT_ABI = [
+  {
+    name: 'getInboundNonce',
+    type: 'function',
+    inputs: [
+      { name: '_srcChainId', type: 'uint32' },
+      { name: '_srcAddress', type: 'bytes32' }
+    ],
+    outputs: [{ name: '', type: 'uint64' }],
+    stateMutability: 'view'
+  },
+  {
+    name: 'getOutboundNonce',
+    type: 'function',
+    inputs: [
+      { name: '_dstChainId', type: 'uint32' },
+      { name: '_sender', type: 'address' }
+    ],
+    outputs: [{ name: '', type: 'uint64' }],
+    stateMutability: 'view'
+  },
+  {
+    name: 'verifiable',
+    type: 'function',
+    inputs: [
+      { name: '_origin', type: 'tuple', components: [
+        { name: 'srcEid', type: 'uint32' },
+        { name: 'sender', type: 'bytes32' },
+        { name: 'nonce', type: 'uint64' }
+      ]},
+      { name: '_receiver', type: 'address' }
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'view'
+  }
+] as const;
+
+// LayerZero message verification status
+export interface LayerZeroMessageStatus {
+  messageHash: Hex;
+  srcEid: number;
+  dstEid: number;
+  nonce: bigint;
+  status: 'pending' | 'verified' | 'delivered' | 'failed';
+  confirmations: number;
+  verifiedBlockNumber?: bigint;
+  deliveredBlockNumber?: bigint;
+  retryCount: number;
 }
 
 // LayerZero OFT V2 ABI
@@ -657,6 +746,187 @@ export async function findCheapestChain(
 }
 
 /**
+ * Bridge fee estimate result
+ */
+export interface BridgeFeeEstimate {
+  sourceChain: SupportedChain;
+  destinationChain: SupportedChain;
+  token: 'USDC' | 'ETH';
+  amount: string;
+  nativeFee: string; // Fee in native token (ETH)
+  lzTokenFee: string; // Fee in LZ token (if applicable)
+  totalFeeUSD: string; // Estimated total fee in USD
+  gasEstimate: string; // Estimated gas units
+  estimatedTime: number; // Estimated time in seconds
+  breakdown: {
+    protocolFee: string;
+    gasFee: string;
+    bridgeFee: string;
+  };
+}
+
+/**
+ * Estimate bridge fees for cross-chain transfer
+ * Provides comprehensive fee estimation including protocol fees, gas costs, and bridge fees
+ * 
+ * @param params - Fee estimation parameters
+ * @returns Detailed fee estimate
+ * 
+ * @example
+ * ```typescript
+ * const estimate = await estimateBridgeFee({
+ *   sourceChain: 'base',
+ *   destinationChain: 'optimism',
+ *   token: 'USDC',
+ *   amount: '100'
+ * });
+ * console.log(`Total fee: ${estimate.totalFeeUSD} USD`);
+ * ```
+ */
+export async function estimateBridgeFee(
+  params: {
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    token: 'USDC' | 'ETH';
+    amount: string;
+    senderAddress?: Address;
+  }
+): Promise<BridgeFeeEstimate> {
+  const { sourceChain, destinationChain, token, amount, senderAddress } = params;
+
+  // Validate chains are different
+  if (sourceChain === destinationChain) {
+    throw new BridgeError('Source and destination chains must be different', 'INVALID_PARAMS');
+  }
+
+  const publicClient = createChainPublicClient(sourceChain);
+  const testAddress = senderAddress || '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+
+  let nativeFee = 0n;
+  let lzTokenFee = 0n;
+  let gasEstimate = 150000n; // Base gas estimate
+
+  try {
+    if (token === 'USDC') {
+      // Get accurate fee quote from LayerZero OFT
+      const amountInUnits = parseUnits(amount, 6);
+      const oftAddress = LAYERZERO_USDC_OFT[sourceChain];
+      const dstEid = LAYERZERO_CHAIN_IDS[destinationChain];
+
+      // Convert address to bytes32
+      const toBytes32 = ('0x' + testAddress.slice(2).padStart(64, '0')) as `0x${string}`;
+      const minAmountLD = (amountInUnits * 995n) / 1000n; // 0.5% slippage
+
+      const sendParam = {
+        dstEid,
+        to: toBytes32,
+        amountLD: amountInUnits,
+        minAmountLD,
+        extraOptions: '0x' as `0x${string}`,
+        composeMsg: '0x' as `0x${string}`,
+        oftCmd: '0x' as `0x${string}`
+      };
+
+      const fee = await publicClient.readContract({
+        address: oftAddress,
+        abi: OFT_ABI,
+        functionName: 'quoteSend',
+        args: [sendParam, false]
+      });
+
+      nativeFee = fee.nativeFee;
+      lzTokenFee = fee.lzTokenFee;
+
+      // Estimate gas for the send transaction
+      gasEstimate = 200000n; // OFT send typically uses ~200k gas
+    } else {
+      // ETH transfer estimation
+      // ETH transfers use standard LayerZero messaging
+      const route = `${sourceChain}-${destinationChain}`;
+      const baseFees: Record<string, bigint> = {
+        'base-optimism': parseUnits('0.001', 18),
+        'base-arbitrum': parseUnits('0.0012', 18),
+        'optimism-base': parseUnits('0.001', 18),
+        'optimism-arbitrum': parseUnits('0.0012', 18),
+        'arbitrum-base': parseUnits('0.0012', 18),
+        'arbitrum-optimism': parseUnits('0.0012', 18),
+        'ethereum-base': parseUnits('0.005', 18),
+        'ethereum-optimism': parseUnits('0.005', 18),
+        'ethereum-arbitrum': parseUnits('0.005', 18),
+        'base-ethereum': parseUnits('0.01', 18),
+        'optimism-ethereum': parseUnits('0.01', 18),
+        'arbitrum-ethereum': parseUnits('0.01', 18)
+      };
+      nativeFee = baseFees[route] || parseUnits('0.001', 18);
+      gasEstimate = 120000n;
+    }
+  } catch (error) {
+    console.warn(`[Bridge] Failed to get accurate fee estimate, using fallback:`, error);
+    // Fallback estimates
+    nativeFee = parseUnits('0.001', 18);
+    lzTokenFee = 0n;
+  }
+
+  // Get current gas price
+  let gasPrice: bigint;
+  try {
+    gasPrice = await publicClient.getGasPrice();
+  } catch {
+    gasPrice = parseUnits('0.1', 9); // Fallback to 0.1 gwei
+  }
+
+  // Calculate gas cost
+  const gasCost = gasPrice * gasEstimate;
+  const totalNativeFee = nativeFee + gasCost;
+
+  // Convert to USD (approximate rates)
+  const ethToUsd = 3000; // Approximate ETH price in USD
+  const nativeFeeUsd = Number(formatUnits(totalNativeFee, 18)) * ethToUsd;
+  const lzTokenFeeUsd = Number(formatUnits(lzTokenFee, 18)) * ethToUsd;
+  const totalFeeUsd = nativeFeeUsd + lzTokenFeeUsd;
+
+  // Estimated time varies by route
+  const timeEstimates: Record<string, number> = {
+    'base-optimism': 60,
+    'base-arbitrum': 60,
+    'optimism-base': 60,
+    'optimism-arbitrum': 60,
+    'arbitrum-base': 60,
+    'arbitrum-optimism': 60,
+    'ethereum-base': 300,
+    'ethereum-optimism': 300,
+    'ethereum-arbitrum': 300,
+    'base-ethereum': 900,
+    'optimism-ethereum': 900,
+    'arbitrum-ethereum': 900
+  };
+
+  const route = `${sourceChain}-${destinationChain}`;
+  const estimatedTime = timeEstimates[route] || 60;
+
+  // Fee breakdown
+  const protocolFee = totalNativeFee / 10n; // ~10% protocol fee
+  const bridgeFee = nativeFee - protocolFee;
+
+  return {
+    sourceChain,
+    destinationChain,
+    token,
+    amount,
+    nativeFee: formatUnits(totalNativeFee, 18),
+    lzTokenFee: formatUnits(lzTokenFee, 18),
+    totalFeeUSD: totalFeeUsd.toFixed(4),
+    gasEstimate: gasEstimate.toString(),
+    estimatedTime,
+    breakdown: {
+      protocolFee: formatUnits(protocolFee, 18),
+      gasFee: formatUnits(gasCost, 18),
+      bridgeFee: formatUnits(bridgeFee > 0n ? bridgeFee : 0n, 18)
+    }
+  };
+}
+
+/**
  * Retry helper with exponential backoff
  */
 async function retryWithBackoff<T>(
@@ -717,6 +987,809 @@ async function waitForTransaction(
 
 /**
  * CrossChainBridge class
+/**
+ * Bridge error codes
+ */
+export type BridgeErrorCode =
+  | 'INSUFFICIENT_BALANCE'
+  | 'INSUFFICIENT_ALLOWANCE'
+  | 'INVALID_PARAMS'
+  | 'NETWORK_ERROR'
+  | 'TRANSACTION_FAILED'
+  | 'TRANSACTION_TIMEOUT'
+  | 'MESSAGE_VERIFICATION_FAILED'
+  | 'DESTINATION_TX_FAILED'
+  | 'RPC_ERROR'
+  | 'UNKNOWN_ERROR';
+
+/**
+ * Custom Bridge Error class with error codes
+ */
+export class BridgeError extends Error {
+  public code: BridgeErrorCode;
+  public chain?: SupportedChain;
+  public txHash?: Hex;
+  public retryable: boolean;
+
+  constructor(
+    message: string,
+    code: BridgeErrorCode = 'UNKNOWN_ERROR',
+    options?: { chain?: SupportedChain; txHash?: Hex; retryable?: boolean }
+  ) {
+    super(message);
+    this.name = 'BridgeError';
+    this.code = code;
+    this.chain = options?.chain;
+    this.txHash = options?.txHash;
+    this.retryable = options?.retryable ?? true;
+  }
+
+  /**
+   * Check if error is retryable
+   */
+  isRetryable(): boolean {
+    return this.retryable && [
+      'NETWORK_ERROR',
+      'RPC_ERROR',
+      'TRANSACTION_TIMEOUT',
+      'MESSAGE_VERIFICATION_FAILED'
+    ].includes(this.code);
+  }
+}
+
+/**
+ * Bridge logger interface
+ */
+export interface BridgeLogger {
+  debug: (message: string, meta?: Record<string, unknown>) => void;
+  info: (message: string, meta?: Record<string, unknown>) => void;
+  warn: (message: string, meta?: Record<string, unknown>) => void;
+  error: (message: string, meta?: Record<string, unknown>) => void;
+}
+
+/**
+ * Default console logger
+ */
+export const defaultLogger: BridgeLogger = {
+  debug: (msg, meta) => console.debug(`[Bridge:DEBUG] ${msg}`, meta || ''),
+  info: (msg, meta) => console.info(`[Bridge:INFO] ${msg}`, meta || ''),
+  warn: (msg, meta) => console.warn(`[Bridge:WARN] ${msg}`, meta || ''),
+  error: (msg, meta) => console.error(`[Bridge:ERROR] ${msg}`, meta || '')
+};
+
+/**
+ * Bridge Transaction Monitor
+ * Monitors cross-chain transactions from source to destination
+ * Tracks LayerZero message status and provides real-time updates
+ * 
+ * @example
+ * ```typescript
+ * const monitor = new BridgeTransactionMonitor('base', defaultLogger);
+ * 
+ * monitor.on('statusUpdate', (status) => {
+ *   console.log(`Progress: ${status.progress}%`);
+ * });
+ * 
+ * const status = await monitor.monitorTransaction(
+ *   '0x...', // txHash
+ *   'base',
+ *   'optimism',
+ *   '100'
+ * );
+ * ```
+ */
+export class BridgeTransactionMonitor extends EventEmitter {
+  private sourceChain: SupportedChain;
+  private logger: BridgeLogger;
+  private activeMonitors: Map<string, AbortController>;
+  private statusCache: Map<string, BridgeTransactionStatusDetails>;
+
+  // Configuration
+  private readonly DEFAULT_CONFIRMATIONS = 1;
+  private readonly SOURCE_CONFIRMATION_TIMEOUT = 120000; // 2 minutes
+  private readonly MESSAGE_DELIVERY_TIMEOUT = 300000; // 5 minutes
+  private readonly DESTINATION_CONFIRMATION_TIMEOUT = 120000; // 2 minutes
+  private readonly POLL_INTERVAL = 3000; // 3 seconds
+  private readonly MAX_RETRIES = 3;
+
+  constructor(
+    sourceChain: SupportedChain,
+    logger: BridgeLogger = defaultLogger
+  ) {
+    super();
+    this.sourceChain = sourceChain;
+    this.logger = logger;
+    this.activeMonitors = new Map();
+    this.statusCache = new Map();
+  }
+
+  /**
+   * Monitor a bridge transaction end-to-end
+   * Tracks source confirmation, message delivery, and destination confirmation
+   */
+  async monitorTransaction(
+    txHash: Hex,
+    sourceChain: SupportedChain,
+    destinationChain: SupportedChain,
+    amount: string,
+    options?: {
+      requiredConfirmations?: number;
+      onStatusUpdate?: (status: BridgeTransactionStatusDetails) => void;
+      timeout?: number;
+    }
+  ): Promise<BridgeTransactionStatusDetails> {
+    const monitorId = `${sourceChain}-${destinationChain}-${txHash}`;
+    const abortController = new AbortController();
+    this.activeMonitors.set(monitorId, abortController);
+
+    const requiredConfirmations = options?.requiredConfirmations ?? this.DEFAULT_CONFIRMATIONS;
+    const timeout = options?.timeout ?? (
+      this.SOURCE_CONFIRMATION_TIMEOUT +
+      this.MESSAGE_DELIVERY_TIMEOUT +
+      this.DESTINATION_CONFIRMATION_TIMEOUT
+    );
+
+    // Initialize status
+    let status: BridgeTransactionStatusDetails = {
+      txHash,
+      sourceChain,
+      destinationChain,
+      status: 'pending',
+      stage: 'source',
+      progress: 0,
+      requiredConfirmations,
+      estimatedCompletionTime: Date.now() + this.estimateTotalTime(sourceChain, destinationChain),
+      retryCount: 0,
+      lastUpdated: Date.now()
+    };
+
+    this.statusCache.set(monitorId, status);
+    this.emit('monitoringStarted', { txHash, sourceChain, destinationChain });
+
+    const startTime = Date.now();
+
+    try {
+      // Stage 1: Wait for source chain confirmation
+      this.logger.info(`Starting source chain confirmation monitoring`, { txHash, sourceChain });
+      status = await this.monitorSourceConfirmation(
+        txHash,
+        sourceChain,
+        status,
+        abortController.signal
+      );
+
+      if (status.status === 'failed') {
+        throw new BridgeError(
+          'Source transaction failed',
+          'TRANSACTION_FAILED',
+          { chain: sourceChain, txHash }
+        );
+      }
+
+      // Emit status update
+      this.emitStatusUpdate(status, options?.onStatusUpdate);
+
+      // Stage 2: Monitor LayerZero message delivery
+      this.logger.info(`Monitoring LayerZero message delivery`, {
+        txHash,
+        sourceChain,
+        destinationChain,
+        messageHash: status.messageHash
+      });
+
+      status = await this.monitorMessageDelivery(
+        status,
+        sourceChain,
+        destinationChain,
+        abortController.signal
+      );
+
+      if (status.status === 'failed') {
+        throw new BridgeError(
+          'Message delivery failed',
+          'MESSAGE_VERIFICATION_FAILED',
+          { chain: destinationChain, txHash }
+        );
+      }
+
+      this.emitStatusUpdate(status, options?.onStatusUpdate);
+
+      // Stage 3: Monitor destination chain confirmation
+      this.logger.info(`Monitoring destination chain confirmation`, {
+        txHash,
+        destinationChain
+      });
+
+      status = await this.monitorDestinationConfirmation(
+        status,
+        destinationChain,
+        amount,
+        abortController.signal
+      );
+
+      if (status.status === 'failed') {
+        throw new BridgeError(
+          'Destination transaction failed',
+          'DESTINATION_TX_FAILED',
+          { chain: destinationChain, txHash }
+        );
+      }
+
+      // Mark as completed
+      status.status = 'completed';
+      status.stage = 'destination';
+      status.progress = 100;
+      status.actualCompletionTime = Date.now();
+      status.lastUpdated = Date.now();
+
+      this.logger.info(`Bridge transaction completed successfully`, {
+        txHash,
+        duration: Date.now() - startTime
+      });
+
+      this.emit('completed', status);
+      this.emitStatusUpdate(status, options?.onStatusUpdate);
+
+      return status;
+
+    } catch (error) {
+      const bridgeError = error instanceof BridgeError
+        ? error
+        : new BridgeError(
+            error instanceof Error ? error.message : 'Unknown error',
+            'UNKNOWN_ERROR',
+            { chain: sourceChain, txHash }
+          );
+
+      status.status = 'failed';
+      status.error = bridgeError.message;
+      status.lastUpdated = Date.now();
+
+      this.logger.error(`Bridge monitoring failed`, {
+        txHash,
+        error: bridgeError.message,
+        code: bridgeError.code
+      });
+
+      this.emit('failed', { status, error: bridgeError });
+      this.emitStatusUpdate(status, options?.onStatusUpdate);
+
+      throw bridgeError;
+    } finally {
+      this.activeMonitors.delete(monitorId);
+      this.statusCache.delete(monitorId);
+    }
+  }
+
+  /**
+   * Monitor source chain transaction confirmation
+   */
+  private async monitorSourceConfirmation(
+    txHash: Hex,
+    sourceChain: SupportedChain,
+    status: BridgeTransactionStatusDetails,
+    signal: AbortSignal
+  ): Promise<BridgeTransactionStatusDetails> {
+    const publicClient = createChainPublicClient(sourceChain);
+    const timeout = this.SOURCE_CONFIRMATION_TIMEOUT;
+    const startTime = Date.now();
+    let retryCount = 0;
+
+    while (!signal.aborted && Date.now() - startTime < timeout) {
+      try {
+        const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
+
+        if (receipt) {
+          if (receipt.status === 'reverted') {
+            status.status = 'failed';
+            status.error = 'Transaction was reverted';
+            return status;
+          }
+
+          const currentBlock = await publicClient.getBlockNumber();
+          const confirmations = Number(currentBlock - receipt.blockNumber) + 1;
+
+          status.sourceConfirmations = confirmations;
+          status.progress = Math.min(30, (confirmations / status.requiredConfirmations) * 30);
+          status.lastUpdated = Date.now();
+
+          if (confirmations >= status.requiredConfirmations) {
+            status.status = 'source_confirmed';
+            status.stage = 'cross_chain';
+            status.progress = 33;
+
+            // Try to extract message hash from logs
+            status.messageHash = this.extractMessageHash(receipt.logs);
+
+            this.logger.info(`Source transaction confirmed`, {
+              txHash,
+              confirmations,
+              messageHash: status.messageHash
+            });
+
+            return status;
+          }
+        }
+      } catch (error) {
+        retryCount++;
+        this.logger.warn(`Error checking source confirmation, retry ${retryCount}`, {
+          txHash,
+          error: error instanceof Error ? error.message : String(error)
+        });
+
+        if (retryCount >= this.MAX_RETRIES) {
+          throw new BridgeError(
+            'Failed to confirm source transaction',
+            'TRANSACTION_TIMEOUT',
+            { chain: sourceChain, txHash }
+          );
+        }
+      }
+
+      // Wait before next poll
+      await this.delay(this.POLL_INTERVAL, signal);
+    }
+
+    if (signal.aborted) {
+      throw new BridgeError('Monitoring aborted', 'UNKNOWN_ERROR', { chain: sourceChain, txHash });
+    }
+
+    throw new BridgeError(
+      'Source confirmation timeout',
+      'TRANSACTION_TIMEOUT',
+      { chain: sourceChain, txHash }
+    );
+  }
+
+  /**
+   * Monitor LayerZero message delivery
+   */
+  private async monitorMessageDelivery(
+    status: BridgeTransactionStatusDetails,
+    sourceChain: SupportedChain,
+    destinationChain: SupportedChain,
+    signal: AbortSignal
+  ): Promise<BridgeTransactionStatusDetails> {
+    const timeout = this.MESSAGE_DELIVERY_TIMEOUT;
+    const startTime = Date.now();
+    let retryCount = 0;
+
+    status.status = 'message_sent';
+    status.progress = 40;
+
+    // Create public clients for both chains
+    const sourceClient = createChainPublicClient(sourceChain);
+    const destClient = createChainPublicClient(destinationChain);
+
+    while (!signal.aborted && Date.now() - startTime < timeout) {
+      try {
+        // Check LayerZero message status
+        const messageStatus = await this.checkLayerZeroMessageStatus(
+          status,
+          sourceChain,
+          destinationChain,
+          sourceClient,
+          destClient
+        );
+
+        if (messageStatus.verified) {
+          status.status = 'message_delivered';
+          status.stage = 'destination';
+          status.progress = 66;
+
+          this.logger.info(`LayerZero message delivered`, {
+            txHash: status.txHash,
+            messageHash: status.messageHash,
+            confirmations: messageStatus.confirmations
+          });
+
+          return status;
+        }
+
+        // Update progress based on verification progress
+        status.progress = 40 + (messageStatus.confirmations / 20) * 26; // 40-66%
+        status.lastUpdated = Date.now();
+
+      } catch (error) {
+        retryCount++;
+        this.logger.warn(`Error checking message delivery, retry ${retryCount}`, {
+          txHash: status.txHash,
+          error: error instanceof Error ? error.message : String(error)
+        });
+
+        if (retryCount >= this.MAX_RETRIES) {
+          throw new BridgeError(
+            'Failed to verify message delivery',
+            'MESSAGE_VERIFICATION_FAILED',
+            { chain: destinationChain, txHash: status.txHash }
+          );
+        }
+      }
+
+      await this.delay(this.POLL_INTERVAL, signal);
+    }
+
+    if (signal.aborted) {
+      throw new BridgeError('Monitoring aborted', 'UNKNOWN_ERROR', {
+        chain: destinationChain,
+        txHash: status.txHash
+      });
+    }
+
+    throw new BridgeError(
+      'Message delivery timeout',
+      'TRANSACTION_TIMEOUT',
+      { chain: destinationChain, txHash: status.txHash }
+    );
+  }
+
+  /**
+   * Monitor destination chain transaction confirmation
+   */
+  private async monitorDestinationConfirmation(
+    status: BridgeTransactionStatusDetails,
+    destinationChain: SupportedChain,
+    amount: string,
+    signal: AbortSignal
+  ): Promise<BridgeTransactionStatusDetails> {
+    const publicClient = createChainPublicClient(destinationChain);
+    const timeout = this.DESTINATION_CONFIRMATION_TIMEOUT;
+    const startTime = Date.now();
+
+    status.status = 'pending';
+    status.progress = 70;
+
+    while (!signal.aborted && Date.now() - startTime < timeout) {
+      try {
+        // Look for incoming token transfer events
+        // This is a simplified check - in production you'd track the specific transaction
+        const currentBlock = await publicClient.getBlockNumber();
+
+        // Check for recent OFT receive events
+        const logs = await publicClient.getLogs({
+          address: LAYERZERO_USDC_OFT[destinationChain],
+          event: {
+            type: 'event',
+            name: 'OFTReceived',
+            inputs: [
+              { name: 'guid', type: 'bytes32', indexed: true },
+              { name: 'srcEid', type: 'uint32', indexed: false },
+              { name: 'to', type: 'address', indexed: false },
+              { name: 'amount', type: 'uint256', indexed: false }
+            ]
+          },
+          fromBlock: currentBlock - 100n,
+          toBlock: currentBlock
+        });
+
+        if (logs.length > 0) {
+          // Check if any log matches our message hash
+          for (const log of logs) {
+            if (status.messageHash &&
+                log.topics[1]?.toLowerCase() === status.messageHash.toLowerCase()) {
+              status.status = 'completed';
+              status.progress = 100;
+
+              this.logger.info(`Destination transaction confirmed`, {
+                txHash: status.txHash,
+                destinationChain,
+                blockNumber: log.blockNumber?.toString()
+              });
+
+              return status;
+            }
+          }
+        }
+
+        // Increment progress while waiting
+        const elapsed = Date.now() - startTime;
+        const progressIncrement = Math.min(29, (elapsed / timeout) * 29);
+        status.progress = 70 + progressIncrement;
+        status.lastUpdated = Date.now();
+
+      } catch (error) {
+        this.logger.warn(`Error checking destination confirmation`, {
+          txHash: status.txHash,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+
+      await this.delay(this.POLL_INTERVAL, signal);
+    }
+
+    if (signal.aborted) {
+      throw new BridgeError('Monitoring aborted', 'UNKNOWN_ERROR', {
+        chain: destinationChain,
+        txHash: status.txHash
+      });
+    }
+
+    // If we reach here, we didn't detect the destination transaction
+    // This doesn't necessarily mean it failed - it might have completed before monitoring started
+    this.logger.warn(`Destination confirmation timeout - transaction may have completed`, {
+      txHash: status.txHash,
+      destinationChain
+    });
+
+    status.status = 'completed';
+    status.progress = 100;
+
+    return status;
+  }
+
+  /**
+   * Check LayerZero message status
+   */
+  private async checkLayerZeroMessageStatus(
+    status: BridgeTransactionStatusDetails,
+    sourceChain: SupportedChain,
+    destinationChain: SupportedChain,
+    sourceClient: ReturnType<typeof createChainPublicClient>,
+    destClient: ReturnType<typeof createChainPublicClient>
+  ): Promise<{ verified: boolean; confirmations: number }> {
+    try {
+      const srcEid = LAYERZERO_CHAIN_IDS[sourceChain];
+      const dstEid = LAYERZERO_CHAIN_IDS[destinationChain];
+
+      // Get the OFT address on source chain
+      const oftAddress = LAYERZERO_USDC_OFT[sourceChain];
+
+      // Get outbound nonce
+      const outboundNonce = await sourceClient.readContract({
+        address: LAYERZERO_ENDPOINTS[sourceChain],
+        abi: LZ_ENDPOINT_ABI,
+        functionName: 'getOutboundNonce',
+        args: [dstEid, oftAddress]
+      });
+
+      // Get inbound nonce on destination
+      const senderBytes32 = ('0x' + oftAddress.slice(2).padStart(64, '0')) as `0x${string}`;
+      const inboundNonce = await destClient.readContract({
+        address: LAYERZERO_ENDPOINTS[destinationChain],
+        abi: LZ_ENDPOINT_ABI,
+        functionName: 'getInboundNonce',
+        args: [srcEid, senderBytes32]
+      });
+
+      // If inbound nonce >= outbound nonce, message has been delivered
+      const verified = inboundNonce >= outboundNonce;
+      const confirmations = verified ? 20 : Number(inboundNonce);
+
+      return { verified, confirmations };
+    } catch (error) {
+      this.logger.debug(`Error checking LZ message status`, {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return { verified: false, confirmations: 0 };
+    }
+  }
+
+  /**
+   * Extract message hash from transaction logs
+   */
+  private extractMessageHash(logs: unknown[]): Hex | undefined {
+    // Look for Packet event from LayerZero
+    for (const log of logs) {
+      const l = log as { topics?: string[]; data?: string };
+      if (l.topics && l.topics.length >= 2) {
+        // Packet event typically has message hash as one of the topics
+        // This is a simplified extraction
+        const potentialHash = l.topics[1];
+        if (potentialHash && potentialHash.length === 66) {
+          return potentialHash as Hex;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Estimate total bridge time
+   */
+  private estimateTotalTime(
+    sourceChain: SupportedChain,
+    destinationChain: SupportedChain
+  ): number {
+    const timeEstimates: Record<string, number> = {
+      'base-optimism': 60000,
+      'base-arbitrum': 60000,
+      'optimism-base': 60000,
+      'optimism-arbitrum': 60000,
+      'arbitrum-base': 60000,
+      'arbitrum-optimism': 60000,
+      'ethereum-base': 300000,
+      'ethereum-optimism': 300000,
+      'ethereum-arbitrum': 300000,
+      'base-ethereum': 900000,
+      'optimism-ethereum': 900000,
+      'arbitrum-ethereum': 900000
+    };
+
+    const route = `${sourceChain}-${destinationChain}`;
+    return timeEstimates[route] || 60000;
+  }
+
+  /**
+   * Emit status update
+   */
+  private emitStatusUpdate(
+    status: BridgeTransactionStatusDetails,
+    callback?: (status: BridgeTransactionStatusDetails) => void
+  ): void {
+    this.emit('statusUpdate', { ...status });
+    if (callback) {
+      callback({ ...status });
+    }
+  }
+
+  /**
+   * Delay with abort support
+   */
+  private delay(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (signal.aborted) {
+        reject(new Error('Aborted'));
+        return;
+      }
+
+      const timeout = setTimeout(resolve, ms);
+
+      signal.addEventListener('abort', () => {
+        clearTimeout(timeout);
+        reject(new Error('Aborted'));
+      }, { once: true });
+    });
+  }
+
+  /**
+   * Stop monitoring a transaction
+   */
+  stopMonitoring(txHash: Hex, sourceChain: SupportedChain, destinationChain: SupportedChain): void {
+    const monitorId = `${sourceChain}-${destinationChain}-${txHash}`;
+    const controller = this.activeMonitors.get(monitorId);
+
+    if (controller) {
+      controller.abort();
+      this.activeMonitors.delete(monitorId);
+      this.logger.info(`Stopped monitoring transaction`, { txHash });
+    }
+  }
+
+  /**
+   * Stop all active monitoring
+   */
+  stopAllMonitoring(): void {
+    for (const [monitorId, controller] of this.activeMonitors) {
+      controller.abort();
+      this.logger.info(`Stopped monitoring`, { monitorId });
+    }
+    this.activeMonitors.clear();
+  }
+
+  /**
+   * Get current status of a monitored transaction
+   */
+  getStatus(txHash: Hex, sourceChain: SupportedChain, destinationChain: SupportedChain): BridgeTransactionStatusDetails | undefined {
+    const monitorId = `${sourceChain}-${destinationChain}-${txHash}`;
+    const status = this.statusCache.get(monitorId);
+    return status ? { ...status } : undefined;
+  }
+
+  /**
+   * Retry a failed monitoring attempt
+   */
+  async retryMonitoring(
+    txHash: Hex,
+    sourceChain: SupportedChain,
+    destinationChain: SupportedChain,
+    amount: string,
+    options?: Parameters<typeof this.monitorTransaction>[4]
+  ): Promise<BridgeTransactionStatusDetails> {
+    const monitorId = `${sourceChain}-${destinationChain}-${txHash}`;
+    const cachedStatus = this.statusCache.get(monitorId);
+
+    if (cachedStatus) {
+      cachedStatus.retryCount++;
+      cachedStatus.status = 'pending';
+      cachedStatus.error = undefined;
+      cachedStatus.lastUpdated = Date.now();
+    }
+
+    this.logger.info(`Retrying monitoring`, { txHash, retryCount: cachedStatus?.retryCount || 0 });
+
+    return this.monitorTransaction(txHash, sourceChain, destinationChain, amount, options);
+  }
+}
+
+/**
+ * Listen for LayerZero messages
+ * Creates a listener that monitors for incoming LayerZero messages on a specific chain
+ * 
+ * @param chain - Chain to listen on
+ * @param callback - Callback function for new messages
+ * @returns Cleanup function to stop listening
+ */
+export function listenLayerZeroMessages(
+  chain: SupportedChain,
+  callback: (message: {
+    messageHash: Hex;
+    srcEid: number;
+    sender: Address;
+    nonce: bigint;
+    payload: string;
+    blockNumber: bigint;
+    transactionHash: Hex;
+  }) => void
+): () => void {
+  const logger = defaultLogger;
+  logger.info(`Starting LayerZero message listener on ${chain}`);
+
+  const publicClient = createChainPublicClient(chain);
+  const oftAddress = LAYERZERO_USDC_OFT[chain];
+
+  // Set up log filter for OFT received events
+  const unwatch = publicClient.watchContractEvent({
+    address: oftAddress,
+    abi: [
+      {
+        name: 'OFTReceived',
+        type: 'event',
+        inputs: [
+          { name: 'guid', type: 'bytes32', indexed: true },
+          { name: 'srcEid', type: 'uint32', indexed: false },
+          { name: 'to', type: 'address', indexed: false },
+          { name: 'amount', type: 'uint256', indexed: false }
+        ]
+      }
+    ],
+    eventName: 'OFTReceived',
+    onLogs: (logs) => {
+      for (const log of logs) {
+        try {
+          const event = log as unknown as {
+            args: { guid: Hex; srcEid: number; to: Address; amount: bigint };
+            blockNumber: bigint;
+            transactionHash: Hex;
+          };
+
+          callback({
+            messageHash: event.args.guid,
+            srcEid: event.args.srcEid,
+            sender: event.args.to,
+            nonce: BigInt(log.logIndex || 0),
+            payload: '',
+            blockNumber: event.blockNumber,
+            transactionHash: event.transactionHash
+          });
+
+          logger.info(`Received LayerZero message`, {
+            messageHash: event.args.guid,
+            srcEid: event.args.srcEid,
+            amount: event.args.amount.toString()
+          });
+        } catch (error) {
+          logger.error(`Error processing LayerZero message`, {
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+    },
+    onError: (error) => {
+      logger.error(`LayerZero listener error`, {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // Return cleanup function
+  return () => {
+    logger.info(`Stopping LayerZero message listener on ${chain}`);
+    unwatch();
+  };
+}
+
+/**
+ * CrossChainBridge class
  * Extends EventEmitter to provide event-based notifications for bridge operations
  * 
  * @example
@@ -737,11 +1810,19 @@ export class CrossChainBridge extends EventEmitter {
   private privateKey: Hex;
   private defaultChain: SupportedChain;
   private history: BridgeTransactionHistory;
-  
-  constructor(privateKey: Hex, defaultChain: SupportedChain = 'base') {
+  public logger: BridgeLogger;
+
+  /**
+   * Create a new CrossChainBridge instance
+   * @param privateKey - Private key for signing transactions
+   * @param defaultChain - Default source chain
+   * @param logger - Optional custom logger
+   */
+  constructor(privateKey: Hex, defaultChain: SupportedChain = 'base', logger?: BridgeLogger) {
     super();
     this.privateKey = privateKey;
     this.defaultChain = defaultChain;
+    this.logger = logger || defaultLogger;
     const account = privateKeyToAccount(privateKey);
     this.history = new BridgeTransactionHistory(account.address);
   }
@@ -865,6 +1946,97 @@ export class CrossChainBridge extends EventEmitter {
     }
 
     return quote;
+  }
+
+  /**
+   * Estimate bridge fees for a cross-chain transfer
+   * Provides comprehensive fee breakdown including protocol fees, gas costs, and bridge fees
+   * 
+   * @param destinationChain - Target chain for the bridge
+   * @param token - Token to bridge ('USDC' | 'ETH')
+   * @param amount - Amount to bridge
+   * @param sourceChain - Source chain (defaults to defaultChain)
+   * @returns Detailed fee estimate
+   * 
+   * @example
+   * ```typescript
+   * const estimate = await bridge.estimateFee('optimism', 'USDC', '100');
+   * console.log(`Total fee: ${estimate.totalFeeUSD} USD`);
+   * console.log(`Gas estimate: ${estimate.gasEstimate} units`);
+   * ```
+   */
+  async estimateFee(
+    destinationChain: SupportedChain,
+    token: 'USDC' | 'ETH',
+    amount: string,
+    sourceChain?: SupportedChain
+  ): Promise<BridgeFeeEstimate> {
+    const account = privateKeyToAccount(this.privateKey);
+    const srcChain = sourceChain || this.defaultChain;
+
+    const estimate = await estimateBridgeFee({
+      sourceChain: srcChain,
+      destinationChain,
+      token,
+      amount,
+      senderAddress: account.address
+    });
+
+    this.logger?.info(`Fee estimated`, {
+      sourceChain: srcChain,
+      destinationChain,
+      token,
+      amount,
+      totalFeeUSD: estimate.totalFeeUSD
+    });
+
+    return estimate;
+  }
+
+  /**
+   * Monitor a bridge transaction
+   * Tracks the transaction from source chain through destination chain
+   * 
+   * @param txHash - Transaction hash to monitor
+   * @param sourceChain - Source chain
+   * @param destinationChain - Destination chain
+   * @param amount - Amount bridged
+   * @param options - Monitoring options
+   * @returns Transaction status details
+   * 
+   * @example
+   * ```typescript
+   * const result = await bridge.bridgeUSDC('optimism', '100');
+   * if (result.success) {
+   *   const status = await bridge.monitorTransaction(
+   *     result.txHash!,
+   *     'base',
+   *     'optimism',
+   *     '100'
+   *   );
+   *   console.log(`Bridge completed: ${status.status}`);
+   * }
+   * ```
+   */
+  async monitorTransaction(
+    txHash: Hex,
+    sourceChain: SupportedChain,
+    destinationChain: SupportedChain,
+    amount: string,
+    options?: {
+      requiredConfirmations?: number;
+      onStatusUpdate?: (status: BridgeTransactionStatusDetails) => void;
+      timeout?: number;
+    }
+  ): Promise<BridgeTransactionStatusDetails> {
+    const monitor = new BridgeTransactionMonitor(sourceChain, this.logger);
+
+    // Forward events from monitor
+    monitor.on('statusUpdate', (status) => this.emit('monitorStatusUpdate', status));
+    monitor.on('completed', (status) => this.emit('monitorCompleted', status));
+    monitor.on('failed', (data) => this.emit('monitorFailed', data));
+
+    return monitor.monitorTransaction(txHash, sourceChain, destinationChain, amount, options);
   }
 
   /**

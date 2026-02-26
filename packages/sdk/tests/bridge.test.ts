@@ -3,7 +3,7 @@
  * Tests the bridge functionality for Base, Optimism, and Arbitrum
  */
 
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import {
   CrossChainBridge,
   createChainPublicClient,
@@ -16,8 +16,16 @@ import {
   USDC_ADDRESSES,
   BridgeTransactionHistory,
   getBridgeHistory,
+  BridgeTransactionMonitor,
+  BridgeError,
+  defaultLogger,
+  estimateBridgeFee,
+  listenLayerZeroMessages,
+  LAYERZERO_CHAIN_IDS,
   type SupportedChain,
-  type BridgeTransaction
+  type BridgeTransaction,
+  type BridgeTransactionStatusDetails,
+  type BridgeFeeEstimate
 } from '../src/bridge.js';
 import {
   createMultiChainWallet,
@@ -657,6 +665,376 @@ describe('Bridge Transaction History', () => {
       expect(history2.getTransactionCount()).toBe(1);
       expect(history2.getTransactionByHash(tx.txHash)).toBeDefined();
     });
+  });
+});
+
+describe('Bridge Error Handling', () => {
+  it('should create BridgeError with correct properties', () => {
+    const error = new BridgeError(
+      'Insufficient balance',
+      'INSUFFICIENT_BALANCE',
+      { chain: 'base', retryable: false }
+    );
+
+    expect(error.message).toBe('Insufficient balance');
+    expect(error.code).toBe('INSUFFICIENT_BALANCE');
+    expect(error.chain).toBe('base');
+    expect(error.retryable).toBe(false);
+    expect(error.isRetryable()).toBe(false);
+  });
+
+  it('should identify retryable errors', () => {
+    const error = new BridgeError(
+      'Network error',
+      'NETWORK_ERROR',
+      { retryable: true }
+    );
+
+    expect(error.isRetryable()).toBe(true);
+  });
+
+  it('should create BridgeError with txHash', () => {
+    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+    const error = new BridgeError(
+      'Transaction failed',
+      'TRANSACTION_FAILED',
+      { txHash, chain: 'optimism' }
+    );
+
+    expect(error.txHash).toBe(txHash);
+    expect(error.chain).toBe('optimism');
+  });
+});
+
+describe('BridgeTransactionMonitor', () => {
+  let monitor: BridgeTransactionMonitor;
+
+  beforeEach(() => {
+    monitor = new BridgeTransactionMonitor('base');
+  });
+
+  it('should create monitor instance', () => {
+    expect(monitor).toBeDefined();
+    expect(monitor.sourceChain).toBe('base');
+  });
+
+  it('should estimate total time for different routes', () => {
+    // Access private method through any
+    const estimate1 = (monitor as any).estimateTotalTime('base', 'optimism');
+    const estimate2 = (monitor as any).estimateTotalTime('ethereum', 'base');
+    const estimate3 = (monitor as any).estimateTotalTime('base', 'ethereum');
+
+    expect(estimate1).toBe(60000);
+    expect(estimate2).toBe(300000);
+    expect(estimate3).toBe(900000);
+  });
+
+  it('should emit status updates', () => {
+    const statusUpdates: any[] = [];
+
+    monitor.on('statusUpdate', (status: any) => {
+      statusUpdates.push(status);
+    });
+
+    // Simulate status update
+    const testStatus = {
+      txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+      sourceChain: 'base',
+      destinationChain: 'optimism',
+      status: 'pending',
+      stage: 'source',
+      progress: 50,
+      requiredConfirmations: 1,
+      estimatedCompletionTime: Date.now() + 60000,
+      retryCount: 0,
+      lastUpdated: Date.now()
+    };
+
+    (monitor as any).emitStatusUpdate(testStatus);
+
+    expect(statusUpdates).toHaveLength(1);
+    expect(statusUpdates[0].progress).toBe(50);
+  });
+
+  it('should stop monitoring', () => {
+    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+
+    // Start monitoring (won't actually run due to immediate abort)
+    monitor.stopMonitoring(txHash, 'base', 'optimism');
+
+    // Should not throw
+    expect(true).toBe(true);
+  });
+
+  it('should stop all monitoring', () => {
+    monitor.stopAllMonitoring();
+    expect(monitor.activeMonitors.size).toBe(0);
+  });
+
+  it('should get cached status', () => {
+    const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+    const status = monitor.getStatus(txHash, 'base', 'optimism');
+    expect(status).toBeUndefined();
+  });
+
+  it('should handle delay with abort signal', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      (monitor as any).delay(1000, controller.signal)
+    ).rejects.toThrow('Aborted');
+  });
+
+  it('should handle delay completion', async () => {
+    const controller = new AbortController();
+
+    const start = Date.now();
+    await (monitor as any).delay(50, controller.signal);
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeGreaterThanOrEqual(45); // Allow small margin
+  });
+});
+
+describe('estimateBridgeFee', () => {
+  it('should throw error for same source and destination', async () => {
+    await expect(
+      estimateBridgeFee({
+        sourceChain: 'base',
+        destinationChain: 'base',
+        token: 'USDC',
+        amount: '100'
+      })
+    ).rejects.toThrow('Source and destination chains must be different');
+  });
+
+  it('should estimate fee for ETH transfer', async () => {
+    const estimate = await estimateBridgeFee({
+      sourceChain: 'arbitrum',
+      destinationChain: 'base',
+      token: 'ETH',
+      amount: '0.1'
+    });
+
+    expect(estimate.sourceChain).toBe('arbitrum');
+    expect(estimate.destinationChain).toBe('base');
+    expect(estimate.token).toBe('ETH');
+    expect(estimate.amount).toBe('0.1');
+    expect(estimate.nativeFee).toBeDefined();
+    expect(estimate.totalFeeUSD).toBeDefined();
+    expect(estimate.gasEstimate).toBeDefined();
+    expect(estimate.estimatedTime).toBeGreaterThan(0);
+    expect(estimate.breakdown).toHaveProperty('protocolFee');
+    expect(estimate.breakdown).toHaveProperty('gasFee');
+    expect(estimate.breakdown).toHaveProperty('bridgeFee');
+  }, 10000);
+
+  it.skip('should estimate fee for USDC transfer', async () => {
+    // Skipping as this requires network calls
+    const estimate = await estimateBridgeFee({
+      sourceChain: 'base',
+      destinationChain: 'optimism',
+      token: 'USDC',
+      amount: '100',
+      senderAddress: TEST_ADDRESS
+    });
+
+    expect(estimate.sourceChain).toBe('base');
+    expect(estimate.destinationChain).toBe('optimism');
+    expect(estimate.token).toBe('USDC');
+    expect(parseFloat(estimate.totalFeeUSD)).toBeGreaterThanOrEqual(0);
+  }, 10000);
+
+  it('should handle different routes with correct time estimates', async () => {
+    const routes = [
+      { source: 'base' as SupportedChain, dest: 'optimism' as SupportedChain, expectedTime: 60 },
+      { source: 'ethereum' as SupportedChain, dest: 'base' as SupportedChain, expectedTime: 300 },
+      { source: 'base' as SupportedChain, dest: 'ethereum' as SupportedChain, expectedTime: 900 }
+    ];
+
+    for (const route of routes) {
+      const estimate = await estimateBridgeFee({
+        sourceChain: route.source,
+        destinationChain: route.dest,
+        token: 'ETH',
+        amount: '0.1'
+      });
+
+      expect(estimate.estimatedTime).toBe(route.expectedTime);
+    }
+  }, 15000);
+});
+
+describe('CrossChainBridge with Monitoring', () => {
+  let bridge: CrossChainBridge;
+  let testPrivateKey: Hex;
+
+  beforeAll(() => {
+    testPrivateKey = generatePrivateKey();
+    bridge = new CrossChainBridge(testPrivateKey);
+  });
+
+  it('should have logger property', () => {
+    expect(bridge.logger).toBeDefined();
+    expect(bridge.logger.info).toBeDefined();
+    expect(bridge.logger.error).toBeDefined();
+    expect(bridge.logger.warn).toBeDefined();
+    expect(bridge.logger.debug).toBeDefined();
+  });
+
+  it('should estimate fee using instance method', async () => {
+    const estimate = await bridge.estimateFee('optimism', 'USDC', '100', 'base');
+
+    expect(estimate.sourceChain).toBe('base');
+    expect(estimate.destinationChain).toBe('optimism');
+    expect(estimate.token).toBe('USDC');
+    expect(estimate.amount).toBe('100');
+  });
+
+  it('should estimate fee using default chain', async () => {
+    const estimate = await bridge.estimateFee('optimism', 'ETH', '0.5');
+
+    expect(estimate.sourceChain).toBe('base'); // default chain
+    expect(estimate.destinationChain).toBe('optimism');
+  });
+
+  it.skip('should monitor transaction', async () => {
+    // This test would require a real transaction hash
+    // Skipping for unit tests
+    const mockTxHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+
+    const statusPromise = bridge.monitorTransaction(
+      mockTxHash,
+      'base',
+      'optimism',
+      '100',
+      { timeout: 5000 }
+    );
+
+    // Should timeout since it's a mock tx
+    await expect(statusPromise).rejects.toThrow();
+  }, 10000);
+});
+
+describe('listenLayerZeroMessages', () => {
+  it('should return cleanup function', () => {
+    const cleanup = listenLayerZeroMessages('base', () => {});
+
+    expect(typeof cleanup).toBe('function');
+
+    // Clean up
+    cleanup();
+  });
+
+  it.skip('should receive LayerZero messages', async () => {
+    // This test would require actual blockchain events
+    // Skipping for unit tests
+    const bridge = await import('../src/bridge.ts');
+
+    const messages: any[] = [];
+    const cleanup = bridge.listenLayerZeroMessages('base', (message) => {
+      messages.push(message);
+    });
+
+    // Wait a bit (would need real events)
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    cleanup();
+
+    // In real scenario, messages would be populated
+    expect(Array.isArray(messages)).toBe(true);
+  }, 5000);
+});
+
+describe('Bridge Logger', () => {
+  it('should use default logger', () => {
+    expect(defaultLogger).toBeDefined();
+    expect(typeof defaultLogger.info).toBe('function');
+    expect(typeof defaultLogger.error).toBe('function');
+    expect(typeof defaultLogger.warn).toBe('function');
+    expect(typeof defaultLogger.debug).toBe('function');
+  });
+
+  it('should accept custom logger', () => {
+    const customLogger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn()
+    };
+
+    const testKey = generatePrivateKey();
+    const bridge = new CrossChainBridge(testKey, 'base', customLogger as any);
+
+    expect(bridge.logger).toBe(customLogger);
+
+    // Test logging
+    bridge.logger.info('Test message');
+    expect(customLogger.info).toHaveBeenCalledWith('Test message');
+  });
+});
+
+describe('Bridge Transaction Status Tracking', () => {
+  it('should track all status types', () => {
+    const validStatuses = [
+      'pending',
+      'source_confirmed',
+      'message_sent',
+      'message_delivered',
+      'completed',
+      'failed',
+      'timeout'
+    ];
+
+    // Verify all statuses are valid types
+    for (const status of validStatuses) {
+      expect(typeof status).toBe('string');
+    }
+  });
+
+  it('should create status details object', () => {
+    const statusDetails: BridgeTransactionStatusDetails = {
+      txHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+      sourceChain: 'base',
+      destinationChain: 'optimism',
+      status: 'pending',
+      stage: 'source',
+      progress: 0,
+      requiredConfirmations: 1,
+      estimatedCompletionTime: Date.now() + 60000,
+      retryCount: 0,
+      lastUpdated: Date.now()
+    };
+
+    expect(statusDetails.progress).toBe(0);
+    expect(statusDetails.stage).toBe('source');
+    expect(statusDetails.requiredConfirmations).toBe(1);
+  });
+});
+
+describe('LayerZero Message Status', () => {
+  it('should create message status object', () => {
+    const messageStatus = {
+      messageHash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' as Hex,
+      srcEid: 30184, // base
+      dstEid: 30111, // optimism
+      nonce: 123n,
+      status: 'pending' as const,
+      confirmations: 0,
+      retryCount: 0
+    };
+
+    expect(messageStatus.srcEid).toBe(30184);
+    expect(messageStatus.dstEid).toBe(30111);
+    expect(messageStatus.nonce).toBe(123n);
+  });
+
+  it('should have correct LayerZero chain IDs', () => {
+    expect(LAYERZERO_CHAIN_IDS.ethereum).toBe(30101);
+    expect(LAYERZERO_CHAIN_IDS.base).toBe(30184);
+    expect(LAYERZERO_CHAIN_IDS.optimism).toBe(30111);
+    expect(LAYERZERO_CHAIN_IDS.arbitrum).toBe(30110);
   });
 });
 

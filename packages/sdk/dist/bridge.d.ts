@@ -4,6 +4,54 @@
  * Uses LayerZero V2 for cross-chain messaging and USDC transfers via OFT (Omnichain Fungible Token)
  */
 import { type Hex, type Address } from 'viem';
+import { EventEmitter } from 'events';
+export type BridgeEventType = 'quoteReceived' | 'transactionSent' | 'transactionConfirmed' | 'transactionFailed' | 'approvalRequired' | 'approvalConfirmed' | 'balanceInsufficient' | 'feeEstimated' | 'monitoringStarted' | 'monitorStatusUpdate' | 'monitorCompleted' | 'monitorFailed';
+export interface BridgeQuoteEvent {
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    token: string;
+    amount: string;
+    estimatedFee: string;
+    estimatedTime: number;
+}
+export interface BridgeTransactionEvent {
+    txHash: Hex;
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    amount: string;
+    token: string;
+    timestamp: number;
+}
+export interface BridgeErrorEvent {
+    error: string;
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    amount: string;
+    token: string;
+}
+export interface BridgeFeeEvent {
+    nativeFee: string;
+    lzTokenFee: string;
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+}
+export interface BridgeMonitoringEvent {
+    txHash: Hex;
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+}
+export interface BridgeMonitoringStatusEvent extends BridgeTransactionStatusDetails {
+}
+export interface BridgeMonitoringFailedEvent {
+    status: BridgeTransactionStatusDetails;
+    error: BridgeError;
+}
+export type BridgeEventData = BridgeQuoteEvent | BridgeTransactionEvent | BridgeErrorEvent | BridgeFeeEvent | BridgeMonitoringEvent | BridgeMonitoringStatusEvent | BridgeMonitoringFailedEvent | {
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    amount: string;
+    token: string;
+};
 export declare const SUPPORTED_CHAINS: {
     readonly base: {
         blockExplorers: {
@@ -750,7 +798,23 @@ export interface BridgeQuote {
         lzTokenFee: bigint;
     };
 }
-type BridgeTransactionStatus = 'pending' | 'completed' | 'failed';
+type BridgeTransactionStatus = 'pending' | 'source_confirmed' | 'message_sent' | 'message_delivered' | 'completed' | 'failed' | 'timeout';
+export interface BridgeTransactionStatusDetails {
+    txHash: Hex;
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    status: BridgeTransactionStatus;
+    stage: 'source' | 'cross_chain' | 'destination';
+    progress: number;
+    messageHash?: Hex;
+    sourceConfirmations?: number;
+    requiredConfirmations: number;
+    estimatedCompletionTime: number;
+    actualCompletionTime?: number;
+    error?: string;
+    retryCount: number;
+    lastUpdated: number;
+}
 export interface BridgeTransaction {
     txHash: Hex;
     sourceChain: SupportedChain;
@@ -804,6 +868,17 @@ export interface BridgeResult {
         nativeFee: string;
         lzTokenFee: string;
     };
+}
+export interface LayerZeroMessageStatus {
+    messageHash: Hex;
+    srcEid: number;
+    dstEid: number;
+    nonce: bigint;
+    status: 'pending' | 'verified' | 'delivered' | 'failed';
+    confirmations: number;
+    verifiedBlockNumber?: bigint;
+    deliveredBlockNumber?: bigint;
+    retryCount: number;
 }
 /**
  * Create public client for chain
@@ -5204,8 +5279,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         withdrawals?: import("viem").Withdrawal[] | undefined | undefined | undefined;
         withdrawalsRoot?: `0x${string}` | undefined | undefined;
         transactions: includeTransactions extends true ? ({
-            to: Address | null;
             nonce: number;
+            to: Address | null;
             yParity?: undefined | undefined;
             from: Address;
             gas: bigint;
@@ -5229,8 +5304,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_1 ? T_1 extends (blockTag extends "pending" ? true : false) ? T_1 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_2 ? T_2 extends (blockTag extends "pending" ? true : false) ? T_2 extends true ? null : number : never : never;
         } | {
-            to: Address | null;
             nonce: number;
+            to: Address | null;
             yParity: number;
             from: Address;
             gas: bigint;
@@ -5254,8 +5329,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_4 ? T_4 extends (blockTag extends "pending" ? true : false) ? T_4 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_5 ? T_5 extends (blockTag extends "pending" ? true : false) ? T_5 extends true ? null : number : never : never;
         } | {
-            to: Address | null;
             nonce: number;
+            to: Address | null;
             yParity: number;
             from: Address;
             gas: bigint;
@@ -5279,8 +5354,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_7 ? T_7 extends (blockTag extends "pending" ? true : false) ? T_7 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_8 ? T_8 extends (blockTag extends "pending" ? true : false) ? T_8 extends true ? null : number : never : never;
         } | {
-            to: Address | null;
             nonce: number;
+            to: Address | null;
             yParity: number;
             from: Address;
             gas: bigint;
@@ -5304,8 +5379,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_10 ? T_10 extends (blockTag extends "pending" ? true : false) ? T_10 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_11 ? T_11 extends (blockTag extends "pending" ? true : false) ? T_11 extends true ? null : number : never : never;
         } | {
-            to: Address | null;
             nonce: number;
+            to: Address | null;
             yParity: number;
             from: Address;
             gas: bigint;
@@ -5329,8 +5404,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_13 ? T_13 extends (blockTag extends "pending" ? true : false) ? T_13 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_14 ? T_14 extends (blockTag extends "pending" ? true : false) ? T_14 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
@@ -5353,8 +5428,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_16 ? T_16 extends (blockTag extends "pending" ? true : false) ? T_16 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_17 ? T_17 extends (blockTag extends "pending" ? true : false) ? T_17 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity?: undefined | undefined | undefined;
             from: import("abitype").Address;
             gas: bigint;
@@ -5381,8 +5456,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_19 ? T_19 extends (blockTag extends "pending" ? true : false) ? T_19 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_20 ? T_20 extends (blockTag extends "pending" ? true : false) ? T_20 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
@@ -5409,8 +5484,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_22 ? T_22 extends (blockTag extends "pending" ? true : false) ? T_22 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_23 ? T_23 extends (blockTag extends "pending" ? true : false) ? T_23 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
@@ -5437,8 +5512,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_25 ? T_25 extends (blockTag extends "pending" ? true : false) ? T_25 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_26 ? T_26 extends (blockTag extends "pending" ? true : false) ? T_26 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
@@ -5465,8 +5540,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_28 ? T_28 extends (blockTag extends "pending" ? true : false) ? T_28 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_29 ? T_29 extends (blockTag extends "pending" ? true : false) ? T_29 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
@@ -5493,8 +5568,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_31 ? T_31 extends (blockTag extends "pending" ? true : false) ? T_31 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_32 ? T_32 extends (blockTag extends "pending" ? true : false) ? T_32 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
@@ -5517,8 +5592,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_34 ? T_34 extends (blockTag extends "pending" ? true : false) ? T_34 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_35 ? T_35 extends (blockTag extends "pending" ? true : false) ? T_35 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity?: undefined | undefined | undefined;
             from: import("abitype").Address;
             gas: bigint;
@@ -5545,8 +5620,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_37 ? T_37 extends (blockTag extends "pending" ? true : false) ? T_37 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_38 ? T_38 extends (blockTag extends "pending" ? true : false) ? T_38 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
@@ -5573,8 +5648,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_40 ? T_40 extends (blockTag extends "pending" ? true : false) ? T_40 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_41 ? T_41 extends (blockTag extends "pending" ? true : false) ? T_41 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
@@ -5601,8 +5676,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_43 ? T_43 extends (blockTag extends "pending" ? true : false) ? T_43 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_44 ? T_44 extends (blockTag extends "pending" ? true : false) ? T_44 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
@@ -5629,8 +5704,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
             blockNumber: (blockTag extends "pending" ? true : false) extends infer T_46 ? T_46 extends (blockTag extends "pending" ? true : false) ? T_46 extends true ? null : bigint : never : never;
             transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_47 ? T_47 extends (blockTag extends "pending" ? true : false) ? T_47 extends true ? null : number : never : never;
         } | {
-            to: import("abitype").Address | null;
             nonce: number;
+            to: import("abitype").Address | null;
             yParity: number;
             from: import("abitype").Address;
             gas: bigint;
@@ -6404,8 +6479,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
     } | undefined) => Promise<import("viem").EstimateMaxPriorityFeePerGasReturnType>;
     getStorageAt: (args: import("viem").GetStorageAtParameters) => Promise<import("viem").GetStorageAtReturnType>;
     getTransaction: <blockTag extends import("viem").BlockTag = "latest">(args: import("viem").GetTransactionParameters<blockTag>) => Promise<{
-        to: Address | null;
         nonce: number;
+        to: Address | null;
         yParity?: undefined | undefined;
         from: Address;
         gas: bigint;
@@ -6429,8 +6504,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_1 ? T_1 extends (blockTag extends "pending" ? true : false) ? T_1 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_2 ? T_2 extends (blockTag extends "pending" ? true : false) ? T_2 extends true ? null : number : never : never;
     } | {
-        to: Address | null;
         nonce: number;
+        to: Address | null;
         yParity: number;
         from: Address;
         gas: bigint;
@@ -6454,8 +6529,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_4 ? T_4 extends (blockTag extends "pending" ? true : false) ? T_4 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_5 ? T_5 extends (blockTag extends "pending" ? true : false) ? T_5 extends true ? null : number : never : never;
     } | {
-        to: Address | null;
         nonce: number;
+        to: Address | null;
         yParity: number;
         from: Address;
         gas: bigint;
@@ -6479,8 +6554,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_7 ? T_7 extends (blockTag extends "pending" ? true : false) ? T_7 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_8 ? T_8 extends (blockTag extends "pending" ? true : false) ? T_8 extends true ? null : number : never : never;
     } | {
-        to: Address | null;
         nonce: number;
+        to: Address | null;
         yParity: number;
         from: Address;
         gas: bigint;
@@ -6504,8 +6579,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_10 ? T_10 extends (blockTag extends "pending" ? true : false) ? T_10 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_11 ? T_11 extends (blockTag extends "pending" ? true : false) ? T_11 extends true ? null : number : never : never;
     } | {
-        to: Address | null;
         nonce: number;
+        to: Address | null;
         yParity: number;
         from: Address;
         gas: bigint;
@@ -6529,8 +6604,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_13 ? T_13 extends (blockTag extends "pending" ? true : false) ? T_13 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_14 ? T_14 extends (blockTag extends "pending" ? true : false) ? T_14 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
@@ -6553,8 +6628,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_16 ? T_16 extends (blockTag extends "pending" ? true : false) ? T_16 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_17 ? T_17 extends (blockTag extends "pending" ? true : false) ? T_17 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity?: undefined | undefined | undefined;
         from: import("abitype").Address;
         gas: bigint;
@@ -6581,8 +6656,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_19 ? T_19 extends (blockTag extends "pending" ? true : false) ? T_19 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_20 ? T_20 extends (blockTag extends "pending" ? true : false) ? T_20 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
@@ -6609,8 +6684,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_22 ? T_22 extends (blockTag extends "pending" ? true : false) ? T_22 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_23 ? T_23 extends (blockTag extends "pending" ? true : false) ? T_23 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
@@ -6637,8 +6712,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_25 ? T_25 extends (blockTag extends "pending" ? true : false) ? T_25 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_26 ? T_26 extends (blockTag extends "pending" ? true : false) ? T_26 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
@@ -6665,8 +6740,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_28 ? T_28 extends (blockTag extends "pending" ? true : false) ? T_28 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_29 ? T_29 extends (blockTag extends "pending" ? true : false) ? T_29 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
@@ -6693,8 +6768,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_31 ? T_31 extends (blockTag extends "pending" ? true : false) ? T_31 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_32 ? T_32 extends (blockTag extends "pending" ? true : false) ? T_32 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
@@ -6717,8 +6792,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_34 ? T_34 extends (blockTag extends "pending" ? true : false) ? T_34 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_35 ? T_35 extends (blockTag extends "pending" ? true : false) ? T_35 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity?: undefined | undefined | undefined;
         from: import("abitype").Address;
         gas: bigint;
@@ -6745,8 +6820,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_37 ? T_37 extends (blockTag extends "pending" ? true : false) ? T_37 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_38 ? T_38 extends (blockTag extends "pending" ? true : false) ? T_38 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
@@ -6773,8 +6848,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_40 ? T_40 extends (blockTag extends "pending" ? true : false) ? T_40 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_41 ? T_41 extends (blockTag extends "pending" ? true : false) ? T_41 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
@@ -6801,8 +6876,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_43 ? T_43 extends (blockTag extends "pending" ? true : false) ? T_43 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_44 ? T_44 extends (blockTag extends "pending" ? true : false) ? T_44 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
@@ -6829,8 +6904,8 @@ export declare function createChainPublicClient(chain: SupportedChain): {
         blockNumber: (blockTag extends "pending" ? true : false) extends infer T_46 ? T_46 extends (blockTag extends "pending" ? true : false) ? T_46 extends true ? null : bigint : never : never;
         transactionIndex: (blockTag extends "pending" ? true : false) extends infer T_47 ? T_47 extends (blockTag extends "pending" ? true : false) ? T_47 extends true ? null : number : never : never;
     } | {
-        to: import("abitype").Address | null;
         nonce: number;
+        to: import("abitype").Address | null;
         yParity: number;
         from: import("abitype").Address;
         gas: bigint;
@@ -21874,12 +21949,256 @@ export declare function findCheapestChain(operation: 'send' | 'swap' | 'contract
     estimatedCost: string;
 }>;
 /**
- * CrossChainBridge class
+ * Bridge fee estimate result
  */
-export declare class CrossChainBridge {
+export interface BridgeFeeEstimate {
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    token: 'USDC' | 'ETH';
+    amount: string;
+    nativeFee: string;
+    lzTokenFee: string;
+    totalFeeUSD: string;
+    gasEstimate: string;
+    estimatedTime: number;
+    breakdown: {
+        protocolFee: string;
+        gasFee: string;
+        bridgeFee: string;
+    };
+}
+/**
+ * Estimate bridge fees for cross-chain transfer
+ * Provides comprehensive fee estimation including protocol fees, gas costs, and bridge fees
+ *
+ * @param params - Fee estimation parameters
+ * @returns Detailed fee estimate
+ *
+ * @example
+ * ```typescript
+ * const estimate = await estimateBridgeFee({
+ *   sourceChain: 'base',
+ *   destinationChain: 'optimism',
+ *   token: 'USDC',
+ *   amount: '100'
+ * });
+ * console.log(`Total fee: ${estimate.totalFeeUSD} USD`);
+ * ```
+ */
+export declare function estimateBridgeFee(params: {
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    token: 'USDC' | 'ETH';
+    amount: string;
+    senderAddress?: Address;
+}): Promise<BridgeFeeEstimate>;
+/**
+ * CrossChainBridge class
+/**
+ * Bridge error codes
+ */
+export type BridgeErrorCode = 'INSUFFICIENT_BALANCE' | 'INSUFFICIENT_ALLOWANCE' | 'INVALID_PARAMS' | 'NETWORK_ERROR' | 'TRANSACTION_FAILED' | 'TRANSACTION_TIMEOUT' | 'MESSAGE_VERIFICATION_FAILED' | 'DESTINATION_TX_FAILED' | 'RPC_ERROR' | 'UNKNOWN_ERROR';
+/**
+ * Custom Bridge Error class with error codes
+ */
+export declare class BridgeError extends Error {
+    code: BridgeErrorCode;
+    chain?: SupportedChain;
+    txHash?: Hex;
+    retryable: boolean;
+    constructor(message: string, code?: BridgeErrorCode, options?: {
+        chain?: SupportedChain;
+        txHash?: Hex;
+        retryable?: boolean;
+    });
+    /**
+     * Check if error is retryable
+     */
+    isRetryable(): boolean;
+}
+/**
+ * Bridge logger interface
+ */
+export interface BridgeLogger {
+    debug: (message: string, meta?: Record<string, unknown>) => void;
+    info: (message: string, meta?: Record<string, unknown>) => void;
+    warn: (message: string, meta?: Record<string, unknown>) => void;
+    error: (message: string, meta?: Record<string, unknown>) => void;
+}
+/**
+ * Default console logger
+ */
+export declare const defaultLogger: BridgeLogger;
+/**
+ * Bridge Transaction Monitor
+ * Monitors cross-chain transactions from source to destination
+ * Tracks LayerZero message status and provides real-time updates
+ *
+ * @example
+ * ```typescript
+ * const monitor = new BridgeTransactionMonitor('base', defaultLogger);
+ *
+ * monitor.on('statusUpdate', (status) => {
+ *   console.log(`Progress: ${status.progress}%`);
+ * });
+ *
+ * const status = await monitor.monitorTransaction(
+ *   '0x...', // txHash
+ *   'base',
+ *   'optimism',
+ *   '100'
+ * );
+ * ```
+ */
+export declare class BridgeTransactionMonitor extends EventEmitter {
+    private sourceChain;
+    private logger;
+    private activeMonitors;
+    private statusCache;
+    private readonly DEFAULT_CONFIRMATIONS;
+    private readonly SOURCE_CONFIRMATION_TIMEOUT;
+    private readonly MESSAGE_DELIVERY_TIMEOUT;
+    private readonly DESTINATION_CONFIRMATION_TIMEOUT;
+    private readonly POLL_INTERVAL;
+    private readonly MAX_RETRIES;
+    constructor(sourceChain: SupportedChain, logger?: BridgeLogger);
+    /**
+     * Monitor a bridge transaction end-to-end
+     * Tracks source confirmation, message delivery, and destination confirmation
+     */
+    monitorTransaction(txHash: Hex, sourceChain: SupportedChain, destinationChain: SupportedChain, amount: string, options?: {
+        requiredConfirmations?: number;
+        onStatusUpdate?: (status: BridgeTransactionStatusDetails) => void;
+        timeout?: number;
+    }): Promise<BridgeTransactionStatusDetails>;
+    /**
+     * Monitor source chain transaction confirmation
+     */
+    private monitorSourceConfirmation;
+    /**
+     * Monitor LayerZero message delivery
+     */
+    private monitorMessageDelivery;
+    /**
+     * Monitor destination chain transaction confirmation
+     */
+    private monitorDestinationConfirmation;
+    /**
+     * Check LayerZero message status
+     */
+    private checkLayerZeroMessageStatus;
+    /**
+     * Extract message hash from transaction logs
+     */
+    private extractMessageHash;
+    /**
+     * Estimate total bridge time
+     */
+    private estimateTotalTime;
+    /**
+     * Emit status update
+     */
+    private emitStatusUpdate;
+    /**
+     * Delay with abort support
+     */
+    private delay;
+    /**
+     * Stop monitoring a transaction
+     */
+    stopMonitoring(txHash: Hex, sourceChain: SupportedChain, destinationChain: SupportedChain): void;
+    /**
+     * Stop all active monitoring
+     */
+    stopAllMonitoring(): void;
+    /**
+     * Get current status of a monitored transaction
+     */
+    getStatus(txHash: Hex, sourceChain: SupportedChain, destinationChain: SupportedChain): BridgeTransactionStatusDetails | undefined;
+    /**
+     * Retry a failed monitoring attempt
+     */
+    retryMonitoring(txHash: Hex, sourceChain: SupportedChain, destinationChain: SupportedChain, amount: string, options?: Parameters<typeof this.monitorTransaction>[4]): Promise<BridgeTransactionStatusDetails>;
+}
+/**
+ * Listen for LayerZero messages
+ * Creates a listener that monitors for incoming LayerZero messages on a specific chain
+ *
+ * @param chain - Chain to listen on
+ * @param callback - Callback function for new messages
+ * @returns Cleanup function to stop listening
+ */
+export declare function listenLayerZeroMessages(chain: SupportedChain, callback: (message: {
+    messageHash: Hex;
+    srcEid: number;
+    sender: Address;
+    nonce: bigint;
+    payload: string;
+    blockNumber: bigint;
+    transactionHash: Hex;
+}) => void): () => void;
+/**
+ * CrossChainBridge class
+ * Extends EventEmitter to provide event-based notifications for bridge operations
+ *
+ * @example
+ * ```typescript
+ * const bridge = new CrossChainBridge(privateKey, 'base');
+ *
+ * // Listen for events
+ * bridge.on('quoteReceived', (quote) => console.log('Quote:', quote));
+ * bridge.on('transactionSent', (tx) => console.log('Sent:', tx.txHash));
+ * bridge.on('transactionConfirmed', (tx) => console.log('Confirmed:', tx.txHash));
+ * bridge.on('transactionFailed', (error) => console.error('Failed:', error.error));
+ *
+ * // Execute bridge operation
+ * const result = await bridge.bridgeUSDC('optimism', '100');
+ * ```
+ */
+export declare class CrossChainBridge extends EventEmitter {
     private privateKey;
     private defaultChain;
-    constructor(privateKey: Hex, defaultChain?: SupportedChain);
+    private history;
+    logger: BridgeLogger;
+    /**
+     * Create a new CrossChainBridge instance
+     * @param privateKey - Private key for signing transactions
+     * @param defaultChain - Default source chain
+     * @param logger - Optional custom logger
+     */
+    constructor(privateKey: Hex, defaultChain?: SupportedChain, logger?: BridgeLogger);
+    /**
+     * Subscribe to bridge events
+     * @param event - Event type to listen for
+     * @param listener - Callback function
+     */
+    on(event: BridgeEventType, listener: (data: BridgeEventData) => void): this;
+    /**
+     * Subscribe to bridge events (one-time)
+     * @param event - Event type to listen for
+     * @param listener - Callback function
+     */
+    once(event: BridgeEventType, listener: (data: BridgeEventData) => void): this;
+    /**
+     * Remove event listener
+     * @param event - Event type
+     * @param listener - Callback function to remove
+     */
+    off(event: BridgeEventType, listener: (data: BridgeEventData) => void): this;
+    /**
+     * Emit a bridge event
+     * @param event - Event type
+     * @param data - Event data
+     */
+    emit(event: BridgeEventType, data: BridgeEventData): boolean;
+    /**
+     * Get transaction history for the bridge's address
+     */
+    getTransactionHistory(filter?: BridgeTransactionFilter): BridgeTransaction[];
+    /**
+     * Update transaction status and emit event
+     */
+    private updateTransactionStatus;
     getBalances(address?: Address): Promise<ChainBalance[]>;
     findCheapestChain(operation: 'send' | 'swap' | 'contract'): Promise<{
         chain: SupportedChain;
@@ -21888,12 +22207,70 @@ export declare class CrossChainBridge {
     /**
      * Get bridge quote for cross-chain transfer
      * Instance method wrapper around getBridgeQuote function
+     * Emits 'quoteReceived' and 'feeEstimated' events
      */
     getQuote(destinationChain: SupportedChain, token: 'USDC' | 'ETH', amount: string, sourceChain?: SupportedChain): Promise<BridgeQuote>;
+    /**
+     * Estimate bridge fees for a cross-chain transfer
+     * Provides comprehensive fee breakdown including protocol fees, gas costs, and bridge fees
+     *
+     * @param destinationChain - Target chain for the bridge
+     * @param token - Token to bridge ('USDC' | 'ETH')
+     * @param amount - Amount to bridge
+     * @param sourceChain - Source chain (defaults to defaultChain)
+     * @returns Detailed fee estimate
+     *
+     * @example
+     * ```typescript
+     * const estimate = await bridge.estimateFee('optimism', 'USDC', '100');
+     * console.log(`Total fee: ${estimate.totalFeeUSD} USD`);
+     * console.log(`Gas estimate: ${estimate.gasEstimate} units`);
+     * ```
+     */
+    estimateFee(destinationChain: SupportedChain, token: 'USDC' | 'ETH', amount: string, sourceChain?: SupportedChain): Promise<BridgeFeeEstimate>;
+    /**
+     * Monitor a bridge transaction
+     * Tracks the transaction from source chain through destination chain
+     *
+     * @param txHash - Transaction hash to monitor
+     * @param sourceChain - Source chain
+     * @param destinationChain - Destination chain
+     * @param amount - Amount bridged
+     * @param options - Monitoring options
+     * @returns Transaction status details
+     *
+     * @example
+     * ```typescript
+     * const result = await bridge.bridgeUSDC('optimism', '100');
+     * if (result.success) {
+     *   const status = await bridge.monitorTransaction(
+     *     result.txHash!,
+     *     'base',
+     *     'optimism',
+     *     '100'
+     *   );
+     *   console.log(`Bridge completed: ${status.status}`);
+     * }
+     * ```
+     */
+    monitorTransaction(txHash: Hex, sourceChain: SupportedChain, destinationChain: SupportedChain, amount: string, options?: {
+        requiredConfirmations?: number;
+        onStatusUpdate?: (status: BridgeTransactionStatusDetails) => void;
+        timeout?: number;
+    }): Promise<BridgeTransactionStatusDetails>;
     /**
      * Bridge USDC using LayerZero OFT (Omnichain Fungible Token) protocol
      * Supports Base ↔ Optimism ↔ Arbitrum transfers
      * Uses LayerZero V2 for cross-chain messaging
+     *
+     * Emits events:
+     * - 'approvalRequired' - When USDC approval is needed
+     * - 'approvalConfirmed' - When USDC approval is confirmed
+     * - 'transactionSent' - When bridge transaction is submitted
+     * - 'transactionConfirmed' - When bridge transaction is confirmed
+     * - 'transactionFailed' - When bridge transaction fails
+     * - 'balanceInsufficient' - When balance is insufficient
+     * - 'feeEstimated' - When fees are estimated
      *
      * @param destinationChain - Target chain
      * @param amount - Amount to bridge (in USDC, e.g., "10.5")
