@@ -58,4 +58,14 @@ export { PerformanceTracker, MemoryMonitor, MetricCollector, createPerformanceTr
 export { formatDate, formatTime, formatDuration, timeAgo, } from './utils/formatters.js';
 // Mobile module (v1.0) - Device detection, optimization, and gesture handling
 export { DeviceDetector, MobileOptimizer, TouchGestureHandler, isMobile, isTablet, getOptimizedConfig, DEFAULT_GESTURE_CONFIG, } from './mobile.js';
+// Profile Components (v1.0) - React components for Agent Profile UI
+export { 
+// Theme
+lightTheme, darkTheme, useTheme, ThemeProvider, 
+// Responsive
+breakpoints, useResponsive, 
+// Utilities
+formatCurrency, formatRelativeTime, getInitials, stringToColor, 
+// Components
+ProfileCard, AchievementBadge, ProfileAvatar, LevelProgressBar, StatsGrid, } from './profile-components.js';
 //# sourceMappingURL=index.js.map

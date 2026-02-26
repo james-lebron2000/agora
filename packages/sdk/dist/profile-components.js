@@ -1,14 +1,52 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 /**
  * React Components for Agora Agent Profile Module
- *
- * Provides reusable UI components for displaying agent profiles,
- * achievements, stats, and related data.
- *
  * @module profile-components
  */
-import React, { useCallback, useMemo, useState, memo } from 'react';
-import { calculateLevel, levelProgress, getTierColor, } from './profile.js';
+import React, { useCallback, useMemo, useState, useEffect, memo } from 'react';
+import { calculateLevel, levelProgress, xpForNextLevel, getTierColor, } from './profile.js';
+// ============================================================================
+// Responsive Breakpoints & Utilities
+// ============================================================================
+export const breakpoints = {
+    xs: 0,
+    sm: 640,
+    md: 768,
+    lg: 1024,
+    xl: 1280,
+    '2xl': 1536,
+};
+export function useResponsive() {
+    const [width, setWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1024);
+    useEffect(() => {
+        if (typeof window === 'undefined')
+            return;
+        const handleResize = () => setWidth(window.innerWidth);
+        window.addEventListener('resize', handleResize, { passive: true });
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+    const breakpoint = useMemo(() => {
+        if (width >= breakpoints['2xl'])
+            return '2xl';
+        if (width >= breakpoints.xl)
+            return 'xl';
+        if (width >= breakpoints.lg)
+            return 'lg';
+        if (width >= breakpoints.md)
+            return 'md';
+        if (width >= breakpoints.sm)
+            return 'sm';
+        return 'xs';
+    }, [width]);
+    return {
+        breakpoint,
+        width,
+        isMobile: width < breakpoints.md,
+        isTablet: width >= breakpoints.md && width < breakpoints.lg,
+        isDesktop: width >= breakpoints.lg,
+        isLarge: width >= breakpoints.xl,
+    };
+}
 export const lightTheme = {
     mode: 'light',
     colors: {
@@ -31,16 +69,21 @@ export const lightTheme = {
         md: '1rem',
         lg: '1.5rem',
         xl: '2rem',
+        '2xl': '2.5rem',
+        '3xl': '3rem',
     },
     borderRadius: {
+        none: '0',
         sm: '0.25rem',
         md: '0.375rem',
         lg: '0.5rem',
         xl: '0.75rem',
+        '2xl': '1rem',
         full: '9999px',
     },
     typography: {
         fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontFamilyMono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
         sizes: {
             xs: '0.75rem',
             sm: '0.875rem',
@@ -49,19 +92,53 @@ export const lightTheme = {
             xl: '1.25rem',
             '2xl': '1.5rem',
             '3xl': '1.875rem',
+            '4xl': '2.25rem',
+            '5xl': '3rem',
         },
         weights: {
+            light: 300,
             normal: 400,
             medium: 500,
             semibold: 600,
             bold: 700,
         },
+        lineHeights: {
+            none: 1,
+            tight: 1.25,
+            snug: 1.375,
+            normal: 1.5,
+            relaxed: 1.625,
+            loose: 2,
+        },
     },
     shadows: {
+        none: 'none',
         sm: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
         md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
         lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
         xl: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+        '2xl': '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+        inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.06)',
+    },
+    transitions: {
+        fast: '150ms ease',
+        normal: '250ms ease',
+        slow: '350ms ease',
+    },
+    zIndices: {
+        hide: -1,
+        auto: 'auto',
+        base: 0,
+        docked: 10,
+        dropdown: 1000,
+        sticky: 1100,
+        banner: 1200,
+        overlay: 1300,
+        modal: 1400,
+        popover: 1500,
+        skipLink: 1600,
+        toast: 1700,
+        tooltip: 1800,
     },
 };
 export const darkTheme = {
@@ -84,27 +161,72 @@ export const darkTheme = {
     borderRadius: lightTheme.borderRadius,
     typography: lightTheme.typography,
     shadows: {
+        none: 'none',
         sm: '0 1px 2px 0 rgba(0, 0, 0, 0.3)',
         md: '0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2)',
         lg: '0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.2)',
         xl: '0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
+        '2xl': '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+        inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.3)',
     },
+    transitions: lightTheme.transitions,
+    zIndices: lightTheme.zIndices,
 };
 const ThemeContext = React.createContext({
     theme: lightTheme,
     setTheme: () => { },
+    toggleTheme: () => { },
+    systemPrefersDark: false,
 });
-export const ThemeProvider = memo(({ children, defaultTheme = 'light', }) => {
-    const [theme, setThemeState] = useState(defaultTheme === 'dark' ? darkTheme : lightTheme);
+export const ThemeProvider = memo(({ children, defaultTheme = 'light', enableSystem = true, storageKey = 'agora-theme', }) => {
+    const [systemPrefersDark, setSystemPrefersDark] = useState(false);
+    const [themeMode, setThemeMode] = useState(() => {
+        if (typeof window === 'undefined')
+            return defaultTheme;
+        const stored = localStorage.getItem(storageKey);
+        if (stored && (stored === 'light' || stored === 'dark' || stored === 'system')) {
+            return stored;
+        }
+        return defaultTheme;
+    });
+    useEffect(() => {
+        if (!enableSystem)
+            return;
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        setSystemPrefersDark(mediaQuery.matches);
+        const handler = (e) => setSystemPrefersDark(e.matches);
+        mediaQuery.addEventListener('change', handler);
+        return () => mediaQuery.removeEventListener('change', handler);
+    }, [enableSystem]);
+    const theme = useMemo(() => {
+        if (themeMode === 'system') {
+            return systemPrefersDark ? darkTheme : lightTheme;
+        }
+        return themeMode === 'dark' ? darkTheme : lightTheme;
+    }, [themeMode, systemPrefersDark]);
     const setTheme = useCallback((newTheme) => {
         if (typeof newTheme === 'string') {
-            setThemeState(newTheme === 'dark' ? darkTheme : lightTheme);
+            setThemeMode(newTheme);
+            if (storageKey) {
+                localStorage.setItem(storageKey, newTheme);
+            }
         }
-        else {
-            setThemeState(newTheme);
-        }
-    }, []);
-    const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme]);
+    }, [storageKey]);
+    const toggleTheme = useCallback(() => {
+        setThemeMode(prev => {
+            const next = prev === 'light' ? 'dark' : prev === 'dark' ? 'system' : 'light';
+            if (storageKey) {
+                localStorage.setItem(storageKey, next);
+            }
+            return next;
+        });
+    }, [storageKey]);
+    const value = useMemo(() => ({
+        theme,
+        setTheme,
+        toggleTheme,
+        systemPrefersDark
+    }), [theme, setTheme, toggleTheme, systemPrefersDark]);
     return (_jsx(ThemeContext.Provider, { value: value, children: children }));
 });
 ThemeProvider.displayName = 'ThemeProvider';
@@ -138,6 +260,54 @@ export function truncateAddress(address, start = 6, end = 4) {
         return address;
     return `${address.slice(0, start)}...${address.slice(-end)}`;
 }
+export function formatRelativeTime(timestamp) {
+    const diff = Date.now() - timestamp;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    const weeks = Math.floor(days / 7);
+    const months = Math.floor(days / 30);
+    const years = Math.floor(days / 365);
+    if (years > 0)
+        return `${years}y ago`;
+    if (months > 0)
+        return `${months}mo ago`;
+    if (weeks > 0)
+        return `${weeks}w ago`;
+    if (days > 0)
+        return `${days}d ago`;
+    if (hours > 0)
+        return `${hours}h ago`;
+    if (minutes > 0)
+        return `${minutes}m ago`;
+    return 'just now';
+}
+export function formatDate(timestamp, format = 'medium') {
+    const date = new Date(timestamp);
+    const options = {
+        short: { month: 'short', day: 'numeric' },
+        medium: { month: 'short', day: 'numeric', year: 'numeric' },
+        long: { month: 'long', day: 'numeric', year: 'numeric' },
+    };
+    return date.toLocaleDateString('en-US', options[format]);
+}
+export function getInitials(name, maxLength = 2) {
+    return name
+        .split(' ')
+        .map(n => n[0])
+        .join('')
+        .slice(0, maxLength)
+        .toUpperCase();
+}
+export function stringToColor(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const color = Math.abs(hash).toString(16).slice(0, 6);
+    return '#' + '0'.repeat(6 - color.length) + color;
+}
 export class ProfileErrorBoundary extends React.Component {
     constructor(props) {
         super(props);
@@ -149,6 +319,11 @@ export class ProfileErrorBoundary extends React.Component {
     componentDidCatch(error, errorInfo) {
         this.props.onError?.(error, errorInfo);
     }
+    componentDidUpdate(prevProps) {
+        if (this.props.resetOnPropsChange && prevProps.children !== this.props.children) {
+            this.setState({ hasError: false, error: null });
+        }
+    }
     render() {
         if (this.state.hasError) {
             return this.props.fallback || (_jsxs("div", { role: "alert", "aria-live": "assertive", style: { padding: '1rem', color: '#DC2626' }, children: [_jsx("h3", { children: "Something went wrong" }), _jsx("p", { children: this.state.error?.message })] }));
@@ -156,27 +331,38 @@ export class ProfileErrorBoundary extends React.Component {
         return this.props.children;
     }
 }
-export const Skeleton = memo(({ width = '100%', height = '1rem', circle = false, className, style, }) => {
+export const Skeleton = memo(({ width = '100%', height = '1rem', circle = false, className, style, count = 1, animation = 'pulse', }) => {
     const { theme } = useTheme();
     const skeletonStyle = useMemo(() => ({
         width,
         height,
         borderRadius: circle ? '50%' : theme.borderRadius.md,
         backgroundColor: theme.colors.borderLight,
-        animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         ...style,
     }), [width, height, circle, theme, style]);
-    return (_jsxs(_Fragment, { children: [_jsx("div", { className: className, style: skeletonStyle, "aria-hidden": "true" }), _jsx("style", { children: `
+    const animationStyles = {
+        pulse: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        shimmer: 'shimmer 2s linear infinite',
+        none: 'none',
+    }[animation];
+    return (_jsxs(_Fragment, { children: [Array.from({ length: count }).map((_, i) => (_jsx("div", { className: className, style: { ...skeletonStyle, animation: animationStyles }, "aria-hidden": "true" }, i))), _jsx("style", { children: `
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }
         }
+        @keyframes shimmer {
+          0% { background-position: -200% 0; }
+          100% { background-position: 200% 0; }
+        }
       ` })] }));
 });
 Skeleton.displayName = 'Skeleton';
-export const ProfileCard = memo(({ profile, variant = 'full', showAvatar = true, showStats = true, onEdit, className, style, }) => {
+export const ProfileCard = memo(({ profile, variant = 'full', showAvatar = true, showStats = true, showLevel = true, onEdit, onClick, className, style, }) => {
     const { theme } = useTheme();
-    // Memoized computed values
+    const responsive = useResponsive();
+    const effectiveVariant = variant === 'responsive'
+        ? (responsive.isMobile ? 'compact' : 'full')
+        : variant;
     const { level, progress, tierColor, initials } = useMemo(() => {
         const lvl = calculateLevel(profile.xp);
         const prog = levelProgress(profile.xp);
@@ -185,24 +371,24 @@ export const ProfileCard = memo(({ profile, variant = 'full', showAvatar = true,
             level: lvl,
             progress: prog,
             tierColor: getTierColor(tName),
-            initials: profile.name?.slice(0, 2).toUpperCase() || '??',
+            initials: getInitials(profile.name || '??'),
         };
     }, [profile.xp, profile.name]);
-    // Memoized styles
     const styles = useMemo(() => {
-        const isCompact = variant === 'compact';
-        const isMinimal = variant === 'minimal';
+        const isCompact = effectiveVariant === 'compact';
+        const isMinimal = effectiveVariant === 'minimal';
         return {
             container: {
                 backgroundColor: theme.colors.surface,
                 borderRadius: theme.borderRadius.xl,
                 boxShadow: theme.shadows.md,
                 padding: isCompact ? theme.spacing.md : isMinimal ? theme.spacing.sm : theme.spacing.lg,
-                width: isCompact ? '280px' : isMinimal ? '200px' : '100%',
-                maxWidth: variant === 'full' ? '400px' : undefined,
+                width: isCompact ? '100%' : isMinimal ? '200px' : '100%',
+                maxWidth: effectiveVariant === 'full' ? '400px' : undefined,
                 border: `1px solid ${theme.colors.border}`,
-                transition: 'box-shadow 0.2s ease, transform 0.2s ease',
+                transition: `box-shadow ${theme.transitions.normal}, transform ${theme.transitions.normal}`,
                 position: 'relative',
+                cursor: onClick ? 'pointer' : 'default',
             },
             header: {
                 display: 'flex',
@@ -211,16 +397,16 @@ export const ProfileCard = memo(({ profile, variant = 'full', showAvatar = true,
                 marginBottom: isMinimal ? 0 : theme.spacing.md,
             },
             avatar: {
-                width: isCompact ? '48px' : isMinimal ? '32px' : '80px',
-                height: isCompact ? '48px' : isMinimal ? '32px' : '80px',
+                width: isCompact ? '48px' : isMinimal ? '32px' : responsive.isMobile ? '56px' : '80px',
+                height: isCompact ? '48px' : isMinimal ? '32px' : responsive.isMobile ? '56px' : '80px',
                 borderRadius: theme.borderRadius.full,
                 objectFit: 'cover',
                 border: `3px solid ${tierColor}`,
                 backgroundColor: theme.colors.borderLight,
             },
             avatarPlaceholder: {
-                width: isCompact ? '48px' : isMinimal ? '32px' : '80px',
-                height: isCompact ? '48px' : isMinimal ? '32px' : '80px',
+                width: isCompact ? '48px' : isMinimal ? '32px' : responsive.isMobile ? '56px' : '80px',
+                height: isCompact ? '48px' : isMinimal ? '32px' : responsive.isMobile ? '56px' : '80px',
                 borderRadius: theme.borderRadius.full,
                 backgroundColor: theme.colors.primary,
                 display: 'flex',
@@ -264,9 +450,9 @@ export const ProfileCard = memo(({ profile, variant = 'full', showAvatar = true,
                 fontSize: theme.typography.sizes.sm,
                 color: theme.colors.textSecondary,
                 margin: `${theme.spacing.sm} 0`,
-                lineHeight: 1.5,
+                lineHeight: theme.typography.lineHeights.relaxed,
                 display: isMinimal ? 'none' : '-webkit-box',
-                WebkitLineClamp: 2,
+                WebkitLineClamp: responsive.isMobile ? 2 : 3,
                 WebkitBoxOrient: 'vertical',
                 overflow: 'hidden',
             },
@@ -330,490 +516,229 @@ export const ProfileCard = memo(({ profile, variant = 'full', showAvatar = true,
                 color: theme.colors.primary,
             },
         };
-    }, [theme, variant, tierColor, progress]);
-    // Event handlers with useCallback
-    const handleEditClick = useCallback(() => {
+    }, [theme, effectiveVariant, tierColor, progress, responsive.isMobile, onClick]);
+    const handleEditClick = useCallback((e) => {
+        e.stopPropagation();
         onEdit?.();
     }, [onEdit]);
-    const handleEditMouseEnter = useCallback((e) => {
-        e.currentTarget.style.backgroundColor = theme.colors.borderLight;
-        e.currentTarget.style.transform = 'scale(1.05)';
-    }, [theme]);
-    const handleEditMouseLeave = useCallback((e) => {
-        e.currentTarget.style.backgroundColor = 'transparent';
-        e.currentTarget.style.transform = 'scale(1)';
-    }, []);
-    const isMinimal = variant === 'minimal';
+    const isMinimal = effectiveVariant === 'minimal';
     const progressPercent = Math.round(progress * 100);
-    return (_jsxs("article", { className: className, style: { ...styles.container, ...style }, role: "article", "aria-label": `${profile.name}'s profile card`, children: [onEdit && variant === 'full' && (_jsx("button", { onClick: handleEditClick, onMouseEnter: handleEditMouseEnter, onMouseLeave: handleEditMouseLeave, style: styles.editButton, "aria-label": "Edit profile", title: "Edit profile", type: "button", children: "\u270F\uFE0F" })), _jsxs("div", { style: styles.header, children: [showAvatar && (profile.avatarUrl ? (_jsx("img", { src: profile.avatarUrl, alt: `${profile.name}'s avatar`, style: styles.avatar, loading: "lazy" })) : (_jsx("div", { style: styles.avatarPlaceholder, "aria-hidden": "true", children: initials }))), _jsxs("div", { style: styles.info, children: [_jsxs("h3", { style: styles.name, children: [profile.name, profile.isVerified && (_jsx("span", { style: styles.verifiedBadge, title: "Verified account", "aria-label": "Verified account", children: "\u2713" }))] }), !isMinimal && (_jsxs("div", { style: styles.level, children: [_jsxs("span", { style: styles.levelBadge, "aria-label": `Level ${level}`, children: ["Lv.", level] }), _jsxs("span", { "aria-label": `${progressPercent}% progress to next level`, children: [progressPercent, "% to next level"] })] }))] })] }), !isMinimal && profile.bio && (_jsx("p", { style: styles.bio, children: profile.bio })), !isMinimal && (_jsx("div", { style: styles.progressBar, role: "progressbar", "aria-valuenow": progressPercent, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": "Level progress", children: _jsx("div", { style: styles.progressFill }) })), showStats && !isMinimal && (_jsxs("div", { style: styles.stats, role: "list", "aria-label": "Profile statistics", children: [_jsxs("div", { style: styles.stat, role: "listitem", children: [_jsx("div", { style: styles.statValue, "aria-label": `${profile.tasksCompleted} tasks completed`, children: profile.tasksCompleted }), _jsx("div", { style: styles.statLabel, children: "Tasks" })] }), _jsxs("div", { style: styles.stat, role: "listitem", children: [_jsx("div", { style: styles.statValue, "aria-label": `Total earned: ${formatCurrency(profile.totalEarned)}`, children: formatCurrency(profile.totalEarned) }), _jsx("div", { style: styles.statLabel, children: "Earned" })] }), variant === 'full' && (_jsxs("div", { style: styles.stat, role: "listitem", children: [_jsx("div", { style: styles.statValue, "aria-label": `Reputation: ${profile.reputation}`, children: profile.reputation }), _jsx("div", { style: styles.statLabel, children: "Rep" })] }))] }))] }));
+    return (_jsxs("article", { className: className, style: { ...styles.container, ...style }, role: "article", "aria-label": `${profile.name}'s profile card`, onClick: onClick, onMouseEnter: (e) => {
+            if (onClick) {
+                e.currentTarget.style.boxShadow = theme.shadows.lg;
+                e.currentTarget.style.transform = 'translateY(-2px)';
+            }
+        }, onMouseLeave: (e) => {
+            e.currentTarget.style.boxShadow = theme.shadows.md;
+            e.currentTarget.style.transform = 'translateY(0)';
+        }, children: [onEdit && effectiveVariant === 'full' && (_jsx("button", { onClick: handleEditClick, style: styles.editButton, "aria-label": "Edit profile", title: "Edit profile", type: "button", children: "\u270F\uFE0F" })), _jsxs("div", { style: styles.header, children: [showAvatar && (profile.avatarUrl ? (_jsx("img", { src: profile.avatarUrl, alt: `${profile.name}'s avatar`, style: styles.avatar, loading: "lazy" })) : (_jsx("div", { style: styles.avatarPlaceholder, "aria-hidden": "true", children: initials }))), _jsxs("div", { style: styles.info, children: [_jsxs("h3", { style: styles.name, children: [profile.name, profile.isVerified && (_jsx("span", { style: styles.verifiedBadge, title: "Verified account", "aria-label": "Verified account", children: "\u2713" }))] }), showLevel && !isMinimal && (_jsxs("div", { style: styles.level, children: [_jsxs("span", { style: styles.levelBadge, "aria-label": `Level ${level}`, children: ["Lv.", level] }), _jsxs("span", { "aria-label": `${progressPercent}% progress to next level`, children: [progressPercent, "% to next level"] })] }))] })] }), !isMinimal && profile.bio && (_jsx("p", { style: styles.bio, children: profile.bio })), showLevel && !isMinimal && (_jsx("div", { style: styles.progressBar, role: "progressbar", "aria-valuenow": progressPercent, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": "Level progress", children: _jsx("div", { style: styles.progressFill }) })), showStats && !isMinimal && (_jsxs("div", { style: styles.stats, role: "list", "aria-label": "Profile statistics", children: [_jsxs("div", { style: styles.stat, role: "listitem", children: [_jsx("div", { style: styles.statValue, "aria-label": `${profile.tasksCompleted} tasks completed`, children: profile.tasksCompleted }), _jsx("div", { style: styles.statLabel, children: "Tasks" })] }), _jsxs("div", { style: styles.stat, role: "listitem", children: [_jsx("div", { style: styles.statValue, "aria-label": `Total earned: ${formatCurrency(profile.totalEarned)}`, children: formatCurrency(profile.totalEarned) }), _jsx("div", { style: styles.statLabel, children: "Earned" })] }), effectiveVariant === 'full' && (_jsxs("div", { style: styles.stat, role: "listitem", children: [_jsx("div", { style: styles.statValue, "aria-label": `Reputation: ${profile.reputation}`, children: profile.reputation }), _jsx("div", { style: styles.statLabel, children: "Rep" })] }))] }))] }));
 });
 ProfileCard.displayName = 'ProfileCard';
 export const AchievementBadge = memo(({ achievement, size = 'md', showTooltip = true, className, style, }) => {
     const { theme } = useTheme();
     const [isHovered, setIsHovered] = useState(false);
     const [isTouched, setIsTouched] = useState(false);
-    const sizeConfig = useMemo(() => ({
-        sm: { icon: '20px', container: '32px', fontSize: theme.typography.sizes.sm, touchTarget: '44px' },
-        md: { icon: '28px', container: '48px', fontSize: theme.typography.sizes.lg, touchTarget: '48px' },
-        lg: { icon: '40px', container: '72px', fontSize: theme.typography.sizes['2xl'], touchTarget: '72px' },
-    }), [theme]);
-    const { tierColor, isUnlocked, progress, sizeValue } = useMemo(() => ({
-        tierColor: getTierColor(achievement.tier),
-        isUnlocked: !!achievement.unlockedAt || !!achievement.completedAt,
-        progress: achievement.progress || 0,
-        sizeValue: sizeConfig[size],
-    }), [achievement, sizeConfig, size]);
+    const sizeConfig = useMemo(() => {
+        const configs = {
+            sm: { size: 32, fontSize: '0.875rem', iconSize: 16 },
+            md: { size: 48, fontSize: '1rem', iconSize: 24 },
+            lg: { size: 64, fontSize: '1.25rem', iconSize: 32 },
+        };
+        return configs[size];
+    }, [size]);
     const styles = useMemo(() => ({
         container: {
             position: 'relative',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: sizeValue.touchTarget,
-            height: sizeValue.touchTarget,
-            borderRadius: theme.borderRadius.lg,
-            backgroundColor: 'transparent',
-            border: 'none',
-            cursor: showTooltip ? 'pointer' : 'default',
-            padding: 0,
-        },
-        badge: {
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: sizeValue.container,
-            height: sizeValue.container,
-            borderRadius: theme.borderRadius.lg,
-            backgroundColor: isUnlocked ? `${tierColor}20` : theme.colors.borderLight,
-            border: `2px solid ${isUnlocked ? tierColor : theme.colors.border}`,
-            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-            transform: (isHovered || isTouched) ? 'scale(1.05)' : 'scale(1)',
-            boxShadow: (isHovered || isTouched) ? theme.shadows.md : 'none',
+            width: sizeConfig.size,
+            height: sizeConfig.size,
+            borderRadius: '50%',
+            backgroundColor: achievement.tier ? getTierColor(achievement.tier) : theme.colors.primary,
+            cursor: 'pointer',
+            transition: theme.transitions.normal,
+            transform: isHovered ? 'scale(1.1)' : 'scale(1)',
         },
         icon: {
-            fontSize: sizeValue.fontSize,
-            filter: isUnlocked ? 'none' : 'grayscale(100%)',
-            opacity: isUnlocked ? 1 : 0.5,
-        },
-        progressRing: {
-            position: 'absolute',
-            bottom: '2px',
-            right: '2px',
-            width: size === 'sm' ? '12px' : size === 'md' ? '16px' : '20px',
-            height: size === 'sm' ? '12px' : size === 'md' ? '16px' : '20px',
-            borderRadius: '50%',
-            backgroundColor: theme.colors.surface,
-            display: !isUnlocked && progress > 0 ? 'flex' : 'none',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: theme.typography.sizes.xs,
-            fontWeight: theme.typography.weights.bold,
-            color: theme.colors.primary,
-            border: `2px solid ${theme.colors.border}`,
+            fontSize: sizeConfig.fontSize,
+            color: '#FFFFFF',
         },
         tooltip: {
             position: 'absolute',
             bottom: '100%',
             left: '50%',
             transform: 'translateX(-50%)',
-            marginBottom: theme.spacing.sm,
-            padding: theme.spacing.md,
+            padding: `${theme.spacing.sm} ${theme.spacing.md}`,
             backgroundColor: theme.colors.surface,
-            borderRadius: theme.borderRadius.lg,
-            boxShadow: theme.shadows.xl,
-            border: `1px solid ${theme.colors.border}`,
-            zIndex: 100,
-            minWidth: '200px',
-            maxWidth: '280px',
+            color: theme.colors.text,
+            borderRadius: theme.borderRadius.md,
+            boxShadow: theme.shadows.lg,
+            fontSize: theme.typography.sizes.sm,
+            whiteSpace: 'nowrap',
+            zIndex: theme.zIndices.tooltip,
+            marginBottom: theme.spacing.sm,
             opacity: (isHovered || isTouched) && showTooltip ? 1 : 0,
             visibility: (isHovered || isTouched) && showTooltip ? 'visible' : 'hidden',
-            transition: 'opacity 0.2s ease, visibility 0.2s ease',
-            pointerEvents: 'none',
+            transition: theme.transitions.normal,
         },
-        tooltipTitle: {
-            fontSize: theme.typography.sizes.sm,
+        title: {
             fontWeight: theme.typography.weights.semibold,
-            color: theme.colors.text,
             marginBottom: theme.spacing.xs,
         },
-        tooltipDesc: {
-            fontSize: theme.typography.sizes.xs,
+        description: {
             color: theme.colors.textSecondary,
-            marginBottom: theme.spacing.sm,
-        },
-        tooltipTier: {
             fontSize: theme.typography.sizes.xs,
-            color: tierColor,
-            fontWeight: theme.typography.weights.bold,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
         },
-        tooltipProgress: {
-            marginTop: theme.spacing.sm,
-            height: '4px',
-            backgroundColor: theme.colors.border,
-            borderRadius: theme.borderRadius.full,
-            overflow: 'hidden',
-        },
-        tooltipProgressFill: {
-            height: '100%',
-            backgroundColor: theme.colors.primary,
-            width: `${progress}%`,
-            transition: 'width 0.3s ease',
-        },
-    }), [theme, sizeValue, tierColor, isUnlocked, progress, isHovered, isTouched, showTooltip, size]);
-    const handleMouseEnter = useCallback(() => setIsHovered(true), []);
-    const handleMouseLeave = useCallback(() => setIsHovered(false), []);
-    const handleTouchStart = useCallback(() => setIsTouched(true), []);
-    const handleTouchEnd = useCallback(() => setIsTouched(false), []);
-    const ariaLabel = isUnlocked
-        ? `${achievement.name} achievement unlocked - ${achievement.tier} tier`
-        : `${achievement.name} achievement - ${achievement.tier} tier - ${Math.round(progress)}% progress`;
-    return (_jsxs("button", { className: className, style: { ...styles.container, ...style }, onMouseEnter: handleMouseEnter, onMouseLeave: handleMouseLeave, onTouchStart: handleTouchStart, onTouchEnd: handleTouchEnd, "aria-label": ariaLabel, type: "button", children: [_jsxs("div", { style: styles.badge, children: [_jsx("span", { style: styles.icon, "aria-hidden": "true", children: achievement.icon }), !isUnlocked && progress > 0 && (_jsxs("span", { style: styles.progressRing, "aria-hidden": "true", children: [Math.round(progress), "%"] }))] }), showTooltip && (_jsxs("div", { style: styles.tooltip, role: "tooltip", "aria-hidden": !(isHovered || isTouched), children: [_jsx("div", { style: styles.tooltipTitle, children: achievement.name }), _jsx("div", { style: styles.tooltipDesc, children: achievement.description }), _jsxs("div", { style: styles.tooltipTier, children: [achievement.tier, " Tier"] }), !isUnlocked && (_jsx("div", { style: styles.tooltipProgress, role: "progressbar", "aria-valuenow": Math.round(progress), "aria-valuemin": 0, "aria-valuemax": 100, children: _jsx("div", { style: styles.tooltipProgressFill }) }))] }))] }));
+    }), [sizeConfig, achievement.tier, theme, isHovered, isTouched, showTooltip]);
+    return (_jsxs("div", { className: className, style: { ...styles.container, ...style }, onMouseEnter: () => setIsHovered(true), onMouseLeave: () => setIsHovered(false), onTouchStart: () => setIsTouched(true), onTouchEnd: () => setIsTouched(false), role: "img", "aria-label": `${achievement.name} achievement`, children: [_jsx("span", { style: styles.icon, children: achievement.icon || '🏆' }), showTooltip && (_jsxs("div", { style: styles.tooltip, role: "tooltip", children: [_jsx("div", { style: styles.title, children: achievement.name }), _jsx("div", { style: styles.description, children: achievement.description })] }))] }));
 });
 AchievementBadge.displayName = 'AchievementBadge';
-export const LevelProgress = memo(({ level, xp, showDetails = true, className, style, }) => {
+export const ProfileAvatar = memo(({ src, name, size = 'md', isOnline = false, showStatus = false, className, style, }) => {
     const { theme } = useTheme();
-    const { progress, xpInLevel, xpNeeded, tierColor, tierName } = useMemo(() => {
-        const currentLevelBaseXp = (level - 1) * (level - 1) * 100;
-        const nextLevelXp = level * level * 100;
-        const xpInLvl = xp - currentLevelBaseXp;
-        const xpNeed = nextLevelXp - currentLevelBaseXp;
-        const prog = xpNeed > 0 ? Math.min(1, Math.max(0, xpInLvl / xpNeed)) : 1;
-        const tName = level >= 50 ? 'diamond' : level >= 30 ? 'platinum' : level >= 20 ? 'gold' : level >= 10 ? 'silver' : 'bronze';
-        return {
-            progress: prog,
-            xpInLevel: xpInLvl,
-            xpNeeded: xpNeed,
-            tierColor: getTierColor(tName),
-            tierName: tName.charAt(0).toUpperCase() + tName.slice(1),
+    const initials = useMemo(() => name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2), [name]);
+    const sizeConfig = useMemo(() => {
+        const configs = {
+            xs: { size: 24, fontSize: '0.625rem', statusSize: 8 },
+            sm: { size: 32, fontSize: '0.75rem', statusSize: 10 },
+            md: { size: 48, fontSize: '1rem', statusSize: 12 },
+            lg: { size: 64, fontSize: '1.25rem', statusSize: 16 },
+            xl: { size: 96, fontSize: '1.875rem', statusSize: 20 },
         };
-    }, [level, xp]);
+        return configs[size];
+    }, [size]);
     const styles = useMemo(() => ({
         container: {
-            backgroundColor: theme.colors.surface,
-            borderRadius: theme.borderRadius.lg,
-            padding: theme.spacing.md,
-            border: `1px solid ${theme.colors.border}`,
-        },
-        header: {
-            display: 'flex',
-            justifyContent: 'space-between',
+            position: 'relative',
+            display: 'inline-flex',
             alignItems: 'center',
-            marginBottom: theme.spacing.md,
+            justifyContent: 'center',
+            width: sizeConfig.size,
+            height: sizeConfig.size,
+            borderRadius: '50%',
+            overflow: 'hidden',
+            backgroundColor: theme.colors.primary,
+            border: `2px solid ${theme.colors.surface}`,
         },
-        levelBadge: {
-            display: 'flex',
-            alignItems: 'center',
-            gap: theme.spacing.sm,
+        image: {
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
         },
-        levelNumber: {
-            width: '48px',
-            height: '48px',
-            borderRadius: theme.borderRadius.full,
-            backgroundColor: tierColor,
+        fallback: {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: theme.typography.sizes.xl,
-            fontWeight: theme.typography.weights.bold,
-            color: '#000000',
-        },
-        levelInfo: {
-            display: 'flex',
-            flexDirection: 'column',
-        },
-        levelLabel: {
-            fontSize: theme.typography.sizes.sm,
-            color: theme.colors.textSecondary,
-        },
-        levelValue: {
-            fontSize: theme.typography.sizes.lg,
-            fontWeight: theme.typography.weights.bold,
-            color: theme.colors.text,
-        },
-        progressContainer: {
-            position: 'relative',
-            height: '12px',
-            backgroundColor: theme.colors.border,
-            borderRadius: theme.borderRadius.full,
-            overflow: 'hidden',
-        },
-        progressBar: {
+            width: '100%',
             height: '100%',
-            background: `linear-gradient(90deg, ${tierColor}80, ${tierColor})`,
-            borderRadius: theme.borderRadius.full,
-            transition: 'width 0.5s ease',
-            width: `${progress * 100}%`,
-        },
-        progressGlow: {
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
-            animation: 'shimmer 2s infinite',
-        },
-        details: {
-            marginTop: theme.spacing.md,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontSize: theme.typography.sizes.sm,
-            color: theme.colors.textSecondary,
-        },
-        xpValue: {
-            color: theme.colors.primary,
-            fontWeight: theme.typography.weights.semibold,
-        },
-    }), [theme, tierColor, progress]);
-    const progressPercent = Math.round(progress * 100);
-    return (_jsxs("div", { className: className, style: { ...styles.container, ...style }, role: "region", "aria-label": `Level ${level} progress`, children: [_jsx("div", { style: styles.header, children: _jsxs("div", { style: styles.levelBadge, children: [_jsx("div", { style: styles.levelNumber, "aria-label": `Level ${level}`, children: level }), _jsxs("div", { style: styles.levelInfo, children: [_jsx("span", { style: styles.levelLabel, children: "Current Level" }), _jsx("span", { style: styles.levelValue, "aria-label": `Tier: ${tierName}`, children: tierName })] })] }) }), _jsxs("div", { style: styles.progressContainer, role: "progressbar", "aria-valuenow": progressPercent, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": `${progressPercent}% progress to level ${level + 1}`, children: [_jsx("div", { style: styles.progressBar }), _jsx("div", { style: styles.progressGlow, "aria-hidden": "true" })] }), showDetails && (_jsxs("div", { style: styles.details, children: [_jsxs("span", { children: [_jsx("span", { style: styles.xpValue, "aria-label": `${formatNumber(xpInLevel)} XP in current level`, children: formatNumber(xpInLevel) }), _jsxs("span", { "aria-label": `out of ${formatNumber(xpNeeded)} XP needed`, children: [" / ", formatNumber(xpNeeded), " XP"] })] }), _jsxs("span", { "aria-label": `${progressPercent}% to level ${level + 1}`, children: [progressPercent, "% to Lv.", level + 1] })] })), _jsx("style", { children: `
-        @keyframes shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-      ` })] }));
-});
-LevelProgress.displayName = 'LevelProgress';
-export const ReputationScore = memo(({ score, size = 'md', showTrend = true, trend = 'stable', className, style, }) => {
-    const { theme } = useTheme();
-    const sizeConfig = useMemo(() => ({
-        sm: { diameter: 48, stroke: 4, fontSize: theme.typography.sizes.sm },
-        md: { diameter: 72, stroke: 6, fontSize: theme.typography.sizes.lg },
-        lg: { diameter: 120, stroke: 8, fontSize: theme.typography.sizes['2xl'] },
-    }), [theme]);
-    const { diameter, stroke, fontSize } = sizeConfig[size];
-    const radius = (diameter - stroke) / 2;
-    const circumference = radius * 2 * Math.PI;
-    const offset = circumference - (score / 100) * circumference;
-    const scoreColor = useMemo(() => {
-        if (score >= 90)
-            return theme.colors.success;
-        if (score >= 70)
-            return theme.colors.primary;
-        if (score >= 50)
-            return theme.colors.warning;
-        return theme.colors.error;
-    }, [score, theme]);
-    const trendIcons = useMemo(() => ({
-        up: '↑',
-        down: '↓',
-        stable: '→',
-    }), []);
-    const trendColors = useMemo(() => ({
-        up: theme.colors.success,
-        down: theme.colors.error,
-        stable: theme.colors.textSecondary,
-    }), [theme]);
-    const trendLabels = useMemo(() => ({
-        up: 'Trending up',
-        down: 'Trending down',
-        stable: 'Stable',
-    }), []);
-    const styles = useMemo(() => ({
-        container: {
-            display: 'inline-flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: theme.spacing.sm,
-        },
-        svg: {
-            transform: 'rotate(-90deg)',
-        },
-        background: {
-            fill: 'none',
-            stroke: theme.colors.border,
-            strokeWidth: stroke,
-        },
-        progress: {
-            fill: 'none',
-            stroke: scoreColor,
-            strokeWidth: stroke,
-            strokeLinecap: 'round',
-            strokeDasharray: circumference,
-            strokeDashoffset: offset,
-            transition: 'stroke-dashoffset 0.5s ease',
-        },
-        label: {
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            fontSize: fontSize,
-            fontWeight: theme.typography.weights.bold,
-            color: scoreColor,
-        },
-        trend: {
-            display: 'flex',
-            alignItems: 'center',
-            gap: theme.spacing.xs,
-            fontSize: theme.typography.sizes.sm,
-            color: trendColors[trend],
+            fontSize: sizeConfig.fontSize,
             fontWeight: theme.typography.weights.medium,
+            color: '#FFFFFF',
         },
-        labelText: {
-            fontSize: theme.typography.sizes.xs,
-            color: theme.colors.textSecondary,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
+        status: {
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: sizeConfig.statusSize,
+            height: sizeConfig.statusSize,
+            borderRadius: '50%',
+            backgroundColor: isOnline ? theme.colors.success : theme.colors.textSecondary,
+            border: `2px solid ${theme.colors.surface}`,
         },
-    }), [theme, diameter, stroke, scoreColor, offset, circumference, fontSize, trend, trendColors]);
-    return (_jsxs("div", { className: className, style: { ...styles.container, ...style }, role: "img", "aria-label": `Reputation score: ${score} out of 100, ${trendLabels[trend]}`, children: [_jsxs("div", { style: { position: 'relative', width: diameter, height: diameter }, children: [_jsxs("svg", { width: diameter, height: diameter, style: styles.svg, "aria-hidden": "true", children: [_jsx("circle", { cx: diameter / 2, cy: diameter / 2, r: radius, style: styles.background }), _jsx("circle", { cx: diameter / 2, cy: diameter / 2, r: radius, style: styles.progress })] }), _jsx("div", { style: styles.label, "aria-hidden": "true", children: score })] }), showTrend && (_jsxs("div", { style: styles.trend, "aria-label": trendLabels[trend], children: [_jsx("span", { "aria-hidden": "true", children: trendIcons[trend] }), _jsx("span", { style: styles.labelText, children: "Reputation" })] }))] }));
+    }), [sizeConfig, theme, isOnline]);
+    return (_jsxs("div", { className: className, style: { ...styles.container, ...style }, children: [src ? (_jsx("img", { src: src, alt: name, style: styles.image, loading: "lazy" })) : (_jsx("div", { style: styles.fallback, children: initials })), showStatus && _jsx("div", { style: styles.status, "aria-label": isOnline ? 'Online' : 'Offline' })] }));
 });
-ReputationScore.displayName = 'ReputationScore';
-export const ProfileStatsGrid = memo(({ stats, columns = 3, className, style, }) => {
+ProfileAvatar.displayName = 'ProfileAvatar';
+export const LevelProgressBar = memo(({ currentXP, level: propLevel, showLabel = true, size = 'md', className, style, }) => {
+    const { theme } = useTheme();
+    const level = propLevel ?? calculateLevel(currentXP);
+    const progress = levelProgress(currentXP);
+    const nextLevelXP = xpForNextLevel(currentXP);
+    const styles = useMemo(() => {
+        const heights = { sm: 4, md: 8, lg: 12 };
+        return {
+            container: {
+                width: '100%',
+            },
+            header: {
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: theme.spacing.sm,
+            },
+            level: {
+                fontSize: theme.typography.sizes.sm,
+                fontWeight: theme.typography.weights.semibold,
+                color: theme.colors.text,
+            },
+            progress: {
+                fontSize: theme.typography.sizes.xs,
+                color: theme.colors.textSecondary,
+            },
+            bar: {
+                width: '100%',
+                height: heights[size],
+                backgroundColor: theme.colors.borderLight,
+                borderRadius: theme.borderRadius.full,
+                overflow: 'hidden',
+            },
+            fill: {
+                width: `${progress}%`,
+                height: '100%',
+                backgroundColor: theme.colors.primary,
+                borderRadius: theme.borderRadius.full,
+                transition: theme.transitions.normal,
+            },
+        };
+    }, [theme, size, progress]);
+    return (_jsxs("div", { className: className, style: { ...styles.container, ...style }, children: [showLabel && (_jsxs("div", { style: styles.header, children: [_jsxs("span", { style: styles.level, children: ["Level ", level] }), _jsxs("span", { style: styles.progress, children: [progress, "% to Level ", level + 1] })] })), _jsx("div", { style: styles.bar, role: "progressbar", "aria-valuenow": progress, "aria-valuemin": 0, "aria-valuemax": 100, children: _jsx("div", { style: styles.fill }) })] }));
+});
+LevelProgressBar.displayName = 'LevelProgressBar';
+export const StatsGrid = memo(({ stats, columns = 3, className, style, }) => {
     const { theme } = useTheme();
     const statItems = useMemo(() => [
-        { key: 'tasksCompleted', label: 'Tasks Done', value: stats.tasksCompleted, icon: '✓' },
-        { key: 'tasksCompletedThisMonth', label: 'This Month', value: stats.tasksCompletedThisMonth, icon: '📅' },
-        { key: 'successRate', label: 'Success Rate', value: `${Math.round(stats.successRate * 100)}%`, icon: '📈' },
-        { key: 'averageRating', label: 'Avg Rating', value: stats.averageRating.toFixed(1), icon: '⭐' },
-        { key: 'totalReviews', label: 'Reviews', value: stats.totalReviews, icon: '💬' },
-        { key: 'currentStreak', label: 'Streak', value: `${stats.currentStreak}d`, icon: '🔥' },
-        { key: 'longestStreak', label: 'Best Streak', value: `${stats.longestStreak}d`, icon: '🏆' },
-        { key: 'averageResponseTime', label: 'Response', value: `${stats.averageResponseTime}m`, icon: '⚡' },
+        { label: 'Tasks', value: stats.tasksCompleted, icon: '✓' },
+        { label: 'Rating', value: stats.averageRating.toFixed(1), icon: '★' },
+        { label: 'Success Rate', value: `${(stats.successRate * 100).toFixed(0)}%`, icon: '📈' },
+        { label: 'Response Time', value: `${Math.round(stats.averageResponseTime / 60)}h`, icon: '⏱' },
+        { label: 'Streak', value: stats.currentStreak, icon: '🔥' },
+        { label: 'Reviews', value: stats.totalReviews, icon: '👥' },
     ], [stats]);
     const styles = useMemo(() => ({
-        container: {
+        grid: {
             display: 'grid',
             gridTemplateColumns: `repeat(${columns}, 1fr)`,
             gap: theme.spacing.md,
         },
-        statCard: {
-            backgroundColor: theme.colors.surface,
-            borderRadius: theme.borderRadius.lg,
-            padding: theme.spacing.md,
-            border: `1px solid ${theme.colors.border}`,
+        stat: {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            textAlign: 'center',
-            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-            minHeight: '80px',
+            padding: theme.spacing.md,
+            backgroundColor: theme.colors.surface,
+            borderRadius: theme.borderRadius.lg,
+            border: `1px solid ${theme.colors.borderLight}`,
         },
         icon: {
-            fontSize: theme.typography.sizes.xl,
+            fontSize: '1.5rem',
             marginBottom: theme.spacing.sm,
         },
         value: {
             fontSize: theme.typography.sizes.xl,
             fontWeight: theme.typography.weights.bold,
             color: theme.colors.text,
-            marginBottom: theme.spacing.xs,
         },
         label: {
-            fontSize: theme.typography.sizes.xs,
+            fontSize: theme.typography.sizes.sm,
             color: theme.colors.textSecondary,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
+            marginTop: theme.spacing.xs,
         },
     }), [theme, columns]);
-    const handleMouseEnter = useCallback((e) => {
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.boxShadow = theme.shadows.md;
-    }, [theme]);
-    const handleMouseLeave = useCallback((e) => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = 'none';
-    }, []);
-    return (_jsx("div", { className: className, style: { ...styles.container, ...style }, role: "list", "aria-label": "Profile statistics", children: statItems.map((stat) => (_jsxs("div", { style: styles.statCard, role: "listitem", "aria-label": `${stat.label}: ${stat.value}`, onMouseEnter: handleMouseEnter, onMouseLeave: handleMouseLeave, children: [_jsx("span", { style: styles.icon, "aria-hidden": "true", children: stat.icon }), _jsx("span", { style: styles.value, "aria-hidden": "true", children: stat.value }), _jsx("span", { style: styles.label, children: stat.label })] }, stat.key))) }));
+    return (_jsx("div", { className: className, style: { ...styles.grid, ...style }, children: statItems.map((stat, index) => (_jsxs("div", { style: styles.stat, children: [_jsx("span", { style: styles.icon, children: stat.icon }), _jsx("span", { style: styles.value, children: stat.value }), _jsx("span", { style: styles.label, children: stat.label })] }, index))) }));
 });
-ProfileStatsGrid.displayName = 'ProfileStatsGrid';
-export const SkillTags = memo(({ skills, maxDisplay, onTagClick, className, style, }) => {
-    const { theme } = useTheme();
-    const [showAll, setShowAll] = useState(false);
-    const displaySkills = useMemo(() => {
-        if (!maxDisplay || showAll || skills.length <= maxDisplay)
-            return skills;
-        return skills.slice(0, maxDisplay);
-    }, [skills, maxDisplay, showAll]);
-    const hiddenCount = maxDisplay ? skills.length - maxDisplay : 0;
-    const styles = useMemo(() => ({
-        container: {
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: theme.spacing.sm,
-        },
-        tag: {
-            backgroundColor: theme.colors.borderLight,
-            color: theme.colors.text,
-            padding: `${theme.spacing.xs} ${theme.spacing.md}`,
-            borderRadius: theme.borderRadius.full,
-            fontSize: theme.typography.sizes.sm,
-            fontWeight: theme.typography.weights.medium,
-            border: `1px solid ${theme.colors.border}`,
-            cursor: onTagClick ? 'pointer' : 'default',
-            transition: 'background-color 0.2s ease, transform 0.2s ease, border-color 0.2s ease',
-            minHeight: '32px',
-            display: 'inline-flex',
-            alignItems: 'center',
-        },
-        moreButton: {
-            backgroundColor: 'transparent',
-            color: theme.colors.primary,
-            padding: `${theme.spacing.xs} ${theme.spacing.md}`,
-            borderRadius: theme.borderRadius.full,
-            fontSize: theme.typography.sizes.sm,
-            fontWeight: theme.typography.weights.medium,
-            border: `1px dashed ${theme.colors.border}`,
-            cursor: 'pointer',
-            transition: 'background-color 0.2s ease, border-color 0.2s ease',
-            minHeight: '32px',
-        },
-    }), [theme, onTagClick]);
-    const handleTagClick = useCallback((skill) => {
-        if (onTagClick) {
-            onTagClick(skill);
-        }
-    }, [onTagClick]);
-    const handleShowAll = useCallback(() => {
-        setShowAll(true);
-    }, []);
-    const handleTagMouseEnter = useCallback((e) => {
-        e.currentTarget.style.backgroundColor = theme.colors.border;
-        e.currentTarget.style.borderColor = theme.colors.primary;
-        if (onTagClick) {
-            e.currentTarget.style.transform = 'scale(1.05)';
-        }
-    }, [theme, onTagClick]);
-    const handleTagMouseLeave = useCallback((e) => {
-        e.currentTarget.style.backgroundColor = theme.colors.borderLight;
-        e.currentTarget.style.borderColor = theme.colors.border;
-        e.currentTarget.style.transform = 'scale(1)';
-    }, []);
-    const handleMoreMouseEnter = useCallback((e) => {
-        e.currentTarget.style.backgroundColor = theme.colors.borderLight;
-        e.currentTarget.style.borderColor = theme.colors.primary;
-    }, [theme]);
-    const handleMoreMouseLeave = useCallback((e) => {
-        e.currentTarget.style.backgroundColor = 'transparent';
-        e.currentTarget.style.borderColor = theme.colors.border;
-    }, [theme]);
-    return (_jsxs("div", { className: className, style: { ...styles.container, ...style }, role: "list", "aria-label": "Skills", children: [displaySkills.map((skill, index) => (_jsx("button", { style: styles.tag, onClick: () => handleTagClick(skill), onMouseEnter: handleTagMouseEnter, onMouseLeave: handleTagMouseLeave, role: "listitem", "aria-label": `Skill: ${skill}${onTagClick ? ', clickable' : ''}`, type: "button", children: skill }, `${skill}-${index}`))), hiddenCount > 0 && !showAll && (_jsxs("button", { style: styles.moreButton, onClick: handleShowAll, onMouseEnter: handleMoreMouseEnter, onMouseLeave: handleMoreMouseLeave, "aria-label": `Show ${hiddenCount} more skills`, type: "button", children: ["+", hiddenCount, " more"] }))] }));
-});
-SkillTags.displayName = 'SkillTags';
+StatsGrid.displayName = 'StatsGrid';
 // ============================================================================
-// Re-exports for convenience
+// Export all components
 // ============================================================================
-export { calculateLevel, levelProgress, xpForNextLevel, getTierColor, } from './profile.js';
-// Default export
-export default {
-    ProfileCard,
-    AchievementBadge,
-    LevelProgress,
-    ReputationScore,
-    ProfileStatsGrid,
-    SkillTags,
-    ThemeProvider,
-    useTheme,
-    lightTheme,
-    darkTheme,
-    formatNumber,
-    formatCurrency,
-    truncateAddress,
-    ProfileErrorBoundary,
-    Skeleton,
-};
+export * from './profile.js';
 //# sourceMappingURL=profile-components.js.map

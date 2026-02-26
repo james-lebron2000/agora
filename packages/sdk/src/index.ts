@@ -537,3 +537,35 @@ export {
   type TouchEventData,
   type GestureConfig,
 } from './mobile.js';
+
+// Profile Components (v1.0) - React components for Agent Profile UI
+export {
+  // Theme
+  lightTheme,
+  darkTheme,
+  useTheme,
+  ThemeProvider,
+  type Theme,
+  type ThemeColors,
+  type ThemeMode,
+  // Responsive
+  breakpoints,
+  useResponsive,
+  type Breakpoint,
+  // Utilities
+  formatCurrency,
+  formatRelativeTime,
+  getInitials,
+  stringToColor,
+  // Components
+  ProfileCard,
+  AchievementBadge,
+  ProfileAvatar,
+  LevelProgressBar,
+  StatsGrid,
+  type ProfileCardProps,
+  type AchievementBadgeProps,
+  type ProfileAvatarProps,
+  type LevelProgressBarProps,
+  type StatsGridProps,
+} from './profile-components.js';

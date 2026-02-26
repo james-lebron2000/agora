@@ -1,14 +1,27 @@
 /**
  * React Components for Agora Agent Profile Module
- *
- * Provides reusable UI components for displaying agent profiles,
- * achievements, stats, and related data.
- *
  * @module profile-components
  */
 import React from 'react';
 import { AgentProfile, Achievement, ProfileStats } from './profile.js';
-export type ThemeMode = 'light' | 'dark';
+export declare const breakpoints: {
+    readonly xs: 0;
+    readonly sm: 640;
+    readonly md: 768;
+    readonly lg: 1024;
+    readonly xl: 1280;
+    readonly '2xl': 1536;
+};
+export type Breakpoint = keyof typeof breakpoints;
+export declare function useResponsive(): {
+    breakpoint: "xs" | "sm" | "md" | "lg" | "xl" | "2xl";
+    width: number;
+    isMobile: boolean;
+    isTablet: boolean;
+    isDesktop: boolean;
+    isLarge: boolean;
+};
+export type ThemeMode = 'light' | 'dark' | 'system';
 export interface ThemeColors {
     primary: string;
     secondary: string;
@@ -24,7 +37,7 @@ export interface ThemeColors {
     borderLight: string;
 }
 export interface Theme {
-    mode: ThemeMode;
+    mode: Exclude<ThemeMode, 'system'>;
     colors: ThemeColors;
     spacing: {
         xs: string;
@@ -32,16 +45,21 @@ export interface Theme {
         md: string;
         lg: string;
         xl: string;
+        '2xl': string;
+        '3xl': string;
     };
     borderRadius: {
+        none: string;
         sm: string;
         md: string;
         lg: string;
         xl: string;
+        '2xl': string;
         full: string;
     };
     typography: {
         fontFamily: string;
+        fontFamilyMono: string;
         sizes: {
             xs: string;
             sm: string;
@@ -50,19 +68,53 @@ export interface Theme {
             xl: string;
             '2xl': string;
             '3xl': string;
+            '4xl': string;
+            '5xl': string;
         };
         weights: {
+            light: number;
             normal: number;
             medium: number;
             semibold: number;
             bold: number;
         };
+        lineHeights: {
+            none: number;
+            tight: number;
+            snug: number;
+            normal: number;
+            relaxed: number;
+            loose: number;
+        };
     };
     shadows: {
+        none: string;
         sm: string;
         md: string;
         lg: string;
         xl: string;
+        '2xl': string;
+        inner: string;
+    };
+    transitions: {
+        fast: string;
+        normal: string;
+        slow: string;
+    };
+    zIndices: {
+        hide: number;
+        auto: string;
+        base: number;
+        docked: number;
+        dropdown: number;
+        sticky: number;
+        banner: number;
+        overlay: number;
+        modal: number;
+        popover: number;
+        skipLink: number;
+        toast: number;
+        tooltip: number;
     };
 }
 export declare const lightTheme: Theme;
@@ -70,20 +122,29 @@ export declare const darkTheme: Theme;
 export interface ThemeContextValue {
     theme: Theme;
     setTheme: (theme: Theme | ThemeMode) => void;
+    toggleTheme: () => void;
+    systemPrefersDark: boolean;
 }
 export interface ThemeProviderProps {
     children: React.ReactNode;
     defaultTheme?: ThemeMode;
+    enableSystem?: boolean;
+    storageKey?: string;
 }
 export declare const ThemeProvider: React.FC<ThemeProviderProps>;
 export declare const useTheme: () => ThemeContextValue;
 export declare function formatNumber(num: number, decimals?: number): string;
 export declare function formatCurrency(value: string | number, currency?: string): string;
 export declare function truncateAddress(address: string, start?: number, end?: number): string;
+export declare function formatRelativeTime(timestamp: number): string;
+export declare function formatDate(timestamp: number, format?: 'short' | 'medium' | 'long'): string;
+export declare function getInitials(name: string, maxLength?: number): string;
+export declare function stringToColor(str: string): string;
 export interface ErrorBoundaryProps {
     children: React.ReactNode;
     fallback?: React.ReactNode;
     onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
+    resetOnPropsChange?: boolean;
 }
 export interface ErrorBoundaryState {
     hasError: boolean;
@@ -93,6 +154,7 @@ export declare class ProfileErrorBoundary extends React.Component<ErrorBoundaryP
     constructor(props: ErrorBoundaryProps);
     static getDerivedStateFromError(error: Error): ErrorBoundaryState;
     componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void;
+    componentDidUpdate(prevProps: ErrorBoundaryProps): void;
     render(): React.ReactNode;
 }
 export interface SkeletonProps {
@@ -101,14 +163,18 @@ export interface SkeletonProps {
     circle?: boolean;
     className?: string;
     style?: React.CSSProperties;
+    count?: number;
+    animation?: 'pulse' | 'shimmer' | 'none';
 }
 export declare const Skeleton: React.FC<SkeletonProps>;
 export interface ProfileCardProps {
     profile: AgentProfile;
-    variant?: 'compact' | 'full' | 'minimal';
+    variant?: 'compact' | 'full' | 'minimal' | 'responsive';
     showAvatar?: boolean;
     showStats?: boolean;
+    showLevel?: boolean;
     onEdit?: () => void;
+    onClick?: () => void;
     className?: string;
     style?: React.CSSProperties;
 }
@@ -121,55 +187,31 @@ export interface AchievementBadgeProps {
     style?: React.CSSProperties;
 }
 export declare const AchievementBadge: React.FC<AchievementBadgeProps>;
-export interface LevelProgressProps {
-    level: number;
-    xp: number;
-    showDetails?: boolean;
+export interface ProfileAvatarProps {
+    src?: string;
+    name: string;
+    size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+    isOnline?: boolean;
+    showStatus?: boolean;
     className?: string;
     style?: React.CSSProperties;
 }
-export declare const LevelProgress: React.FC<LevelProgressProps>;
-export interface ReputationScoreProps {
-    score: number;
+export declare const ProfileAvatar: React.FC<ProfileAvatarProps>;
+export interface LevelProgressBarProps {
+    currentXP: number;
+    level?: number;
+    showLabel?: boolean;
     size?: 'sm' | 'md' | 'lg';
-    showTrend?: boolean;
-    trend?: 'up' | 'down' | 'stable';
     className?: string;
     style?: React.CSSProperties;
 }
-export declare const ReputationScore: React.FC<ReputationScoreProps>;
-export interface ProfileStatsGridProps {
+export declare const LevelProgressBar: React.FC<LevelProgressBarProps>;
+export interface StatsGridProps {
     stats: ProfileStats;
     columns?: 2 | 3 | 4;
     className?: string;
     style?: React.CSSProperties;
 }
-export declare const ProfileStatsGrid: React.FC<ProfileStatsGridProps>;
-export interface SkillTagsProps {
-    skills: string[];
-    maxDisplay?: number;
-    onTagClick?: (skill: string) => void;
-    className?: string;
-    style?: React.CSSProperties;
-}
-export declare const SkillTags: React.FC<SkillTagsProps>;
-export { AgentProfile, Achievement, ProfileStats, calculateLevel, levelProgress, xpForNextLevel, getTierColor, } from './profile.js';
-declare const _default: {
-    ProfileCard: React.FC<ProfileCardProps>;
-    AchievementBadge: React.FC<AchievementBadgeProps>;
-    LevelProgress: React.FC<LevelProgressProps>;
-    ReputationScore: React.FC<ReputationScoreProps>;
-    ProfileStatsGrid: React.FC<ProfileStatsGridProps>;
-    SkillTags: React.FC<SkillTagsProps>;
-    ThemeProvider: React.FC<ThemeProviderProps>;
-    useTheme: () => ThemeContextValue;
-    lightTheme: Theme;
-    darkTheme: Theme;
-    formatNumber: typeof formatNumber;
-    formatCurrency: typeof formatCurrency;
-    truncateAddress: typeof truncateAddress;
-    ProfileErrorBoundary: typeof ProfileErrorBoundary;
-    Skeleton: React.FC<SkeletonProps>;
-};
-export default _default;
+export declare const StatsGrid: React.FC<StatsGridProps>;
+export * from './profile.js';
 //# sourceMappingURL=profile-components.d.ts.map
