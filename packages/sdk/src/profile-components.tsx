@@ -1,70 +1,26 @@
 /**
- * React Components for Agora Agent Profile Module
- * @module profile-components
+ * Profile Components for Agora SDK
+ * 
+ * React components for displaying agent profiles, achievements, and stats.
+ * Requires React 18+ as a peer dependency.
  */
 
-import React, { useCallback, useMemo, useState, useEffect, memo } from 'react';
+import React, { useState, useMemo, useCallback, memo, useEffect, useRef } from 'react';
 import {
-  AgentProfile,
-  Achievement,
-  ProfileStats,
+  type AgentProfile,
+  type Achievement,
+  type ProfileStats,
   calculateLevel,
-  levelProgress,
   xpForNextLevel,
+  levelProgress,
   getTierColor,
 } from './profile.js';
 
 // ============================================================================
-// Responsive Breakpoints & Utilities
+// Theme System
 // ============================================================================
 
-export const breakpoints = {
-  xs: 0,
-  sm: 640,
-  md: 768,
-  lg: 1024,
-  xl: 1280,
-  '2xl': 1536,
-} as const;
-
-export type Breakpoint = keyof typeof breakpoints;
-
-export function useResponsive() {
-  const [width, setWidth] = useState(() => 
-    typeof window !== 'undefined' ? window.innerWidth : 1024
-  );
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const handleResize = () => setWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize, { passive: true });
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const breakpoint: Breakpoint = useMemo(() => {
-    if (width >= breakpoints['2xl']) return '2xl';
-    if (width >= breakpoints.xl) return 'xl';
-    if (width >= breakpoints.lg) return 'lg';
-    if (width >= breakpoints.md) return 'md';
-    if (width >= breakpoints.sm) return 'sm';
-    return 'xs';
-  }, [width]);
-
-  return {
-    breakpoint,
-    width,
-    isMobile: width < breakpoints.md,
-    isTablet: width >= breakpoints.md && width < breakpoints.lg,
-    isDesktop: width >= breakpoints.lg,
-    isLarge: width >= breakpoints.xl,
-  };
-}
-
-// ============================================================================
-// Theme Types & Context
-// ============================================================================
-
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type ThemeMode = 'light' | 'dark';
 
 export interface ThemeColors {
   primary: string;
@@ -77,14 +33,15 @@ export interface ThemeColors {
   surface: string;
   text: string;
   textSecondary: string;
+  textMuted: string;
   border: string;
   borderLight: string;
+  shadow: string;
 }
 
-export interface Theme {
-  mode: Exclude<ThemeMode, 'system'>;
-  colors: ThemeColors;
-  spacing: {
+export interface ThemeTypography {
+  fontFamily: string;
+  sizes: {
     xs: string;
     sm: string;
     md: string;
@@ -92,92 +49,102 @@ export interface Theme {
     xl: string;
     '2xl': string;
     '3xl': string;
+    '4xl': string;
   };
+  weights: {
+    normal: number;
+    medium: number;
+    semibold: number;
+    bold: number;
+  };
+  lineHeights: {
+    tight: number;
+    normal: number;
+    relaxed: number;
+  };
+}
+
+export interface Theme {
+  mode: ThemeMode;
+  colors: ThemeColors;
+  typography: ThemeTypography;
   borderRadius: {
-    none: string;
     sm: string;
     md: string;
     lg: string;
     xl: string;
-    '2xl': string;
     full: string;
   };
-  typography: {
-    fontFamily: string;
-    fontFamilyMono: string;
-    sizes: {
-      xs: string;
-      sm: string;
-      base: string;
-      lg: string;
-      xl: string;
-      '2xl': string;
-      '3xl': string;
-      '4xl': string;
-      '5xl': string;
-    };
-    weights: {
-      light: number;
-      normal: number;
-      medium: number;
-      semibold: number;
-      bold: number;
-    };
-    lineHeights: {
-      none: number;
-      tight: number;
-      snug: number;
-      normal: number;
-      relaxed: number;
-      loose: number;
-    };
-  };
   shadows: {
-    none: string;
+    sm: string;
+    md: string;
+    lg: string;
+    xl: string;
+  };
+  spacing: {
+    xs: string;
     sm: string;
     md: string;
     lg: string;
     xl: string;
     '2xl': string;
-    inner: string;
-  };
-  transitions: {
-    fast: string;
-    normal: string;
-    slow: string;
-  };
-  zIndices: {
-    hide: number;
-    auto: string;
-    base: number;
-    docked: number;
-    dropdown: number;
-    sticky: number;
-    banner: number;
-    overlay: number;
-    modal: number;
-    popover: number;
-    skipLink: number;
-    toast: number;
-    tooltip: number;
   };
 }
 
 export const lightTheme: Theme = {
   mode: 'light',
   colors: {
-    primary: '#2563EB',
-    secondary: '#7C3AED',
-    success: '#059669',
-    warning: '#D97706',
-    error: '#DC2626',
-    info: '#0891B2',
-    background: '#F8FAFC',
-    surface: '#FFFFFF',
-    text: '#0F172A',
-    textSecondary: '#475569',
-    border: '#E2E8F0',
-    borderLight: '#F1F5F9',
+    primary: '#3B82F6',
+    secondary: '#8B5CF6',
+    success: '#10B981',
+    warning: '#F59E0B',
+    error: '#EF4444',
+    info: '#06B6D4',
+    background: '#FFFFFF',
+    surface: '#F9FAFB',
+    text: '#111827',
+    textSecondary: '#6B7280',
+    textMuted: '#9CA3AF',
+    border: '#E5E7EB',
+    borderLight: '#F3F4F6',
+    shadow: 'rgba(0, 0, 0, 0.1)',
+  },
+  typography: {
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    sizes: {
+      xs: '0.75rem',
+      sm: '0.875rem',
+      md: '1rem',
+      lg: '1.125rem',
+      xl: '1.25rem',
+      '2xl': '1.5rem',
+      '3xl': '1.875rem',
+      '4xl': '2.25rem',
+    },
+    weights: {
+      normal: 400,
+      medium: 500,
+      semibold: 600,
+      bold: 700,
+    },
+    lineHeights: {
+      tight: 1.25,
+      normal: 1.5,
+      relaxed: 1.75,
+    },
+  },
+  borderRadius: {
+    sm: '0.25rem',
+    md: '0.375rem',
+    lg: '0.5rem',
+    xl: '0.75rem',
+    full: '9999px',
+  },
+  shadows: {
+    sm: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+    md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+    lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+    xl: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
   },
   spacing: {
     xs: '0.25rem',
@@ -185,76 +152,7 @@ export const lightTheme: Theme = {
     md: '1rem',
     lg: '1.5rem',
     xl: '2rem',
-    '2xl': '2.5rem',
-    '3xl': '3rem',
-  },
-  borderRadius: {
-    none: '0',
-    sm: '0.25rem',
-    md: '0.375rem',
-    lg: '0.5rem',
-    xl: '0.75rem',
-    '2xl': '1rem',
-    full: '9999px',
-  },
-  typography: {
-    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    fontFamilyMono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-    sizes: {
-      xs: '0.75rem',
-      sm: '0.875rem',
-      base: '1rem',
-      lg: '1.125rem',
-      xl: '1.25rem',
-      '2xl': '1.5rem',
-      '3xl': '1.875rem',
-      '4xl': '2.25rem',
-      '5xl': '3rem',
-    },
-    weights: {
-      light: 300,
-      normal: 400,
-      medium: 500,
-      semibold: 600,
-      bold: 700,
-    },
-    lineHeights: {
-      none: 1,
-      tight: 1.25,
-      snug: 1.375,
-      normal: 1.5,
-      relaxed: 1.625,
-      loose: 2,
-    },
-  },
-  shadows: {
-    none: 'none',
-    sm: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-    md: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-    lg: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-    xl: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-    '2xl': '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-    inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.06)',
-  },
-  transitions: {
-    fast: '150ms ease',
-    normal: '250ms ease',
-    slow: '350ms ease',
-  },
-  zIndices: {
-    hide: -1,
-    auto: 'auto',
-    base: 0,
-    docked: 10,
-    dropdown: 1000,
-    sticky: 1100,
-    banner: 1200,
-    overlay: 1300,
-    modal: 1400,
-    popover: 1500,
-    skipLink: 1600,
-    toast: 1700,
-    tooltip: 1800,
+    '2xl': '3rem',
   },
 };
 
@@ -267,187 +165,209 @@ export const darkTheme: Theme = {
     warning: '#FBBF24',
     error: '#F87171',
     info: '#22D3EE',
-    background: '#0F172A',
-    surface: '#1E293B',
-    text: '#F8FAFC',
-    textSecondary: '#94A3B8',
-    border: '#334155',
-    borderLight: '#1E293B',
+    background: '#111827',
+    surface: '#1F2937',
+    text: '#F9FAFB',
+    textSecondary: '#9CA3AF',
+    textMuted: '#6B7280',
+    border: '#374151',
+    borderLight: '#4B5563',
+    shadow: 'rgba(0, 0, 0, 0.3)',
   },
-  spacing: lightTheme.spacing,
-  borderRadius: lightTheme.borderRadius,
-  typography: lightTheme.typography,
+  typography: {
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    sizes: {
+      xs: '0.75rem',
+      sm: '0.875rem',
+      md: '1rem',
+      lg: '1.125rem',
+      xl: '1.25rem',
+      '2xl': '1.5rem',
+      '3xl': '1.875rem',
+      '4xl': '2.25rem',
+    },
+    weights: {
+      normal: 400,
+      medium: 500,
+      semibold: 600,
+      bold: 700,
+    },
+    lineHeights: {
+      tight: 1.25,
+      normal: 1.5,
+      relaxed: 1.75,
+    },
+  },
+  borderRadius: {
+    sm: '0.25rem',
+    md: '0.375rem',
+    lg: '0.5rem',
+    xl: '0.75rem',
+    full: '9999px',
+  },
   shadows: {
-    none: 'none',
-    sm: '0 1px 2px 0 rgba(0, 0, 0, 0.3)',
-    md: '0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2)',
-    lg: '0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.2)',
-    xl: '0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
-    '2xl': '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-    inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.3)',
+    sm: '0 1px 2px 0 rgba(0, 0, 0, 0.2)',
+    md: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2)',
+    lg: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2)',
+    xl: '0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.3)',
   },
-  transitions: lightTheme.transitions,
-  zIndices: lightTheme.zIndices,
+  spacing: {
+    xs: '0.25rem',
+    sm: '0.5rem',
+    md: '1rem',
+    lg: '1.5rem',
+    xl: '2rem',
+    '2xl': '3rem',
+  },
 };
 
-// ============================================================================
 // Theme Context
-// ============================================================================
-
-export interface ThemeContextValue {
+const ThemeContext = React.createContext<{
   theme: Theme;
-  setTheme: (theme: Theme | ThemeMode) => void;
-  toggleTheme: () => void;
-  systemPrefersDark: boolean;
-}
-
-const ThemeContext = React.createContext<ThemeContextValue>({
+  setTheme: (theme: Theme) => void;
+}>({
   theme: lightTheme,
   setTheme: () => {},
-  toggleTheme: () => {},
-  systemPrefersDark: false,
 });
 
 export interface ThemeProviderProps {
   children: React.ReactNode;
-  defaultTheme?: ThemeMode;
-  enableSystem?: boolean;
-  storageKey?: string;
+  theme?: Theme;
 }
 
-export const ThemeProvider: React.FC<ThemeProviderProps> = memo(({
-  children,
-  defaultTheme = 'light',
-  enableSystem = true,
-  storageKey = 'agora-theme',
-}) => {
-  const [systemPrefersDark, setSystemPrefersDark] = useState(false);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
-    if (typeof window === 'undefined') return defaultTheme;
-    const stored = localStorage.getItem(storageKey);
-    if (stored && (stored === 'light' || stored === 'dark' || stored === 'system')) {
-      return stored;
-    }
-    return defaultTheme;
-  });
+export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children, theme = lightTheme }) => {
+  const [currentTheme, setCurrentTheme] = useState<Theme>(theme);
 
   useEffect(() => {
-    if (!enableSystem) return;
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    setSystemPrefersDark(mediaQuery.matches);
-    const handler = (e: MediaQueryListEvent) => setSystemPrefersDark(e.matches);
-    mediaQuery.addEventListener('change', handler);
-    return () => mediaQuery.removeEventListener('change', handler);
-  }, [enableSystem]);
+    setCurrentTheme(theme);
+  }, [theme]);
 
-  const theme = useMemo(() => {
-    if (themeMode === 'system') {
-      return systemPrefersDark ? darkTheme : lightTheme;
-    }
-    return themeMode === 'dark' ? darkTheme : lightTheme;
-  }, [themeMode, systemPrefersDark]);
-
-  const setTheme = useCallback((newTheme: Theme | ThemeMode) => {
-    if (typeof newTheme === 'string') {
-      setThemeMode(newTheme);
-      if (storageKey) {
-        localStorage.setItem(storageKey, newTheme);
-      }
-    }
-  }, [storageKey]);
-
-  const toggleTheme = useCallback(() => {
-    setThemeMode(prev => {
-      const next = prev === 'light' ? 'dark' : prev === 'dark' ? 'system' : 'light';
-      if (storageKey) {
-        localStorage.setItem(storageKey, next);
-      }
-      return next;
-    });
-  }, [storageKey]);
-
-  const value = useMemo(() => ({ 
-    theme, 
-    setTheme, 
-    toggleTheme,
-    systemPrefersDark 
-  }), [theme, setTheme, toggleTheme, systemPrefersDark]);
+  const value = useMemo(() => ({
+    theme: currentTheme,
+    setTheme: setCurrentTheme,
+  }), [currentTheme]);
 
   return (
     <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );
-});
+};
 
-ThemeProvider.displayName = 'ThemeProvider';
-
-export const useTheme = (): ThemeContextValue => {
+export const useTheme = () => {
   const context = React.useContext(ThemeContext);
   if (!context) {
-    throw new Error('useTheme must be used within ThemeProvider');
+    throw new Error('useTheme must be used within a ThemeProvider');
   }
   return context;
+};
+
+// ============================================================================
+// Responsive Breakpoints
+// ============================================================================
+
+export const breakpoints = {
+  xs: 0,
+  sm: 640,
+  md: 768,
+  lg: 1024,
+  xl: 1280,
+  '2xl': 1536,
+};
+
+export type Breakpoint = keyof typeof breakpoints;
+
+export const useResponsive = () => {
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isMobile = windowWidth < breakpoints.md;
+  const isTablet = windowWidth >= breakpoints.md && windowWidth < breakpoints.lg;
+  const isDesktop = windowWidth >= breakpoints.lg;
+  const isLargeDesktop = windowWidth >= breakpoints.xl;
+
+  const isAbove = useCallback((bp: Breakpoint) => windowWidth >= breakpoints[bp], [windowWidth]);
+  const isBelow = useCallback((bp: Breakpoint) => windowWidth < breakpoints[bp], [windowWidth]);
+
+  return {
+    windowWidth,
+    isMobile,
+    isTablet,
+    isDesktop,
+    isLargeDesktop,
+    isAbove,
+    isBelow,
+  };
 };
 
 // ============================================================================
 // Utility Functions
 // ============================================================================
 
-export function formatNumber(num: number, decimals = 0): string {
-  if (num >= 1e9) return (num / 1e9).toFixed(decimals) + 'B';
-  if (num >= 1e6) return (num / 1e6).toFixed(decimals) + 'M';
-  if (num >= 1e3) return (num / 1e3).toFixed(decimals) + 'K';
-  return num.toFixed(decimals);
+export function formatNumber(num: number): string {
+  if (num >= 1_000_000) {
+    return (num / 1_000_000).toFixed(1) + 'M';
+  }
+  if (num >= 1_000) {
+    return (num / 1_000).toFixed(1) + 'K';
+  }
+  return num.toString();
 }
 
-export function formatCurrency(value: string | number, currency = '$'): string {
-  const num = typeof value === 'string' ? parseFloat(value) : value;
-  if (isNaN(num)) return `${currency}0.00`;
-  return `${currency}${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export function formatCurrency(amount: string | number, currency = 'USD'): string {
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(num);
 }
 
-export function truncateAddress(address: string, start = 6, end = 4): string {
-  if (!address || address.length < start + end + 2) return address;
-  return `${address.slice(0, start)}...${address.slice(-end)}`;
+export function truncateAddress(address: string, chars = 6): string {
+  if (!address) return '';
+  if (address.length <= chars * 2 + 2) return address;
+  return `${address.slice(0, chars + 2)}...${address.slice(-chars)}`;
 }
 
 export function formatRelativeTime(timestamp: number): string {
-  const diff = Date.now() - timestamp;
+  const now = Date.now();
+  const diff = now - timestamp;
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
-  const weeks = Math.floor(days / 7);
-  const months = Math.floor(days / 30);
-  const years = Math.floor(days / 365);
 
-  if (years > 0) return `${years}y ago`;
-  if (months > 0) return `${months}mo ago`;
-  if (weeks > 0) return `${weeks}w ago`;
-  if (days > 0) return `${days}d ago`;
-  if (hours > 0) return `${hours}h ago`;
-  if (minutes > 0) return `${minutes}m ago`;
-  return 'just now';
+  if (seconds < 60) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 30) return `${days}d ago`;
+  return formatDate(timestamp);
 }
 
-export function formatDate(timestamp: number, format: 'short' | 'medium' | 'long' = 'medium'): string {
-  const date = new Date(timestamp);
-  const options: Record<string, Intl.DateTimeFormatOptions> = {
-    short: { month: 'short', day: 'numeric' },
-    medium: { month: 'short', day: 'numeric', year: 'numeric' },
-    long: { month: 'long', day: 'numeric', year: 'numeric' },
-  };
-  return date.toLocaleDateString('en-US', options[format]);
+export function formatDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
-export function getInitials(name: string, maxLength = 2): string {
-  return name
-    .split(' ')
-    .map(n => n[0])
-    .join('')
-    .slice(0, maxLength)
-    .toUpperCase();
+export function getInitials(name: string): string {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return name.slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 export function stringToColor(str: string): string {
@@ -455,61 +375,73 @@ export function stringToColor(str: string): string {
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
-  const color = Math.abs(hash).toString(16).slice(0, 6);
-  return '#' + '0'.repeat(6 - color.length) + color;
+  const hue = Math.abs(hash % 360);
+  return `hsl(${hue}, 70%, 50%)`;
 }
 
 // ============================================================================
-// Error Boundary Component
+// Error Boundary
 // ============================================================================
 
-export interface ErrorBoundaryProps {
+export interface ProfileErrorBoundaryProps {
   children: React.ReactNode;
   fallback?: React.ReactNode;
-  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
-  resetOnPropsChange?: boolean;
 }
 
-export interface ErrorBoundaryState {
+export interface ProfileErrorBoundaryState {
   hasError: boolean;
-  error: Error | null;
+  error?: Error;
 }
 
-export class ProfileErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
+export class ProfileErrorBoundary extends React.Component<
+  ProfileErrorBoundaryProps,
+  ProfileErrorBoundaryState
+> {
+  constructor(props: ProfileErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): ProfileErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
-    this.props.onError?.(error, errorInfo);
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Profile component error:', error, errorInfo);
   }
 
-  componentDidUpdate(prevProps: ErrorBoundaryProps): void {
-    if (this.props.resetOnPropsChange && prevProps.children !== this.props.children) {
-      this.setState({ hasError: false, error: null });
-    }
-  }
-
-  render(): React.ReactNode {
+  render() {
     if (this.state.hasError) {
-      return this.props.fallback || (
-        <div role="alert" aria-live="assertive" style={{ padding: '1rem', color: '#DC2626' }}>
-          <h3>Something went wrong</h3>
-          <p>{this.state.error?.message}</p>
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+      return (
+        <div style={{ padding: '1rem', textAlign: 'center', color: '#EF4444' }}>
+          <p>Something went wrong displaying this profile.</p>
+          <button
+            onClick={() => this.setState({ hasError: false })}
+            style={{
+              marginTop: '0.5rem',
+              padding: '0.5rem 1rem',
+              background: '#3B82F6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '0.375rem',
+              cursor: 'pointer',
+            }}
+          >
+            Try again
+          </button>
         </div>
       );
     }
+
     return this.props.children;
   }
 }
 
 // ============================================================================
-// Loading Skeleton Component
+// Skeleton Component
 // ============================================================================
 
 export interface SkeletonProps {
@@ -518,60 +450,258 @@ export interface SkeletonProps {
   circle?: boolean;
   className?: string;
   style?: React.CSSProperties;
-  count?: number;
-  animation?: 'pulse' | 'shimmer' | 'none';
 }
 
-export const Skeleton: React.FC<SkeletonProps> = memo(({
+export const Skeleton: React.FC<SkeletonProps> = ({
   width = '100%',
   height = '1rem',
   circle = false,
   className,
   style,
-  count = 1,
-  animation = 'pulse',
 }) => {
   const { theme } = useTheme();
-  
-  const skeletonStyle = useMemo(() => ({
+
+  const skeletonStyle: React.CSSProperties = useMemo(() => ({
     width,
     height,
     borderRadius: circle ? '50%' : theme.borderRadius.md,
-    backgroundColor: theme.colors.borderLight,
+    background: `linear-gradient(90deg, ${theme.colors.borderLight} 25%, ${theme.colors.border} 50%, ${theme.colors.borderLight} 75%)`,
+    backgroundSize: '200% 100%',
+    animation: 'skeleton-pulse 1.5s ease-in-out infinite',
     ...style,
-  } as React.CSSProperties), [width, height, circle, theme, style]);
-
-  const animationStyles = {
-    pulse: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-    shimmer: 'shimmer 2s linear infinite',
-    none: 'none',
-  }[animation];
+  }), [width, height, circle, theme, style]);
 
   return (
     <>
-      {Array.from({ length: count }).map((_, i) => (
-        <div 
-          key={i}
-          className={className} 
-          style={{ ...skeletonStyle, animation: animationStyles }} 
-          aria-hidden="true" 
-        />
-      ))}
       <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        @keyframes shimmer {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
+        @keyframes skeleton-pulse {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
         }
       `}</style>
+      <div className={className} style={skeletonStyle} aria-hidden="true" />
     </>
+  );
+};
+
+// ============================================================================
+// ProfileAvatar Component
+// ============================================================================
+
+export interface ProfileAvatarProps {
+  profile?: AgentProfile;
+  src?: string;
+  name?: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  showStatus?: boolean;
+  status?: 'online' | 'away' | 'offline' | 'busy';
+  className?: string;
+  style?: React.CSSProperties;
+  onClick?: () => void;
+}
+
+export const ProfileAvatar: React.FC<ProfileAvatarProps> = memo(({
+  profile,
+  src,
+  name,
+  size = 'md',
+  showStatus = false,
+  status = 'offline',
+  className,
+  style,
+  onClick,
+}) => {
+  const { theme } = useTheme();
+  const [imageError, setImageError] = useState(false);
+
+  const displayName = name || profile?.name || 'Unknown';
+  const avatarSrc = src || profile?.avatarUrl;
+  const initials = getInitials(displayName);
+  const bgColor = stringToColor(displayName);
+
+  const sizeConfig = useMemo(() => ({
+    xs: { size: '24px', fontSize: theme.typography.sizes.xs },
+    sm: { size: '32px', fontSize: theme.typography.sizes.sm },
+    md: { size: '48px', fontSize: theme.typography.sizes.lg },
+    lg: { size: '64px', fontSize: theme.typography.sizes.xl },
+    xl: { size: '96px', fontSize: theme.typography.sizes['2xl'] },
+    '2xl': { size: '128px', fontSize: theme.typography.sizes['3xl'] },
+  }), [theme]);
+
+  const sizeValue = sizeConfig[size];
+
+  const containerStyle: React.CSSProperties = useMemo(() => ({
+    width: sizeValue.size,
+    height: sizeValue.size,
+    borderRadius: '50%',
+    backgroundColor: avatarSrc && !imageError ? 'transparent' : bgColor,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    cursor: onClick ? 'pointer' : 'default',
+    position: 'relative',
+    flexShrink: 0,
+    ...style,
+  }), [sizeValue, avatarSrc, imageError, bgColor, onClick, style]);
+
+  const imageStyle: React.CSSProperties = {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  };
+
+  const initialsStyle: React.CSSProperties = {
+    fontSize: sizeValue.fontSize,
+    fontWeight: theme.typography.weights.bold,
+    color: '#FFFFFF',
+    userSelect: 'none',
+  };
+
+  const statusColors = {
+    online: '#10B981',
+    away: '#F59E0B',
+    offline: '#9CA3AF',
+    busy: '#EF4444',
+  };
+
+  const statusIndicatorStyle: React.CSSProperties = {
+    position: 'absolute',
+    bottom: '2px',
+    right: '2px',
+    width: size === 'xs' ? '6px' : size === 'sm' ? '8px' : size === 'md' ? '12px' : '16px',
+    height: size === 'xs' ? '6px' : size === 'sm' ? '8px' : size === 'md' ? '12px' : '16px',
+    borderRadius: '50%',
+    backgroundColor: statusColors[status],
+    border: `2px solid ${theme.colors.background}`,
+  };
+
+  return (
+    <div
+      className={className}
+      style={containerStyle}
+      onClick={onClick}
+      role={onClick ? 'button' : 'img'}
+      aria-label={`${displayName}'s avatar`}
+    >
+      {avatarSrc && !imageError ? (
+        <img
+          src={avatarSrc}
+          alt={displayName}
+          style={imageStyle}
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <span style={initialsStyle}>{initials}</span>
+      )}
+      {showStatus && (
+        <span style={statusIndicatorStyle} aria-label={`Status: ${status}`} />
+      )}
+    </div>
   );
 });
 
-Skeleton.displayName = 'Skeleton';
+ProfileAvatar.displayName = 'ProfileAvatar';
+
+// ============================================================================
+// StatsGrid Component
+// ============================================================================
+
+export interface StatItem {
+  label: string;
+  value: string | number;
+  icon?: string;
+  change?: number;
+  suffix?: string;
+}
+
+export interface StatsGridProps {
+  stats: StatItem[];
+  columns?: 2 | 3 | 4;
+  className?: string;
+  style?: React.CSSProperties;
+}
+
+export const StatsGrid: React.FC<StatsGridProps> = memo(({
+  stats,
+  columns = 4,
+  className,
+  style,
+}) => {
+  const { theme } = useTheme();
+  const { isMobile } = useResponsive();
+
+  const gridStyle: React.CSSProperties = useMemo(() => ({
+    display: 'grid',
+    gridTemplateColumns: `repeat(${isMobile ? 2 : columns}, 1fr)`,
+    gap: theme.spacing.md,
+    ...style,
+  }), [columns, isMobile, theme, style]);
+
+  const statCardStyle = (index: number): React.CSSProperties => ({
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.lg,
+    border: `1px solid ${theme.colors.border}`,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: theme.spacing.xs,
+  });
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+  };
+
+  const valueContainerStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: theme.spacing.sm,
+  };
+
+  const valueStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.xl,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.text,
+  };
+
+  const suffixStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textSecondary,
+  };
+
+  const changeStyle = (change: number): React.CSSProperties => ({
+    fontSize: theme.typography.sizes.xs,
+    color: change >= 0 ? theme.colors.success : theme.colors.error,
+    fontWeight: theme.typography.weights.medium,
+  });
+
+  return (
+    <div className={className} style={gridStyle} role="list">
+      {stats.map((stat, index) => (
+        <div key={index} style={statCardStyle(index)} role="listitem">
+          <span style={labelStyle}>{stat.label}</span>
+          <div style={valueContainerStyle}>
+            <span style={valueStyle}>
+              {stat.icon && <span style={{ marginRight: theme.spacing.xs }}>{stat.icon}</span>}
+              {stat.value}
+            </span>
+            {stat.suffix && <span style={suffixStyle}>{stat.suffix}</span>}
+          </div>
+          {stat.change !== undefined && (
+            <span style={changeStyle(stat.change)}>
+              {stat.change >= 0 ? '↑' : '↓'} {Math.abs(stat.change)}%
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+});
+
+StatsGrid.displayName = 'StatsGrid';
 
 // ============================================================================
 // ProfileCard Component
@@ -579,310 +709,392 @@ Skeleton.displayName = 'Skeleton';
 
 export interface ProfileCardProps {
   profile: AgentProfile;
-  variant?: 'compact' | 'full' | 'minimal' | 'responsive';
-  showAvatar?: boolean;
+  achievements?: Achievement[];
+  showAchievements?: boolean;
   showStats?: boolean;
-  showLevel?: boolean;
+  maxAchievements?: number;
   onEdit?: () => void;
-  onClick?: () => void;
+  onViewProfile?: () => void;
   className?: string;
   style?: React.CSSProperties;
 }
 
 export const ProfileCard: React.FC<ProfileCardProps> = memo(({
   profile,
-  variant = 'full',
-  showAvatar = true,
+  achievements = [],
+  showAchievements = true,
   showStats = true,
-  showLevel = true,
+  maxAchievements = 6,
   onEdit,
-  onClick,
+  onViewProfile,
   className,
   style,
 }) => {
   const { theme } = useTheme();
-  const responsive = useResponsive();
-  
-  const effectiveVariant = variant === 'responsive' 
-    ? (responsive.isMobile ? 'compact' : 'full')
-    : variant;
-  
-  const { level, progress, tierColor, initials } = useMemo(() => {
-    const lvl = calculateLevel(profile.xp);
-    const prog = levelProgress(profile.xp);
-    const tName = lvl >= 50 ? 'diamond' : lvl >= 30 ? 'platinum' : lvl >= 20 ? 'gold' : lvl >= 10 ? 'silver' : 'bronze';
-    return {
-      level: lvl,
-      progress: prog,
-      tierColor: getTierColor(tName),
-      initials: getInitials(profile.name || '??'),
+  const { isMobile } = useResponsive();
+  const [isHovered, setIsHovered] = useState(false);
+
+  const tierName = useMemo(() => {
+    const level = profile.level;
+    if (level >= 50) return 'Diamond';
+    if (level >= 30) return 'Platinum';
+    if (level >= 20) return 'Gold';
+    if (level >= 10) return 'Silver';
+    return 'Bronze';
+  }, [profile.level]);
+
+  const tierColor = useMemo(() => {
+    const tierMap: Record<string, string> = {
+      'Bronze': '#CD7F32',
+      'Silver': '#C0C0C0',
+      'Gold': '#FFD700',
+      'Platinum': '#E5E4E2',
+      'Diamond': '#B9F2FF',
     };
-  }, [profile.xp, profile.name]);
+    return tierMap[tierName] || '#CD7F32';
+  }, [tierName]);
 
-  const styles = useMemo(() => {
-    const isCompact = effectiveVariant === 'compact';
-    const isMinimal = effectiveVariant === 'minimal';
-    
-    return {
-      container: {
-        backgroundColor: theme.colors.surface,
-        borderRadius: theme.borderRadius.xl,
-        boxShadow: theme.shadows.md,
-        padding: isCompact ? theme.spacing.md : isMinimal ? theme.spacing.sm : theme.spacing.lg,
-        width: isCompact ? '100%' : isMinimal ? '200px' : '100%',
-        maxWidth: effectiveVariant === 'full' ? '400px' : undefined,
-        border: `1px solid ${theme.colors.border}`,
-        transition: `box-shadow ${theme.transitions.normal}, transform ${theme.transitions.normal}`,
-        position: 'relative' as const,
-        cursor: onClick ? 'pointer' : 'default',
-      } as React.CSSProperties,
-      header: {
-        display: 'flex',
-        alignItems: isMinimal ? 'center' : 'flex-start',
-        gap: theme.spacing.md,
-        marginBottom: isMinimal ? 0 : theme.spacing.md,
-      } as React.CSSProperties,
-      avatar: {
-        width: isCompact ? '48px' : isMinimal ? '32px' : responsive.isMobile ? '56px' : '80px',
-        height: isCompact ? '48px' : isMinimal ? '32px' : responsive.isMobile ? '56px' : '80px',
-        borderRadius: theme.borderRadius.full,
-        objectFit: 'cover' as const,
-        border: `3px solid ${tierColor}`,
-        backgroundColor: theme.colors.borderLight,
-      } as React.CSSProperties,
-      avatarPlaceholder: {
-        width: isCompact ? '48px' : isMinimal ? '32px' : responsive.isMobile ? '56px' : '80px',
-        height: isCompact ? '48px' : isMinimal ? '32px' : responsive.isMobile ? '56px' : '80px',
-        borderRadius: theme.borderRadius.full,
-        backgroundColor: theme.colors.primary,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#FFFFFF',
-        fontSize: isMinimal ? theme.typography.sizes.base : theme.typography.sizes['2xl'],
-        fontWeight: theme.typography.weights.bold,
-        border: `3px solid ${tierColor}`,
-      } as React.CSSProperties,
-      info: {
-        flex: 1,
-        minWidth: 0,
-      } as React.CSSProperties,
-      name: {
-        fontSize: isMinimal ? theme.typography.sizes.sm : theme.typography.sizes.xl,
-        fontWeight: theme.typography.weights.semibold,
-        color: theme.colors.text,
-        margin: 0,
-        marginBottom: isMinimal ? 0 : theme.spacing.xs,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap' as const,
-      } as React.CSSProperties,
-      level: {
-        fontSize: theme.typography.sizes.sm,
-        color: theme.colors.textSecondary,
-        display: 'flex',
-        alignItems: 'center',
-        gap: theme.spacing.xs,
-      } as React.CSSProperties,
-      levelBadge: {
-        backgroundColor: tierColor,
-        color: '#000000',
-        padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
-        borderRadius: theme.borderRadius.full,
-        fontSize: theme.typography.sizes.xs,
-        fontWeight: theme.typography.weights.bold,
-      } as React.CSSProperties,
-      bio: {
-        fontSize: theme.typography.sizes.sm,
-        color: theme.colors.textSecondary,
-        margin: `${theme.spacing.sm} 0`,
-        lineHeight: theme.typography.lineHeights.relaxed,
-        display: isMinimal ? 'none' : '-webkit-box',
-        WebkitLineClamp: responsive.isMobile ? 2 : 3,
-        WebkitBoxOrient: 'vertical' as const,
-        overflow: 'hidden',
-      } as React.CSSProperties,
-      stats: {
-        display: 'grid',
-        gridTemplateColumns: isCompact ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
-        gap: theme.spacing.sm,
-        marginTop: theme.spacing.md,
-        paddingTop: theme.spacing.md,
-        borderTop: `1px solid ${theme.colors.border}`,
-      } as React.CSSProperties,
-      stat: {
-        textAlign: 'center' as const,
-      } as React.CSSProperties,
-      statValue: {
-        fontSize: theme.typography.sizes.lg,
-        fontWeight: theme.typography.weights.bold,
-        color: theme.colors.text,
-      } as React.CSSProperties,
-      statLabel: {
-        fontSize: theme.typography.sizes.xs,
-        color: theme.colors.textSecondary,
-        textTransform: 'uppercase' as const,
-        letterSpacing: '0.05em',
-      } as React.CSSProperties,
-      progressBar: {
-        height: '4px',
-        backgroundColor: theme.colors.border,
-        borderRadius: theme.borderRadius.full,
-        marginTop: theme.spacing.sm,
-        overflow: 'hidden',
-      } as React.CSSProperties,
-      progressFill: {
-        height: '100%',
-        backgroundColor: theme.colors.primary,
-        borderRadius: theme.borderRadius.full,
-        transition: 'width 0.3s ease',
-        width: `${progress * 100}%`,
-      } as React.CSSProperties,
-      editButton: {
-        position: 'absolute' as const,
-        top: theme.spacing.md,
-        right: theme.spacing.md,
-        background: 'none',
-        border: 'none',
-        color: theme.colors.textSecondary,
-        cursor: 'pointer',
-        padding: theme.spacing.sm,
-        borderRadius: theme.borderRadius.md,
-        transition: 'background-color 0.2s ease, transform 0.2s ease',
-        minWidth: '44px',
-        minHeight: '44px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      } as React.CSSProperties,
-      verifiedBadge: {
-        display: 'inline-flex',
-        alignItems: 'center',
-        marginLeft: theme.spacing.xs,
-        color: theme.colors.primary,
-      } as React.CSSProperties,
-    };
-  }, [theme, effectiveVariant, tierColor, progress, responsive.isMobile, onClick]);
+  const xpProgress = useMemo(() => {
+    return levelProgress(profile.xp);
+  }, [profile.xp]);
 
-  const handleEditClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    onEdit?.();
-  }, [onEdit]);
+  const xpInLevel = useMemo(() => {
+    const currentLevel = calculateLevel(profile.xp);
+    const currentLevelBaseXp = (currentLevel - 1) * (currentLevel - 1) * 100;
+    return profile.xp - currentLevelBaseXp;
+  }, [profile.xp]);
 
-  const isMinimal = effectiveVariant === 'minimal';
-  const progressPercent = Math.round(progress * 100);
+  const xpNeeded = useMemo(() => {
+    const currentLevel = calculateLevel(profile.xp);
+    return xpForNextLevel(currentLevel);
+  }, [profile.xp]);
+
+  const displayedAchievements = useMemo(() => {
+    return achievements
+      .filter(a => a.unlockedAt || a.completedAt)
+      .slice(0, maxAchievements);
+  }, [achievements, maxAchievements]);
+
+  const cardStyle: React.CSSProperties = useMemo(() => ({
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.xl,
+    border: `1px solid ${theme.colors.border}`,
+    boxShadow: isHovered ? theme.shadows.lg : theme.shadows.md,
+    padding: theme.spacing.xl,
+    maxWidth: '480px',
+    width: '100%',
+    transition: 'box-shadow 0.2s ease',
+    ...style,
+  }), [theme, isHovered, style]);
+
+  const headerStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
+  };
+
+  const infoStyle: React.CSSProperties = {
+    flex: 1,
+    minWidth: 0,
+  };
+
+  const nameStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.xl,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.text,
+    margin: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  };
+
+  const walletStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textSecondary,
+    fontFamily: 'monospace',
+    marginTop: theme.spacing.xs,
+  };
+
+  const tierBadgeStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
+    backgroundColor: `${tierColor}20`,
+    borderRadius: theme.borderRadius.full,
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.semibold,
+    color: tierColor,
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    marginTop: theme.spacing.sm,
+  };
+
+  const levelSectionStyle: React.CSSProperties = {
+    marginBottom: theme.spacing.lg,
+  };
+
+  const levelHeaderStyle: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+  };
+
+  const levelLabelStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textSecondary,
+  };
+
+  const levelValueStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.text,
+  };
+
+  const progressBarContainerStyle: React.CSSProperties = {
+    height: '8px',
+    backgroundColor: theme.colors.border,
+    borderRadius: theme.borderRadius.full,
+    overflow: 'hidden',
+  };
+
+  const progressBarFillStyle: React.CSSProperties = {
+    height: '100%',
+    background: `linear-gradient(90deg, ${tierColor}80, ${tierColor})`,
+    borderRadius: theme.borderRadius.full,
+    transition: 'width 0.5s ease',
+    width: `${xpProgress * 100}%`,
+  };
+
+  const xpTextStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
+    textAlign: 'right',
+  };
+
+  const achievementsSectionStyle: React.CSSProperties = {
+    marginBottom: theme.spacing.lg,
+  };
+
+  const sectionTitleStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.text,
+    marginBottom: theme.spacing.md,
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  };
+
+  const achievementsGridStyle: React.CSSProperties = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  };
+
+  const statsSectionStyle: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+    gap: theme.spacing.md,
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.lg,
+    marginBottom: theme.spacing.lg,
+  };
+
+  const statItemStyle: React.CSSProperties = {
+    textAlign: 'center',
+  };
+
+  const statValueStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.lg,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.text,
+  };
+
+  const statLabelStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.textSecondary,
+    marginTop: theme.spacing.xs,
+  };
+
+  const actionsStyle: React.CSSProperties = {
+    display: 'flex',
+    gap: theme.spacing.sm,
+  };
+
+  const buttonStyle = (variant: 'primary' | 'secondary' = 'primary'): React.CSSProperties => ({
+    flex: 1,
+    padding: `${theme.spacing.sm} ${theme.spacing.md}`,
+    borderRadius: theme.borderRadius.md,
+    border: 'none',
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.medium,
+    cursor: 'pointer',
+    backgroundColor: variant === 'primary' ? theme.colors.primary : 'transparent',
+    color: variant === 'primary' ? '#FFFFFF' : theme.colors.text,
+    borderWidth: variant === 'secondary' ? '1px' : undefined,
+    borderStyle: variant === 'secondary' ? 'solid' : undefined,
+    borderColor: variant === 'secondary' ? theme.colors.border : undefined,
+    transition: 'opacity 0.2s ease, background-color 0.2s ease',
+  });
+
+  const bioStyle: React.CSSProperties = {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.textSecondary,
+    lineHeight: theme.typography.lineHeights.relaxed,
+    marginBottom: theme.spacing.md,
+  };
+
+  const skillsContainerStyle: React.CSSProperties = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing.xs,
+    marginBottom: theme.spacing.md,
+  };
+
+  const skillTagStyle: React.CSSProperties = {
+    padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.full,
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.textSecondary,
+    border: `1px solid ${theme.colors.border}`,
+  };
+
+  const verifiedBadgeStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    marginLeft: theme.spacing.xs,
+    color: theme.colors.success,
+  };
 
   return (
-    <article
+    <div
       className={className}
-      style={{ ...styles.container, ...style }}
+      style={cardStyle}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       role="article"
       aria-label={`${profile.name}'s profile card`}
-      onClick={onClick}
-      onMouseEnter={(e) => {
-        if (onClick) {
-          e.currentTarget.style.boxShadow = theme.shadows.lg;
-          e.currentTarget.style.transform = 'translateY(-2px)';
-        }
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = theme.shadows.md;
-        e.currentTarget.style.transform = 'translateY(0)';
-      }}
     >
-      {onEdit && effectiveVariant === 'full' && (
-        <button
-          onClick={handleEditClick}
-          style={styles.editButton}
-          aria-label="Edit profile"
-          title="Edit profile"
-          type="button"
-        >
-          ✏️
-        </button>
-      )}
-
-      <div style={styles.header}>
-        {showAvatar && (
-          profile.avatarUrl ? (
-            <img
-              src={profile.avatarUrl}
-              alt={`${profile.name}'s avatar`}
-              style={styles.avatar}
-              loading="lazy"
-            />
-          ) : (
-            <div style={styles.avatarPlaceholder} aria-hidden="true">
-              {initials}
-            </div>
-          )
-        )}
-        <div style={styles.info}>
-          <h3 style={styles.name}>
+      {/* Header */}
+      <div style={headerStyle}>
+        <ProfileAvatar profile={profile} size={isMobile ? 'lg' : 'xl'} />
+        <div style={infoStyle}>
+          <h3 style={nameStyle}>
             {profile.name}
             {profile.isVerified && (
-              <span 
-                style={styles.verifiedBadge} 
-                title="Verified account"
-                aria-label="Verified account"
-              >
-                ✓
+              <span style={verifiedBadgeStyle} title="Verified Agent">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                </svg>
               </span>
             )}
           </h3>
-          {showLevel && !isMinimal && (
-            <div style={styles.level}>
-              <span style={styles.levelBadge} aria-label={`Level ${level}`}>Lv.{level}</span>
-              <span aria-label={`${progressPercent}% progress to next level`}>
-                {progressPercent}% to next level
-              </span>
-            </div>
-          )}
+          <div style={walletStyle}>{truncateAddress(profile.walletAddress)}</div>
+          <div style={tierBadgeStyle}>
+            <span>◆</span>
+            <span>{tierName} Lv.{profile.level}</span>
+          </div>
         </div>
       </div>
 
-      {!isMinimal && profile.bio && (
-        <p style={styles.bio}>{profile.bio}</p>
+      {/* Bio */}
+      {profile.bio && (
+        <p style={bioStyle}>{profile.bio}</p>
       )}
 
-      {showLevel && !isMinimal && (
-        <div 
-          style={styles.progressBar} 
-          role="progressbar" 
-          aria-valuenow={progressPercent} 
-          aria-valuemin={0} 
-          aria-valuemax={100}
-          aria-label="Level progress"
-        >
-          <div style={styles.progressFill} />
-        </div>
-      )}
-
-      {showStats && !isMinimal && (
-        <div style={styles.stats} role="list" aria-label="Profile statistics">
-          <div style={styles.stat} role="listitem">
-            <div style={styles.statValue} aria-label={`${profile.tasksCompleted} tasks completed`}>
-              {profile.tasksCompleted}
-            </div>
-            <div style={styles.statLabel}>Tasks</div>
-          </div>
-          <div style={styles.stat} role="listitem">
-            <div style={styles.statValue} aria-label={`Total earned: ${formatCurrency(profile.totalEarned)}`}>
-              {formatCurrency(profile.totalEarned)}
-            </div>
-            <div style={styles.statLabel}>Earned</div>
-          </div>
-          {effectiveVariant === 'full' && (
-            <div style={styles.stat} role="listitem">
-              <div style={styles.statValue} aria-label={`Reputation: ${profile.reputation}`}>
-                {profile.reputation}
-              </div>
-              <div style={styles.statLabel}>Rep</div>
-            </div>
+      {/* Skills */}
+      {profile.skills && profile.skills.length > 0 && (
+        <div style={skillsContainerStyle}>
+          {profile.skills.slice(0, isMobile ? 4 : 6).map((skill, i) => (
+            <span key={i} style={skillTagStyle}>{skill}</span>
+          ))}
+          {profile.skills.length > (isMobile ? 4 : 6) && (
+            <span style={skillTagStyle}>+{profile.skills.length - (isMobile ? 4 : 6)}</span>
           )}
         </div>
       )}
-    </article>
+
+      {/* Level Progress */}
+      <div style={levelSectionStyle}>
+        <div style={levelHeaderStyle}>
+          <span style={levelLabelStyle}>Level Progress</span>
+          <span style={levelValueStyle}>Level {profile.level}</span>
+        </div>
+        <div style={progressBarContainerStyle}>
+          <div style={progressBarFillStyle} />
+        </div>
+        <div style={xpTextStyle}>
+          {formatNumber(xpInLevel)} / {formatNumber(xpNeeded)} XP
+        </div>
+      </div>
+
+      {/* Stats */}
+      {showStats && (
+        <div style={statsSectionStyle}>
+          <div style={statItemStyle}>
+            <div style={statValueStyle}>{formatNumber(profile.tasksCompleted)}</div>
+            <div style={statLabelStyle}>Tasks Done</div>
+          </div>
+          <div style={statItemStyle}>
+            <div style={statValueStyle}>{profile.reputation}</div>
+            <div style={statLabelStyle}>Reputation</div>
+          </div>
+          <div style={statItemStyle}>
+            <div style={statValueStyle}>{formatCurrency(profile.totalEarned)}</div>
+            <div style={statLabelStyle}>Earned</div>
+          </div>
+        </div>
+      )}
+
+      {/* Achievements */}
+      {showAchievements && displayedAchievements.length > 0 && (
+        <div style={achievementsSectionStyle}>
+          <div style={sectionTitleStyle}>
+            <span>Achievements</span>
+            <span style={{ color: theme.colors.textSecondary, fontWeight: theme.typography.weights.normal }}>
+              {displayedAchievements.length}/{achievements.length}
+            </span>
+          </div>
+          <div style={achievementsGridStyle}>
+            {displayedAchievements.map(achievement => (
+              <AchievementBadge
+                key={achievement.id}
+                achievement={achievement}
+                size="md"
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={actionsStyle}>
+        {onViewProfile && (
+          <button
+            style={buttonStyle('primary')}
+            onClick={onViewProfile}
+            aria-label="View full profile"
+          >
+            View Profile
+          </button>
+        )}
+        {onEdit && (
+          <button
+            style={buttonStyle('secondary')}
+            onClick={onEdit}
+            aria-label="Edit profile"
+          >
+            Edit
+          </button>
+        )}
+      </div>
+    </div>
   );
 });
 
@@ -911,14 +1123,18 @@ export const AchievementBadge: React.FC<AchievementBadgeProps> = memo(({
   const [isHovered, setIsHovered] = useState(false);
   const [isTouched, setIsTouched] = useState(false);
 
-  const sizeConfig = useMemo(() => {
-    const configs = {
-      sm: { size: 32, fontSize: '0.875rem', iconSize: 16 },
-      md: { size: 48, fontSize: '1rem', iconSize: 24 },
-      lg: { size: 64, fontSize: '1.25rem', iconSize: 32 },
-    };
-    return configs[size];
-  }, [size]);
+  const sizeConfig = useMemo(() => ({
+    sm: { icon: '20px', container: '32px', fontSize: theme.typography.sizes.sm, touchTarget: '44px' },
+    md: { icon: '28px', container: '48px', fontSize: theme.typography.sizes.lg, touchTarget: '48px' },
+    lg: { icon: '40px', container: '72px', fontSize: theme.typography.sizes['2xl'], touchTarget: '72px' },
+  }), [theme]);
+
+  const { tierColor, isUnlocked, progress, sizeValue } = useMemo(() => ({
+    tierColor: getTierColor(achievement.tier),
+    isUnlocked: !!achievement.unlockedAt || !!achievement.completedAt,
+    progress: achievement.progress || 0,
+    sizeValue: sizeConfig[size],
+  }), [achievement, sizeConfig, size]);
 
   const styles = useMemo(() => ({
     container: {
@@ -926,239 +1142,319 @@ export const AchievementBadge: React.FC<AchievementBadgeProps> = memo(({
       display: 'inline-flex',
       alignItems: 'center',
       justifyContent: 'center',
-      width: sizeConfig.size,
-      height: sizeConfig.size,
-      borderRadius: '50%',
-      backgroundColor: achievement.tier ? getTierColor(achievement.tier) : theme.colors.primary,
-      cursor: 'pointer',
-      transition: theme.transitions.normal,
-      transform: isHovered ? 'scale(1.1)' : 'scale(1)',
-    },
+      width: sizeValue.touchTarget,
+      height: sizeValue.touchTarget,
+      borderRadius: theme.borderRadius.lg,
+      backgroundColor: 'transparent',
+      border: 'none',
+      cursor: showTooltip ? 'pointer' : 'default',
+      padding: 0,
+    } as React.CSSProperties,
+    badge: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: sizeValue.container,
+      height: sizeValue.container,
+      borderRadius: theme.borderRadius.lg,
+      backgroundColor: isUnlocked ? `${tierColor}20` : theme.colors.borderLight,
+      border: `2px solid ${isUnlocked ? tierColor : theme.colors.border}`,
+      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+      transform: (isHovered || isTouched) ? 'scale(1.05)' : 'scale(1)',
+      boxShadow: (isHovered || isTouched) ? theme.shadows.md : 'none',
+    } as React.CSSProperties,
     icon: {
-      fontSize: sizeConfig.fontSize,
-      color: '#FFFFFF',
-    },
+      fontSize: sizeValue.fontSize,
+      filter: isUnlocked ? 'none' : 'grayscale(100%)',
+      opacity: isUnlocked ? 1 : 0.5,
+    } as React.CSSProperties,
+    progressRing: {
+      position: 'absolute' as const,
+      bottom: '2px',
+      right: '2px',
+      width: size === 'sm' ? '12px' : size === 'md' ? '16px' : '20px',
+      height: size === 'sm' ? '12px' : size === 'md' ? '16px' : '20px',
+      borderRadius: '50%',
+      backgroundColor: theme.colors.surface,
+      display: !isUnlocked && progress > 0 ? 'flex' : 'none',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: theme.typography.sizes.xs,
+      fontWeight: theme.typography.weights.bold,
+      color: theme.colors.primary,
+      border: `2px solid ${theme.colors.border}`,
+    } as React.CSSProperties,
     tooltip: {
       position: 'absolute' as const,
       bottom: '100%',
       left: '50%',
       transform: 'translateX(-50%)',
-      padding: `${theme.spacing.sm} ${theme.spacing.md}`,
-      backgroundColor: theme.colors.surface,
-      color: theme.colors.text,
-      borderRadius: theme.borderRadius.md,
-      boxShadow: theme.shadows.lg,
-      fontSize: theme.typography.sizes.sm,
-      whiteSpace: 'nowrap' as const,
-      zIndex: theme.zIndices.tooltip,
       marginBottom: theme.spacing.sm,
+      padding: theme.spacing.md,
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.borderRadius.lg,
+      boxShadow: theme.shadows.xl,
+      border: `1px solid ${theme.colors.border}`,
+      zIndex: 100,
+      minWidth: '200px',
+      maxWidth: '280px',
       opacity: (isHovered || isTouched) && showTooltip ? 1 : 0,
-      visibility: (isHovered || isTouched) && showTooltip ? 'visible' as const : 'hidden' as const,
-      transition: theme.transitions.normal,
-    },
-    title: {
+      visibility: (isHovered || isTouched) && showTooltip ? 'visible' : 'hidden',
+      transition: 'opacity 0.2s ease, visibility 0.2s ease',
+      pointerEvents: 'none',
+    } as React.CSSProperties,
+    tooltipTitle: {
+      fontSize: theme.typography.sizes.sm,
       fontWeight: theme.typography.weights.semibold,
+      color: theme.colors.text,
       marginBottom: theme.spacing.xs,
-    },
-    description: {
-      color: theme.colors.textSecondary,
+    } as React.CSSProperties,
+    tooltipDesc: {
       fontSize: theme.typography.sizes.xs,
-    },
-  }), [sizeConfig, achievement.tier, theme, isHovered, isTouched, showTooltip]);
+      color: theme.colors.textSecondary,
+      marginBottom: theme.spacing.sm,
+    } as React.CSSProperties,
+    tooltipTier: {
+      fontSize: theme.typography.sizes.xs,
+      color: tierColor,
+      fontWeight: theme.typography.weights.bold,
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.05em',
+    } as React.CSSProperties,
+    tooltipProgress: {
+      marginTop: theme.spacing.sm,
+      height: '4px',
+      backgroundColor: theme.colors.border,
+      borderRadius: theme.borderRadius.full,
+      overflow: 'hidden',
+    } as React.CSSProperties,
+    tooltipProgressFill: {
+      height: '100%',
+      backgroundColor: theme.colors.primary,
+      width: `${progress}%`,
+      transition: 'width 0.3s ease',
+    } as React.CSSProperties,
+  }), [theme, sizeValue, tierColor, isUnlocked, progress, isHovered, isTouched, showTooltip, size]);
+
+  const handleMouseEnter = useCallback(() => setIsHovered(true), []);
+  const handleMouseLeave = useCallback(() => setIsHovered(false), []);
+  const handleTouchStart = useCallback(() => setIsTouched(true), []);
+  const handleTouchEnd = useCallback(() => setIsTouched(false), []);
+
+  const ariaLabel = isUnlocked 
+    ? `${achievement.name} achievement unlocked - ${achievement.tier} tier`
+    : `${achievement.name} achievement - ${achievement.tier} tier - ${Math.round(progress)}% progress`;
 
   return (
-    <div
+    <button
       className={className}
       style={{ ...styles.container, ...style }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onTouchStart={() => setIsTouched(true)}
-      onTouchEnd={() => setIsTouched(false)}
-      role="img"
-      aria-label={`${achievement.name} achievement`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      aria-label={ariaLabel}
+      type="button"
     >
-      <span style={styles.icon}>{achievement.icon || '🏆'}</span>
+      <div style={styles.badge}>
+        <span style={styles.icon} aria-hidden="true">{achievement.icon}</span>
+        {!isUnlocked && progress > 0 && (
+          <span style={styles.progressRing} aria-hidden="true">{Math.round(progress)}%</span>
+        )}
+      </div>
       {showTooltip && (
-        <div style={styles.tooltip} role="tooltip">
-          <div style={styles.title}>{achievement.name}</div>
-          <div style={styles.description}>{achievement.description}</div>
+        <div style={styles.tooltip} role="tooltip" aria-hidden={!(isHovered || isTouched)}>
+          <div style={styles.tooltipTitle}>{achievement.name}</div>
+          <div style={styles.tooltipDesc}>{achievement.description}</div>
+          <div style={styles.tooltipTier}>{achievement.tier} Tier</div>
+          {!isUnlocked && (
+            <div 
+              style={styles.tooltipProgress} 
+              role="progressbar" 
+              aria-valuenow={Math.round(progress)} 
+              aria-valuemin={0} 
+              aria-valuemax={100}
+            >
+              <div style={styles.tooltipProgressFill} />
+            </div>
+          )}
         </div>
       )}
-    </div>
+    </button>
   );
 });
 
 AchievementBadge.displayName = 'AchievementBadge';
 
 // ============================================================================
-// ProfileAvatar Component
-// ============================================================================
-
-export interface ProfileAvatarProps {
-  src?: string;
-  name: string;
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
-  isOnline?: boolean;
-  showStatus?: boolean;
-  className?: string;
-  style?: React.CSSProperties;
-}
-
-export const ProfileAvatar: React.FC<ProfileAvatarProps> = memo(({
-  src,
-  name,
-  size = 'md',
-  isOnline = false,
-  showStatus = false,
-  className,
-  style,
-}) => {
-  const { theme } = useTheme();
-  const initials = useMemo(() => 
-    name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2),
-    [name]
-  );
-
-  const sizeConfig = useMemo(() => {
-    const configs = {
-      xs: { size: 24, fontSize: '0.625rem', statusSize: 8 },
-      sm: { size: 32, fontSize: '0.75rem', statusSize: 10 },
-      md: { size: 48, fontSize: '1rem', statusSize: 12 },
-      lg: { size: 64, fontSize: '1.25rem', statusSize: 16 },
-      xl: { size: 96, fontSize: '1.875rem', statusSize: 20 },
-    };
-    return configs[size];
-  }, [size]);
-
-  const styles = useMemo(() => ({
-    container: {
-      position: 'relative' as const,
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: sizeConfig.size,
-      height: sizeConfig.size,
-      borderRadius: '50%',
-      overflow: 'hidden',
-      backgroundColor: theme.colors.primary,
-      border: `2px solid ${theme.colors.surface}`,
-    },
-    image: {
-      width: '100%',
-      height: '100%',
-      objectFit: 'cover' as const,
-    },
-    fallback: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: '100%',
-      height: '100%',
-      fontSize: sizeConfig.fontSize,
-      fontWeight: theme.typography.weights.medium,
-      color: '#FFFFFF',
-    },
-    status: {
-      position: 'absolute' as const,
-      bottom: 0,
-      right: 0,
-      width: sizeConfig.statusSize,
-      height: sizeConfig.statusSize,
-      borderRadius: '50%',
-      backgroundColor: isOnline ? theme.colors.success : theme.colors.textSecondary,
-      border: `2px solid ${theme.colors.surface}`,
-    },
-  }), [sizeConfig, theme, isOnline]);
-
-  return (
-    <div className={className} style={{ ...styles.container, ...style }}>
-      {src ? (
-        <img src={src} alt={name} style={styles.image} loading="lazy" />
-      ) : (
-        <div style={styles.fallback}>{initials}</div>
-      )}
-      {showStatus && <div style={styles.status} aria-label={isOnline ? 'Online' : 'Offline'} />}
-    </div>
-  );
-});
-
-ProfileAvatar.displayName = 'ProfileAvatar';
-
-// ============================================================================
-// LevelProgressBar Component
+// LevelProgress Component (LevelProgressBar in exports)
 // ============================================================================
 
 export interface LevelProgressBarProps {
-  currentXP: number;
-  level?: number;
-  showLabel?: boolean;
-  size?: 'sm' | 'md' | 'lg';
+  level: number;
+  xp: number;
+  showDetails?: boolean;
   className?: string;
   style?: React.CSSProperties;
 }
 
 export const LevelProgressBar: React.FC<LevelProgressBarProps> = memo(({
-  currentXP,
-  level: propLevel,
-  showLabel = true,
-  size = 'md',
+  level,
+  xp,
+  showDetails = true,
   className,
   style,
 }) => {
   const { theme } = useTheme();
-  const level = propLevel ?? calculateLevel(currentXP);
-  const progress = levelProgress(currentXP);
-  const nextLevelXP = xpForNextLevel(currentXP);
-
-  const styles = useMemo(() => {
-    const heights = { sm: 4, md: 8, lg: 12 };
-    return {
-      container: {
-        width: '100%',
-      },
-      header: {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: theme.spacing.sm,
-      },
-      level: {
-        fontSize: theme.typography.sizes.sm,
-        fontWeight: theme.typography.weights.semibold,
-        color: theme.colors.text,
-      },
-      progress: {
-        fontSize: theme.typography.sizes.xs,
-        color: theme.colors.textSecondary,
-      },
-      bar: {
-        width: '100%',
-        height: heights[size],
-        backgroundColor: theme.colors.borderLight,
-        borderRadius: theme.borderRadius.full,
-        overflow: 'hidden',
-      },
-      fill: {
-        width: `${progress}%`,
-        height: '100%',
-        backgroundColor: theme.colors.primary,
-        borderRadius: theme.borderRadius.full,
-        transition: theme.transitions.normal,
-      },
+  
+  const { progress, xpInLevel, xpNeeded, tierColor, tierName } = useMemo(() => {
+    const currentLevelBaseXp = (level - 1) * (level - 1) * 100;
+    const nextLevelXp = level * level * 100;
+    const xpInLvl = xp - currentLevelBaseXp;
+    const xpNeed = nextLevelXp - currentLevelBaseXp;
+    const prog = xpNeed > 0 ? Math.min(1, Math.max(0, xpInLvl / xpNeed)) : 1;
+    const tName = level >= 50 ? 'diamond' : level >= 30 ? 'platinum' : level >= 20 ? 'gold' : level >= 10 ? 'silver' : 'bronze';
+    
+    return { 
+      progress: prog, 
+      xpInLevel: xpInLvl, 
+      xpNeeded: xpNeed,
+      tierColor: getTierColor(tName),
+      tierName: tName.charAt(0).toUpperCase() + tName.slice(1),
     };
-  }, [theme, size, progress]);
+  }, [level, xp]);
+
+  const styles = useMemo(() => ({
+    container: {
+      backgroundColor: theme.colors.surface,
+      borderRadius: theme.borderRadius.lg,
+      padding: theme.spacing.md,
+      border: `1px solid ${theme.colors.border}`,
+    } as React.CSSProperties,
+    header: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: theme.spacing.md,
+    } as React.CSSProperties,
+    levelBadge: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+    } as React.CSSProperties,
+    levelNumber: {
+      width: '48px',
+      height: '48px',
+      borderRadius: theme.borderRadius.full,
+      backgroundColor: tierColor,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: theme.typography.sizes.xl,
+      fontWeight: theme.typography.weights.bold,
+      color: '#000000',
+    } as React.CSSProperties,
+    levelInfo: {
+      display: 'flex',
+      flexDirection: 'column' as const,
+    } as React.CSSProperties,
+    levelLabel: {
+      fontSize: theme.typography.sizes.sm,
+      color: theme.colors.textSecondary,
+    } as React.CSSProperties,
+    levelValue: {
+      fontSize: theme.typography.sizes.lg,
+      fontWeight: theme.typography.weights.bold,
+      color: theme.colors.text,
+    } as React.CSSProperties,
+    progressContainer: {
+      position: 'relative' as const,
+      height: '12px',
+      backgroundColor: theme.colors.border,
+      borderRadius: theme.borderRadius.full,
+      overflow: 'hidden',
+    } as React.CSSProperties,
+    progressBar: {
+      height: '100%',
+      background: `linear-gradient(90deg, ${tierColor}80, ${tierColor})`,
+      borderRadius: theme.borderRadius.full,
+      transition: 'width 0.5s ease',
+      width: `${progress * 100}%`,
+    } as React.CSSProperties,
+    progressGlow: {
+      position: 'absolute' as const,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
+      animation: 'shimmer 2s infinite',
+    } as React.CSSProperties,
+    details: {
+      marginTop: theme.spacing.md,
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      fontSize: theme.typography.sizes.sm,
+      color: theme.colors.textSecondary,
+    } as React.CSSProperties,
+    xpValue: {
+      color: theme.colors.primary,
+      fontWeight: theme.typography.weights.semibold,
+    } as React.CSSProperties,
+  }), [theme, tierColor, progress]);
+
+  const progressPercent = Math.round(progress * 100);
 
   return (
-    <div className={className} style={{ ...styles.container, ...style }}>
-      {showLabel && (
-        <div style={styles.header}>
-          <span style={styles.level}>Level {level}</span>
-          <span style={styles.progress}>{progress}% to Level {level + 1}</span>
+    <div 
+      className={className} 
+      style={{ ...styles.container, ...style }} 
+      role="region" 
+      aria-label={`Level ${level} progress`}
+    >
+      <div style={styles.header}>
+        <div style={styles.levelBadge}>
+          <div style={styles.levelNumber} aria-label={`Level ${level}`}>{level}</div>
+          <div style={styles.levelInfo}>
+            <span style={styles.levelLabel}>Current Level</span>
+            <span style={styles.levelValue} aria-label={`Tier: ${tierName}`}>{tierName}</span>
+          </div>
+        </div>
+      </div>
+
+      <div 
+        style={styles.progressContainer} 
+        role="progressbar" 
+        aria-valuenow={progressPercent} 
+        aria-valuemin={0} 
+        aria-valuemax={100}
+        aria-label={`${progressPercent}% progress to level ${level + 1}`}
+      >
+        <div style={styles.progressBar} />
+        <div style={styles.progressGlow} aria-hidden="true" />
+      </div>
+
+      {showDetails && (
+        <div style={styles.details}>
+          <span>
+            <span style={styles.xpValue} aria-label={`${formatNumber(xpInLevel)} XP in current level`}>
+              {formatNumber(xpInLevel)}
+            </span> 
+            <span aria-label={`out of ${formatNumber(xpNeeded)} XP needed`}> / {formatNumber(xpNeeded)} XP</span>
+          </span>
+          <span aria-label={`${progressPercent}% to level ${level + 1}`}>
+            {progressPercent}% to Lv.{level + 1}
+          </span>
         </div>
       )}
-      <div style={styles.bar} role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
-        <div style={styles.fill} />
-      </div>
+
+      <style>{`
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
     </div>
   );
 });
@@ -1166,81 +1462,39 @@ export const LevelProgressBar: React.FC<LevelProgressBarProps> = memo(({
 LevelProgressBar.displayName = 'LevelProgressBar';
 
 // ============================================================================
-// StatsGrid Component
+// Re-exports for convenience
 // ============================================================================
 
-export interface StatsGridProps {
-  stats: ProfileStats;
-  columns?: 2 | 3 | 4;
-  className?: string;
-  style?: React.CSSProperties;
-}
+export {
+  AgentProfile,
+  Achievement,
+  ProfileStats,
+  calculateLevel,
+  levelProgress,
+  xpForNextLevel,
+  getTierColor,
+} from './profile.js';
 
-export const StatsGrid: React.FC<StatsGridProps> = memo(({
-  stats,
-  columns = 3,
-  className,
-  style,
-}) => {
-  const { theme } = useTheme();
-
-  const statItems = useMemo(() => [
-    { label: 'Tasks', value: stats.tasksCompleted, icon: '✓' },
-    { label: 'Rating', value: stats.averageRating.toFixed(1), icon: '★' },
-    { label: 'Success Rate', value: `${(stats.successRate * 100).toFixed(0)}%`, icon: '📈' },
-    { label: 'Response Time', value: `${Math.round(stats.averageResponseTime / 60)}h`, icon: '⏱' },
-    { label: 'Streak', value: stats.currentStreak, icon: '🔥' },
-    { label: 'Reviews', value: stats.totalReviews, icon: '👥' },
-  ], [stats]);
-
-  const styles = useMemo(() => ({
-    grid: {
-      display: 'grid',
-      gridTemplateColumns: `repeat(${columns}, 1fr)`,
-      gap: theme.spacing.md,
-    },
-    stat: {
-      display: 'flex',
-      flexDirection: 'column' as const,
-      alignItems: 'center',
-      padding: theme.spacing.md,
-      backgroundColor: theme.colors.surface,
-      borderRadius: theme.borderRadius.lg,
-      border: `1px solid ${theme.colors.borderLight}`,
-    },
-    icon: {
-      fontSize: '1.5rem',
-      marginBottom: theme.spacing.sm,
-    },
-    value: {
-      fontSize: theme.typography.sizes.xl,
-      fontWeight: theme.typography.weights.bold,
-      color: theme.colors.text,
-    },
-    label: {
-      fontSize: theme.typography.sizes.sm,
-      color: theme.colors.textSecondary,
-      marginTop: theme.spacing.xs,
-    },
-  }), [theme, columns]);
-
-  return (
-    <div className={className} style={{ ...styles.grid, ...style }}>
-      {statItems.map((stat, index) => (
-        <div key={index} style={styles.stat}>
-          <span style={styles.icon}>{stat.icon}</span>
-          <span style={styles.value}>{stat.value}</span>
-          <span style={styles.label}>{stat.label}</span>
-        </div>
-      ))}
-    </div>
-  );
-});
-
-StatsGrid.displayName = 'StatsGrid';
-
-// ============================================================================
-// Export all components
-// ============================================================================
-
-export * from './profile.js';
+// Default export
+export default {
+  ProfileCard,
+  AchievementBadge,
+  LevelProgressBar,
+  ProfileAvatar,
+  StatsGrid,
+  ThemeProvider,
+  useTheme,
+  useResponsive,
+  lightTheme,
+  darkTheme,
+  formatNumber,
+  formatCurrency,
+  truncateAddress,
+  formatRelativeTime,
+  formatDate,
+  getInitials,
+  stringToColor,
+  ProfileErrorBoundary,
+  Skeleton,
+  breakpoints,
+};
