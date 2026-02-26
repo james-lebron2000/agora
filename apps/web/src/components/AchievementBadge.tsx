@@ -85,9 +85,9 @@ const tierColors: Record<BadgeTier, { bg: string; border: string; glow: string; 
 };
 
 const sizeMap = {
-  sm: { container: 'w-12 h-12', icon: 'w-5 h-5', progress: 'h-1' },
-  md: { container: 'w-16 h-16', icon: 'w-6 h-6', progress: 'h-1.5' },
-  lg: { container: 'w-20 h-20', icon: 'w-8 h-8', progress: 'h-2' },
+  sm: { container: 'w-10 h-10 sm:w-12 sm:h-12', icon: 'w-4 h-4 sm:w-5 sm:h-5', progress: 'h-1' },
+  md: { container: 'w-14 h-14 sm:w-16 sm:h-16', icon: 'w-5 h-5 sm:w-6 sm:h-6', progress: 'h-1.5' },
+  lg: { container: 'w-16 h-16 sm:w-20 sm:h-20', icon: 'w-6 h-6 sm:w-8 sm:h-8', progress: 'h-2' },
 };
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {

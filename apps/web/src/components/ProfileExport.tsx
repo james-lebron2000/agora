@@ -49,21 +49,23 @@ export function ProfileExport({ profile, className = '' }: ProfileExportProps) {
       <motion.button
         onClick={() => setIsModalOpen(true)}
         className={`
-          inline-flex items-center gap-2
-          px-4 py-2
+          inline-flex items-center justify-center gap-2
+          px-3 sm:px-4 py-3 sm:py-2
+          min-h-[44px] min-w-[44px]
           bg-white border border-gray-200
           text-gray-700 rounded-xl
           font-medium
           shadow-sm
           hover:shadow-md hover:border-gray-300
           transition-all
+          active:scale-95
           ${className}
         `}
         whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
+        whileTap={{ scale: 0.95 }}
       >
         <Download className="w-4 h-4" />
-        <span>Export</span>
+        <span className="hidden sm:inline">Export</span>
       </motion.button>
 
       <ExportModal
@@ -211,7 +213,7 @@ function ExportModal({ isOpen, onClose, profile }: ExportModalProps) {
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg pointer-events-auto overflow-hidden"
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 pointer-events-auto overflow-hidden max-h-[90vh] overflow-y-auto"
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
@@ -233,7 +235,7 @@ function ExportModal({ isOpen, onClose, profile }: ExportModalProps) {
               </div>
 
               {/* Tabs */}
-              <div className="flex border-b border-gray-100">
+              <div className="flex border-b border-gray-100 overflow-x-auto scrollbar-hide">
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
                   const isActive = activeTab === tab.id;
@@ -242,15 +244,16 @@ function ExportModal({ isOpen, onClose, profile }: ExportModalProps) {
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id)}
                       className={`
-                        flex-1 flex items-center justify-center gap-2 py-3 px-4
-                        text-sm font-medium transition-colors
-                        ${isActive 
-                          ? 'text-agora-600 border-b-2 border-agora-600 bg-agora-50/50' 
+                        flex-1 flex items-center justify-center gap-2 py-3 px-3 sm:px-4
+                        min-h-[48px] min-w-[60px]
+                        text-sm font-medium transition-colors whitespace-nowrap
+                        ${isActive
+                          ? 'text-agora-600 border-b-2 border-agora-600 bg-agora-50/50'
                           : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                         }
                       `}
                     >
-                      <Icon className="w-4 h-4" />
+                      <Icon className="w-4 h-4 flex-shrink-0" />
                       <span className="hidden sm:inline">{tab.label}</span>
                     </button>
                   );

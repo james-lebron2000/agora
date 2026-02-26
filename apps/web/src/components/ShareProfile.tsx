@@ -42,21 +42,24 @@ export function ShareProfile({ agentId, agentName, className = '' }: ShareProfil
       <motion.button
         onClick={() => setIsModalOpen(true)}
         className={`
-          inline-flex items-center gap-2
-          px-4 py-2
+          inline-flex items-center justify-center gap-2
+          px-4 py-3 sm:py-2
+          min-h-[44px]
           bg-gradient-to-r from-agora-600 to-agora-700
           text-white rounded-xl
           font-medium
           shadow-md
           hover:shadow-lg
           transition-shadow
+          active:scale-95
           ${className}
         `}
         whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
+        whileTap={{ scale: 0.95 }}
       >
         <Share2 className="w-4 h-4" />
-        <span>Share Profile</span>
+        <span className="hidden sm:inline">Share Profile</span>
+        <span className="sm:hidden">Share</span>
       </motion.button>
 
       <ShareModal
@@ -145,7 +148,7 @@ function ShareModal({ isOpen, onClose, agentId, agentName }: ShareModalProps) {
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto overflow-hidden"
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 pointer-events-auto overflow-hidden max-h-[90vh] overflow-y-auto"
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}

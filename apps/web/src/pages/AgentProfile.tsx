@@ -897,9 +897,9 @@ export function AgentProfile() {
                     isPremium: false,
                     skills: ['AI', 'Web3', 'DeFi'],
                   }} />
-                  <motion.button 
+                  <motion.button
                     onClick={() => refetch()}
-                    className="p-2 rounded-xl hover:bg-agora-50 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
+                    className="p-2.5 sm:p-2 rounded-xl hover:bg-agora-50 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center active:scale-95"
                     disabled={isLoading}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
