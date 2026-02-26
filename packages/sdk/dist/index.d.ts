@@ -26,4 +26,5 @@ export { SurvivalPredictor, createPredictorFromSnapshots, getGlobalPredictor, ty
 export { SurvivalSimulator, createSimulatorFromSnapshot, simulateFromSnapshot, getGlobalSimulator, type ScenarioType, type SimulationParams, type DailyResult, type SimulationEvent, type SimulationResult, type ScenarioComparison, } from './survival-simulation.js';
 export { calculateAgentScore, formatPriceRange, getStarRating, formatETA, type AgentPortfolio, type CaseStudy, type Testimonial, type PreviewRequest, type PreviewResponse, type ConsultantTask, type DecomposedTask, type SubTask, type AgentCandidate, type ConsultantRecommendation, type ConsultantExecution, type PurchaseOrder, type AgentResult, type AgentSearchQuery, type AgentSearchResult, } from './portfolio.js';
 export { PerformanceTracker, MemoryMonitor, MetricCollector, createPerformanceTracker, createMemoryMonitor, createMetricCollector, type SimplePerformanceMetrics, type SimpleMemoryInfo, type MetricRecord, type MetricStats, type MetricReport, } from './performance-monitor.js';
+export { formatDate, formatTime, formatDuration, timeAgo, } from './utils/formatters.js';
 //# sourceMappingURL=index.d.ts.map
