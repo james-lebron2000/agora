@@ -22142,6 +22142,160 @@ export declare class BridgeTransactionMonitor extends EventEmitter {
     retryMonitoring(txHash: Hex, sourceChain: SupportedChain, destinationChain: SupportedChain, amount: string, options?: Parameters<typeof this.monitorTransaction>[4]): Promise<BridgeTransactionStatusDetails>;
 }
 /**
+ * WebSocket connection states
+ */
+export type WebSocketState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'error';
+/**
+ * WebSocket message types for bridge updates
+ */
+export type BridgeWebSocketMessageType = 'transaction_update' | 'status_change' | 'confirmation' | 'error' | 'ping' | 'pong' | 'subscribe' | 'unsubscribe';
+/**
+ * WebSocket message interface
+ */
+export interface BridgeWebSocketMessage {
+    type: BridgeWebSocketMessageType;
+    timestamp: number;
+    data?: unknown;
+    error?: string;
+}
+/**
+ * Transaction update message data
+ */
+export interface TransactionUpdateData {
+    txHash: Hex;
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    status: BridgeTransactionStatus;
+    progress: number;
+    stage: 'source' | 'cross_chain' | 'destination';
+    confirmations?: number;
+    messageHash?: Hex;
+    error?: string;
+}
+/**
+ * WebSocket subscription options
+ */
+export interface WebSocketSubscriptionOptions {
+    txHash?: Hex;
+    sourceChain?: SupportedChain;
+    destinationChain?: SupportedChain;
+    address?: Address;
+}
+/**
+ * WebSocket manager for real-time bridge transaction tracking
+ * Provides live updates on transaction status, confirmations, and errors
+ *
+ * @example
+ * ```typescript
+ * const wsManager = new BridgeWebSocketManager('wss://api.example.com/bridge');
+ *
+ * wsManager.on('message', (msg) => {
+ *   console.log('Transaction update:', msg.data);
+ * });
+ *
+ * wsManager.on('statusChange', (status) => {
+ *   console.log('WebSocket status:', status);
+ * });
+ *
+ * await wsManager.connect();
+ * wsManager.subscribe({ txHash: '0x...' });
+ * ```
+ */
+export declare class BridgeWebSocketManager extends EventEmitter {
+    private url;
+    private ws;
+    private state;
+    private reconnectAttempts;
+    private maxReconnectAttempts;
+    private reconnectDelay;
+    private pingInterval;
+    private pingTimeout;
+    private subscriptions;
+    private messageQueue;
+    private logger;
+    private readonly PING_INTERVAL;
+    private readonly PING_TIMEOUT;
+    private readonly MAX_RECONNECT_DELAY;
+    constructor(url: string, logger?: BridgeLogger);
+    /**
+     * Get current WebSocket connection state
+     */
+    getState(): WebSocketState;
+    /**
+     * Check if WebSocket is connected
+     */
+    isConnected(): boolean;
+    /**
+     * Connect to WebSocket server
+     */
+    connect(): Promise<void>;
+    /**
+     * Disconnect from WebSocket server
+     */
+    disconnect(): void;
+    /**
+     * Subscribe to transaction updates
+     */
+    subscribe(options: WebSocketSubscriptionOptions): void;
+    /**
+     * Unsubscribe from transaction updates
+     */
+    unsubscribe(options: WebSocketSubscriptionOptions): void;
+    /**
+     * Send a message to the WebSocket server
+     */
+    send(message: BridgeWebSocketMessage): void;
+    /**
+     * Set up WebSocket event handlers
+     */
+    private setupEventHandlers;
+    /**
+     * Handle incoming WebSocket messages
+     */
+    private handleMessage;
+    /**
+     * Wait for WebSocket connection
+     */
+    private waitForConnection;
+    /**
+     * Handle reconnection with exponential backoff
+     */
+    private handleReconnect;
+    /**
+     * Start ping interval to keep connection alive
+     */
+    private startPingInterval;
+    /**
+     * Stop ping interval
+     */
+    private stopPingInterval;
+    /**
+     * Handle pong response
+     */
+    private handlePong;
+    /**
+     * Set state and emit event
+     */
+    private setState;
+    /**
+     * Create unique subscription key
+     */
+    private createSubscriptionKey;
+    /**
+     * Resubscribe to all active subscriptions after reconnection
+     */
+    private resubscribeAll;
+    /**
+     * Flush queued messages
+     */
+    private flushMessageQueue;
+}
+/**
+ * Bridge WebSocket client factory
+ * Creates a WebSocket manager with default configuration
+ */
+export declare function createBridgeWebSocketClient(url: string, logger?: BridgeLogger): BridgeWebSocketManager;
+/**
  * Listen for LayerZero messages
  * Creates a listener that monitors for incoming LayerZero messages on a specific chain
  *

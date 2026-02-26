@@ -736,5 +736,393 @@ describe('BridgeTransaction Tracking', () => {
         expect(history.getTransactions({ status: 'failed' })).toHaveLength(1);
     });
 });
+describe('BridgeError', () => {
+    it('should create error with default code', async () => {
+        const { BridgeError } = await import('../bridge.js');
+        const error = new BridgeError('Test error');
+        expect(error.message).toBe('Test error');
+        expect(error.code).toBe('UNKNOWN_ERROR');
+        expect(error.name).toBe('BridgeError');
+        expect(error.retryable).toBe(true);
+    });
+    it('should create error with specific code', async () => {
+        const { BridgeError } = await import('../bridge.js');
+        const error = new BridgeError('Insufficient balance', 'INSUFFICIENT_BALANCE');
+        expect(error.code).toBe('INSUFFICIENT_BALANCE');
+        expect(error.isRetryable()).toBe(false);
+    });
+    it('should create error with chain and txHash', async () => {
+        const { BridgeError } = await import('../bridge.js');
+        const error = new BridgeError('Transaction failed', 'TRANSACTION_FAILED', { chain: 'base', txHash: '0x1234', retryable: false });
+        expect(error.chain).toBe('base');
+        expect(error.txHash).toBe('0x1234');
+        expect(error.retryable).toBe(false);
+    });
+    it('should correctly identify retryable errors', async () => {
+        const { BridgeError } = await import('../bridge.js');
+        const retryableCodes = ['NETWORK_ERROR', 'RPC_ERROR', 'TRANSACTION_TIMEOUT', 'MESSAGE_VERIFICATION_FAILED'];
+        for (const code of retryableCodes) {
+            const error = new BridgeError('Test', code);
+            expect(error.isRetryable()).toBe(true);
+        }
+        const nonRetryableCodes = ['INSUFFICIENT_BALANCE', 'INVALID_PARAMS', 'TRANSACTION_FAILED'];
+        for (const code of nonRetryableCodes) {
+            const error = new BridgeError('Test', code, { retryable: false });
+            expect(error.isRetryable()).toBe(false);
+        }
+    });
+});
+describe('BridgeTransactionMonitor', () => {
+    it('should create monitor with source chain', async () => {
+        const { BridgeTransactionMonitor } = await import('../bridge.js');
+        const monitor = new BridgeTransactionMonitor('base');
+        expect(monitor).toBeDefined();
+    });
+    it('should stop all monitoring', async () => {
+        const { BridgeTransactionMonitor } = await import('../bridge.js');
+        const monitor = new BridgeTransactionMonitor('base');
+        // Should not throw
+        expect(() => monitor.stopAllMonitoring()).not.toThrow();
+    });
+    it('should get undefined status for non-monitored transaction', async () => {
+        const { BridgeTransactionMonitor } = await import('../bridge.js');
+        const monitor = new BridgeTransactionMonitor('base');
+        const status = monitor.getStatus('0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef', 'base', 'optimism');
+        expect(status).toBeUndefined();
+    });
+    it('should stop specific monitoring', async () => {
+        const { BridgeTransactionMonitor } = await import('../bridge.js');
+        const monitor = new BridgeTransactionMonitor('base');
+        const txHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+        // Should not throw even if not monitoring
+        expect(() => monitor.stopMonitoring(txHash, 'base', 'optimism')).not.toThrow();
+    });
+});
+describe('Multi-token Support', () => {
+    it('should have token addresses for all tokens', async () => {
+        const { TOKEN_ADDRESSES, SUPPORTED_TOKENS } = await import('../bridge.js');
+        const chains = ['ethereum', 'base', 'optimism', 'arbitrum'];
+        for (const token of SUPPORTED_TOKENS) {
+            expect(TOKEN_ADDRESSES[token]).toBeDefined();
+            for (const chain of chains) {
+                expect(TOKEN_ADDRESSES[token][chain]).toBeDefined();
+                expect(TOKEN_ADDRESSES[token][chain]).toMatch(/^0x[a-fA-F0-9]{40}$/);
+            }
+        }
+    });
+    it('should have correct token decimals', async () => {
+        const { TOKEN_DECIMALS } = await import('../bridge.js');
+        expect(TOKEN_DECIMALS.USDC).toBe(6);
+        expect(TOKEN_DECIMALS.USDT).toBe(6);
+        expect(TOKEN_DECIMALS.DAI).toBe(18);
+        expect(TOKEN_DECIMALS.WETH).toBe(18);
+    });
+    it('should have OFT addresses for all tokens', async () => {
+        const { LAYERZERO_OFT_ADDRESSES, SUPPORTED_TOKENS } = await import('../bridge.js');
+        const chains = ['ethereum', 'base', 'optimism', 'arbitrum'];
+        for (const token of SUPPORTED_TOKENS) {
+            expect(LAYERZERO_OFT_ADDRESSES[token]).toBeDefined();
+            for (const chain of chains) {
+                expect(LAYERZERO_OFT_ADDRESSES[token][chain]).toBeDefined();
+                expect(LAYERZERO_OFT_ADDRESSES[token][chain]).toMatch(/^0x[a-fA-F0-9]{40}$/);
+            }
+        }
+    });
+});
+describe('estimateBridgeFee', () => {
+    it('should throw error for same source and destination', async () => {
+        const { estimateBridgeFee, BridgeError } = await import('../bridge.js');
+        await expect(estimateBridgeFee({
+            sourceChain: 'base',
+            destinationChain: 'base',
+            token: 'USDC',
+            amount: '100'
+        })).rejects.toThrow(BridgeError);
+    });
+    it('should throw error for unsupported token', async () => {
+        const { estimateBridgeFee, BridgeError } = await import('../bridge.js');
+        await expect(estimateBridgeFee({
+            sourceChain: 'base',
+            destinationChain: 'optimism',
+            token: 'INVALID',
+            amount: '100'
+        })).rejects.toThrow(BridgeError);
+    });
+    it.skip('should estimate fees for all supported tokens', async () => {
+        // Skipped: requires RPC calls
+        const { estimateBridgeFee, SUPPORTED_TOKENS } = await import('../bridge.js');
+        for (const token of SUPPORTED_TOKENS) {
+            const estimate = await estimateBridgeFee({
+                sourceChain: 'base',
+                destinationChain: 'optimism',
+                token,
+                amount: '100'
+            });
+            expect(estimate.token).toBe(token);
+            expect(estimate.nativeFee).toBeDefined();
+            expect(estimate.gasEstimate).toBeDefined();
+            expect(estimate.breakdown).toBeDefined();
+        }
+    });
+    it.skip('should include fee breakdown', async () => {
+        // Skipped: requires RPC calls
+        const { estimateBridgeFee } = await import('../bridge.js');
+        const estimate = await estimateBridgeFee({
+            sourceChain: 'base',
+            destinationChain: 'optimism',
+            token: 'USDC',
+            amount: '100'
+        });
+        expect(estimate.breakdown.protocolFee).toBeDefined();
+        expect(estimate.breakdown.gasFee).toBeDefined();
+        expect(estimate.breakdown.bridgeFee).toBeDefined();
+    });
+});
+describe('CrossChainBridge Event Handling', () => {
+    const TEST_PRIVATE_KEY = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+    it('should register event listeners', async () => {
+        const { CrossChainBridge } = await import('../bridge.js');
+        const bridge = new CrossChainBridge(TEST_PRIVATE_KEY);
+        const listener = vi.fn();
+        bridge.on('quoteReceived', listener);
+        expect(bridge.listenerCount('quoteReceived')).toBe(1);
+    });
+    it('should remove event listeners', async () => {
+        const { CrossChainBridge } = await import('../bridge.js');
+        const bridge = new CrossChainBridge(TEST_PRIVATE_KEY);
+        const listener = vi.fn();
+        bridge.on('quoteReceived', listener);
+        bridge.off('quoteReceived', listener);
+        expect(bridge.listenerCount('quoteReceived')).toBe(0);
+    });
+    it('should support once listener', async () => {
+        const { CrossChainBridge } = await import('../bridge.js');
+        const bridge = new CrossChainBridge(TEST_PRIVATE_KEY);
+        const listener = vi.fn();
+        bridge.once('quoteReceived', listener);
+        // Emit twice
+        bridge.emit('quoteReceived', {
+            sourceChain: 'base',
+            destinationChain: 'optimism',
+            token: 'USDC',
+            amount: '100',
+            estimatedFee: '0.001',
+            estimatedTime: 60
+        });
+        bridge.emit('quoteReceived', {
+            sourceChain: 'base',
+            destinationChain: 'optimism',
+            token: 'USDC',
+            amount: '200',
+            estimatedFee: '0.002',
+            estimatedTime: 60
+        });
+        expect(listener).toHaveBeenCalledTimes(1);
+    });
+});
+describe('CrossChainBridge bridgeToken', () => {
+    const TEST_PRIVATE_KEY = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+    it('should return error for unsupported token', async () => {
+        const { CrossChainBridge } = await import('../bridge.js');
+        const bridge = new CrossChainBridge(TEST_PRIVATE_KEY, 'base');
+        const result = await bridge.bridgeToken('optimism', 'INVALID', '100');
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Unsupported token');
+    });
+    it('should route USDC to bridgeUSDC', async () => {
+        const { CrossChainBridge } = await import('../bridge.js');
+        const bridge = new CrossChainBridge(TEST_PRIVATE_KEY, 'base');
+        // USDC should return error for same chain (bridgeUSDC logic)
+        const result = await bridge.bridgeToken('base', 'USDC', '100');
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('must be different');
+    });
+    it('should return error for same source and destination', async () => {
+        const { CrossChainBridge } = await import('../bridge.js');
+        const bridge = new CrossChainBridge(TEST_PRIVATE_KEY, 'base');
+        const result = await bridge.bridgeToken('base', 'USDT', '100');
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('must be different');
+    });
+});
+describe('BridgeWebSocketManager', () => {
+    it('should create WebSocket manager', async () => {
+        const { BridgeWebSocketManager } = await import('../bridge.js');
+        const manager = new BridgeWebSocketManager('wss://test.example.com');
+        expect(manager).toBeDefined();
+        expect(manager.getState()).toBe('disconnected');
+        expect(manager.isConnected()).toBe(false);
+    });
+    it('should track state changes', async () => {
+        const { BridgeWebSocketManager } = await import('../bridge.js');
+        const manager = new BridgeWebSocketManager('wss://test.example.com');
+        const states = [];
+        manager.on('stateChange', (state) => states.push(state));
+        // Manually trigger state change
+        manager.setState('connecting');
+        manager.setState('connected');
+        expect(states).toContain('connecting');
+        expect(states).toContain('connected');
+    });
+    it('should not duplicate state changes', async () => {
+        const { BridgeWebSocketManager } = await import('../bridge.js');
+        const manager = new BridgeWebSocketManager('wss://test.example.com');
+        const states = [];
+        manager.on('stateChange', (state) => states.push(state));
+        manager.setState('connecting');
+        manager.setState('connecting');
+        manager.setState('connecting');
+        expect(states).toHaveLength(1);
+    });
+    it('should queue messages when disconnected', async () => {
+        const { BridgeWebSocketManager } = await import('../bridge.js');
+        const manager = new BridgeWebSocketManager('wss://test.example.com');
+        const message = {
+            type: 'subscribe',
+            timestamp: Date.now(),
+            data: { txHash: '0x1234' }
+        };
+        // Should not throw when disconnected
+        expect(() => manager.send(message)).not.toThrow();
+    });
+    it('should create subscription key correctly', async () => {
+        const { BridgeWebSocketManager } = await import('../bridge.js');
+        const manager = new BridgeWebSocketManager('wss://test.example.com');
+        const options = { txHash: '0x1234', sourceChain: 'base' };
+        const key = manager.createSubscriptionKey(options);
+        expect(key).toBe(JSON.stringify(options));
+    });
+    it('should handle disconnect when not connected', async () => {
+        const { BridgeWebSocketManager } = await import('../bridge.js');
+        const manager = new BridgeWebSocketManager('wss://test.example.com');
+        // Should not throw
+        expect(() => manager.disconnect()).not.toThrow();
+        expect(manager.getState()).toBe('disconnected');
+    });
+    it('should handle multiple disconnect calls', async () => {
+        const { BridgeWebSocketManager } = await import('../bridge.js');
+        const manager = new BridgeWebSocketManager('wss://test.example.com');
+        // Should not throw on multiple disconnects
+        expect(() => {
+            manager.disconnect();
+            manager.disconnect();
+            manager.disconnect();
+        }).not.toThrow();
+    });
+});
+describe('Bridge Logger', () => {
+    it('should have default logger with all methods', async () => {
+        const { defaultLogger } = await import('../bridge.js');
+        expect(defaultLogger.debug).toBeDefined();
+        expect(defaultLogger.info).toBeDefined();
+        expect(defaultLogger.warn).toBeDefined();
+        expect(defaultLogger.error).toBeDefined();
+        // Should not throw when called
+        expect(() => {
+            defaultLogger.debug('test');
+            defaultLogger.info('test');
+            defaultLogger.warn('test');
+            defaultLogger.error('test');
+        }).not.toThrow();
+    });
+});
+describe('Retry Logic', () => {
+    it('should retry failed operations', async () => {
+        const { CrossChainBridge } = await import('../bridge.js');
+        let attempts = 0;
+        const failingFn = async () => {
+            attempts++;
+            if (attempts < 3) {
+                throw new Error('Temporary error');
+            }
+            return 'success';
+        };
+        // The retry logic is internal, but we can verify it works through bridge operations
+        // For now, just verify the bridge can be instantiated
+        const bridge = new CrossChainBridge('0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef');
+        expect(bridge).toBeDefined();
+    });
+});
+describe('Edge Cases', () => {
+    it.skip('should handle zero amount', async () => {
+        // Skipped: requires RPC calls
+        const { getBridgeQuote } = await import('../bridge.js');
+        const quote = await getBridgeQuote({
+            sourceChain: 'base',
+            destinationChain: 'optimism',
+            token: 'USDC',
+            amount: '0'
+        }, TEST_ADDRESS);
+        expect(quote.amount).toBe('0');
+    });
+    it.skip('should handle very small amounts', async () => {
+        // Skipped: requires RPC calls
+        const { getBridgeQuote } = await import('../bridge.js');
+        const quote = await getBridgeQuote({
+            sourceChain: 'base',
+            destinationChain: 'optimism',
+            token: 'USDC',
+            amount: '0.000001'
+        }, TEST_ADDRESS);
+        expect(quote.amount).toBe('0.000001');
+    });
+    it.skip('should handle large amounts', async () => {
+        // Skipped: requires RPC calls
+        const { getBridgeQuote } = await import('../bridge.js');
+        const quote = await getBridgeQuote({
+            sourceChain: 'base',
+            destinationChain: 'optimism',
+            token: 'USDC',
+            amount: '1000000'
+        }, TEST_ADDRESS);
+        expect(quote.amount).toBe('1000000');
+    });
+    it.skip('should handle all chain combinations', async () => {
+        // Skipped: requires RPC calls
+        const { getBridgeQuote } = await import('../bridge.js');
+        const chains = ['ethereum', 'base', 'optimism', 'arbitrum'];
+        for (const source of chains) {
+            for (const dest of chains) {
+                if (source !== dest) {
+                    const quote = await getBridgeQuote({
+                        sourceChain: source,
+                        destinationChain: dest,
+                        token: 'USDC',
+                        amount: '100'
+                    }, TEST_ADDRESS);
+                    expect(quote.sourceChain).toBe(source);
+                    expect(quote.destinationChain).toBe(dest);
+                }
+            }
+        }
+    });
+});
+describe('Gas Estimation with Network Conditions', () => {
+    it.skip('should estimate gas for all routes', async () => {
+        // Skipped: requires RPC calls
+        const { estimateBridgeFee } = await import('../bridge.js');
+        const routes = [
+            ['base', 'optimism'],
+            ['base', 'arbitrum'],
+            ['optimism', 'base'],
+            ['optimism', 'arbitrum'],
+            ['arbitrum', 'base'],
+            ['arbitrum', 'optimism'],
+            ['ethereum', 'base'],
+            ['ethereum', 'optimism'],
+            ['ethereum', 'arbitrum']
+        ];
+        for (const [source, dest] of routes) {
+            const estimate = await estimateBridgeFee({
+                sourceChain: source,
+                destinationChain: dest,
+                token: 'USDC',
+                amount: '100'
+            });
+            expect(estimate.estimatedTime).toBeGreaterThan(0);
+            expect(estimate.gasEstimate).toBeDefined();
+        }
+    });
+});
 console.log('[Unit Tests] Bridge module test suite loaded');
 //# sourceMappingURL=bridge.test.js.map

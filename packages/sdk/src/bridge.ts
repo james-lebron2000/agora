@@ -1843,6 +1843,479 @@ export class BridgeTransactionMonitor extends EventEmitter {
 }
 
 /**
+ * WebSocket connection states
+ */
+export type WebSocketState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting' | 'error';
+
+/**
+ * WebSocket message types for bridge updates
+ */
+export type BridgeWebSocketMessageType =
+  | 'transaction_update'
+  | 'status_change'
+  | 'confirmation'
+  | 'error'
+  | 'ping'
+  | 'pong'
+  | 'subscribe'
+  | 'unsubscribe';
+
+/**
+ * WebSocket message interface
+ */
+export interface BridgeWebSocketMessage {
+  type: BridgeWebSocketMessageType;
+  timestamp: number;
+  data?: unknown;
+  error?: string;
+}
+
+/**
+ * Transaction update message data
+ */
+export interface TransactionUpdateData {
+  txHash: Hex;
+  sourceChain: SupportedChain;
+  destinationChain: SupportedChain;
+  status: BridgeTransactionStatus;
+  progress: number;
+  stage: 'source' | 'cross_chain' | 'destination';
+  confirmations?: number;
+  messageHash?: Hex;
+  error?: string;
+}
+
+/**
+ * WebSocket subscription options
+ */
+export interface WebSocketSubscriptionOptions {
+  txHash?: Hex;
+  sourceChain?: SupportedChain;
+  destinationChain?: SupportedChain;
+  address?: Address;
+}
+
+/**
+ * WebSocket manager for real-time bridge transaction tracking
+ * Provides live updates on transaction status, confirmations, and errors
+ * 
+ * @example
+ * ```typescript
+ * const wsManager = new BridgeWebSocketManager('wss://api.example.com/bridge');
+ * 
+ * wsManager.on('message', (msg) => {
+ *   console.log('Transaction update:', msg.data);
+ * });
+ * 
+ * wsManager.on('statusChange', (status) => {
+ *   console.log('WebSocket status:', status);
+ * });
+ * 
+ * await wsManager.connect();
+ * wsManager.subscribe({ txHash: '0x...' });
+ * ```
+ */
+export class BridgeWebSocketManager extends EventEmitter {
+  private url: string;
+  private ws: WebSocket | null = null;
+  private state: WebSocketState = 'disconnected';
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private reconnectDelay = 1000;
+  private pingInterval: NodeJS.Timeout | null = null;
+  private pingTimeout: NodeJS.Timeout | null = null;
+  private subscriptions: Set<string> = new Set();
+  private messageQueue: BridgeWebSocketMessage[] = [];
+  private logger: BridgeLogger;
+
+  // Configuration
+  private readonly PING_INTERVAL = 30000; // 30 seconds
+  private readonly PING_TIMEOUT = 10000; // 10 seconds
+  private readonly MAX_RECONNECT_DELAY = 30000; // 30 seconds
+
+  constructor(url: string, logger: BridgeLogger = defaultLogger) {
+    super();
+    this.url = url;
+    this.logger = logger;
+  }
+
+  /**
+   * Get current WebSocket connection state
+   */
+  getState(): WebSocketState {
+    return this.state;
+  }
+
+  /**
+   * Check if WebSocket is connected
+   */
+  isConnected(): boolean {
+    return this.state === 'connected' && this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Connect to WebSocket server
+   */
+  async connect(): Promise<void> {
+    if (this.isConnected()) {
+      this.logger.debug('WebSocket already connected');
+      return;
+    }
+
+    if (this.state === 'connecting') {
+      this.logger.debug('WebSocket connection already in progress');
+      return;
+    }
+
+    this.setState('connecting');
+    this.logger.info('Connecting to WebSocket', { url: this.url });
+
+    try {
+      this.ws = new WebSocket(this.url);
+      this.setupEventHandlers();
+      
+      // Wait for connection
+      await this.waitForConnection();
+      this.reconnectAttempts = 0;
+      
+      // Resubscribe to previous subscriptions
+      this.resubscribeAll();
+      
+      // Flush queued messages
+      this.flushMessageQueue();
+      
+    } catch (error) {
+      this.logger.error('WebSocket connection failed', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      this.handleReconnect();
+      throw error;
+    }
+  }
+
+  /**
+   * Disconnect from WebSocket server
+   */
+  disconnect(): void {
+    this.logger.info('Disconnecting WebSocket');
+    
+    this.stopPingInterval();
+    
+    if (this.ws) {
+      // Remove event handlers before closing to prevent reconnection
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
+      this.ws.onopen = null;
+      
+      if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
+        this.ws.close();
+      }
+      
+      this.ws = null;
+    }
+    
+    this.setState('disconnected');
+    this.reconnectAttempts = 0;
+  }
+
+  /**
+   * Subscribe to transaction updates
+   */
+  subscribe(options: WebSocketSubscriptionOptions): void {
+    const subscriptionKey = this.createSubscriptionKey(options);
+    
+    if (this.subscriptions.has(subscriptionKey)) {
+      this.logger.debug('Already subscribed', { options });
+      return;
+    }
+    
+    this.subscriptions.add(subscriptionKey);
+    
+    const message: BridgeWebSocketMessage = {
+      type: 'subscribe',
+      timestamp: Date.now(),
+      data: options
+    };
+    
+    this.send(message);
+    this.logger.info('Subscribed to updates', { options });
+  }
+
+  /**
+   * Unsubscribe from transaction updates
+   */
+  unsubscribe(options: WebSocketSubscriptionOptions): void {
+    const subscriptionKey = this.createSubscriptionKey(options);
+    this.subscriptions.delete(subscriptionKey);
+    
+    const message: BridgeWebSocketMessage = {
+      type: 'unsubscribe',
+      timestamp: Date.now(),
+      data: options
+    };
+    
+    this.send(message);
+    this.logger.info('Unsubscribed from updates', { options });
+  }
+
+  /**
+   * Send a message to the WebSocket server
+   */
+  send(message: BridgeWebSocketMessage): void {
+    if (!this.isConnected()) {
+      this.logger.debug('WebSocket not connected, queuing message', { message });
+      this.messageQueue.push(message);
+      return;
+    }
+    
+    try {
+      this.ws!.send(JSON.stringify(message));
+    } catch (error) {
+      this.logger.error('Failed to send WebSocket message', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      this.messageQueue.push(message);
+    }
+  }
+
+  /**
+   * Set up WebSocket event handlers
+   */
+  private setupEventHandlers(): void {
+    if (!this.ws) return;
+
+    this.ws.onopen = () => {
+      this.logger.info('WebSocket connected');
+      this.setState('connected');
+      this.startPingInterval();
+      this.emit('connected');
+    };
+
+    this.ws.onclose = (event) => {
+      this.logger.warn('WebSocket closed', {
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean
+      });
+      
+      this.stopPingInterval();
+      
+      if (this.state !== 'disconnected') {
+        this.setState('disconnected');
+        this.emit('disconnected', { code: event.code, reason: event.reason });
+        
+        // Attempt reconnection if not intentionally closed
+        if (event.code !== 1000 && event.code !== 1001) {
+          this.handleReconnect();
+        }
+      }
+    };
+
+    this.ws.onerror = (error) => {
+      this.logger.error('WebSocket error', { error });
+      this.setState('error');
+      this.emit('error', error);
+    };
+
+    this.ws.onmessage = (event) => {
+      this.handleMessage(event.data);
+    };
+  }
+
+  /**
+   * Handle incoming WebSocket messages
+   */
+  private handleMessage(data: string): void {
+    try {
+      const message: BridgeWebSocketMessage = JSON.parse(data);
+      
+      this.logger.debug('Received WebSocket message', { type: message.type });
+      
+      switch (message.type) {
+        case 'pong':
+          this.handlePong();
+          break;
+          
+        case 'transaction_update':
+        case 'status_change':
+        case 'confirmation':
+          this.emit('transactionUpdate', message.data as TransactionUpdateData);
+          this.emit('message', message);
+          break;
+          
+        case 'error':
+          this.logger.error('Server reported error', { error: message.error });
+          this.emit('serverError', message.error);
+          break;
+          
+        default:
+          this.emit('message', message);
+      }
+    } catch (error) {
+      this.logger.error('Failed to parse WebSocket message', {
+        data,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  /**
+   * Wait for WebSocket connection
+   */
+  private waitForConnection(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('WebSocket connection timeout'));
+      }, 10000);
+
+      const onOpen = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+
+      const onError = (error: Event) => {
+        clearTimeout(timeout);
+        reject(error);
+      };
+
+      if (this.ws) {
+        this.ws.addEventListener('open', onOpen, { once: true });
+        this.ws.addEventListener('error', onError, { once: true });
+      }
+    });
+  }
+
+  /**
+   * Handle reconnection with exponential backoff
+   */
+  private handleReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.logger.error('Max reconnection attempts reached');
+      this.setState('error');
+      this.emit('maxReconnectAttemptsReached');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    const delay = Math.min(
+      this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1),
+      this.MAX_RECONNECT_DELAY
+    );
+
+    this.logger.info(`Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
+    this.setState('reconnecting');
+
+    setTimeout(() => {
+      this.connect().catch((error) => {
+        this.logger.error('Reconnection failed', {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+    }, delay);
+  }
+
+  /**
+   * Start ping interval to keep connection alive
+   */
+  private startPingInterval(): void {
+    this.pingInterval = setInterval(() => {
+      if (!this.isConnected()) return;
+
+      this.send({
+        type: 'ping',
+        timestamp: Date.now()
+      });
+
+      // Set timeout for pong response
+      this.pingTimeout = setTimeout(() => {
+        this.logger.warn('Ping timeout, closing connection');
+        this.ws?.close();
+      }, this.PING_TIMEOUT);
+    }, this.PING_INTERVAL);
+  }
+
+  /**
+   * Stop ping interval
+   */
+  private stopPingInterval(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+    if (this.pingTimeout) {
+      clearTimeout(this.pingTimeout);
+      this.pingTimeout = null;
+    }
+  }
+
+  /**
+   * Handle pong response
+   */
+  private handlePong(): void {
+    if (this.pingTimeout) {
+      clearTimeout(this.pingTimeout);
+      this.pingTimeout = null;
+    }
+  }
+
+  /**
+   * Set state and emit event
+   */
+  private setState(state: WebSocketState): void {
+    if (this.state !== state) {
+      this.state = state;
+      this.emit('stateChange', state);
+    }
+  }
+
+  /**
+   * Create unique subscription key
+   */
+  private createSubscriptionKey(options: WebSocketSubscriptionOptions): string {
+    return JSON.stringify(options);
+  }
+
+  /**
+   * Resubscribe to all active subscriptions after reconnection
+   */
+  private resubscribeAll(): void {
+    for (const key of this.subscriptions) {
+      const options = JSON.parse(key) as WebSocketSubscriptionOptions;
+      const message: BridgeWebSocketMessage = {
+        type: 'subscribe',
+        timestamp: Date.now(),
+        data: options
+      };
+      this.send(message);
+    }
+  }
+
+  /**
+   * Flush queued messages
+   */
+  private flushMessageQueue(): void {
+    while (this.messageQueue.length > 0 && this.isConnected()) {
+      const message = this.messageQueue.shift();
+      if (message) {
+        this.send(message);
+      }
+    }
+  }
+}
+
+/**
+ * Bridge WebSocket client factory
+ * Creates a WebSocket manager with default configuration
+ */
+export function createBridgeWebSocketClient(
+  url: string,
+  logger?: BridgeLogger
+): BridgeWebSocketManager {
+  return new BridgeWebSocketManager(url, logger);
+}
+
+/**
  * Listen for LayerZero messages
  * Creates a listener that monitors for incoming LayerZero messages on a specific chain
  * 
