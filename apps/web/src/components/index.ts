@@ -7,6 +7,29 @@ export { AgentProfile } from './AgentProfile';
 export type { AgentProfileData, ProfileStatsData, ProfileTab, AgentProfileProps } from './AgentProfile';
 export { generateSampleProfile, generateSampleStats, generateSampleAchievements } from './AgentProfile';
 
+// New Profile Components
+export {
+  ProfileCard,
+  ActivityTimeline,
+  PortfolioView,
+  ProfileEditor,
+} from './profile';
+
+export type {
+  SurvivalScore,
+  ProfileCardProps,
+  ActivityType,
+  ActivityItem,
+  ActivityTimelineProps,
+  PortfolioAsset,
+  PortfolioData,
+  PortfolioViewMode,
+  PortfolioSortBy,
+  PortfolioViewProps,
+  ProfileFormData,
+  ProfileEditorEnhancedProps,
+} from './profile';
+
 // Survival Components
 export { SurvivalMonitor, generateSampleSurvivalData } from './SurvivalMonitor';
 export type { 
