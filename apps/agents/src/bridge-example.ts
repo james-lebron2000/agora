@@ -331,23 +331,28 @@ async function example8_multiTokenBridging(bridge: CrossChainBridge) {
   console.log('\n--- Setting up Event Listeners for Multi-Token Bridging ---\n');
 
   bridge.on('approvalRequired', (data) => {
-    console.log(`[Event] Approval required for ${data.token} on ${data.sourceChain}`);
+    const approvalData = data as { token: string; sourceChain: string };
+    console.log(`[Event] Approval required for ${approvalData.token} on ${approvalData.sourceChain}`);
   });
 
   bridge.on('approvalConfirmed', (data) => {
-    console.log(`[Event] ${data.token} approval confirmed`);
+    const confirmedData = data as { token: string };
+    console.log(`[Event] ${confirmedData.token} approval confirmed`);
   });
 
   bridge.on('transactionSent', (data) => {
-    console.log(`[Event] ${data.token} bridge transaction sent: ${data.txHash}`);
+    const sentData = data as { token: string; txHash: string };
+    console.log(`[Event] ${sentData.token} bridge transaction sent: ${sentData.txHash}`);
   });
 
   bridge.on('transactionConfirmed', (data) => {
-    console.log(`[Event] ${data.token} bridge completed! ${data.sourceChain} → ${data.destinationChain}`);
+    const confirmedData = data as { token: string; sourceChain: string; destinationChain: string };
+    console.log(`[Event] ${confirmedData.token} bridge completed! ${confirmedData.sourceChain} → ${confirmedData.destinationChain}`);
   });
 
   bridge.on('transactionFailed', (data) => {
-    console.log(`[Event] ${data.token} bridge failed: ${data.error}`);
+    const failedData = data as { token: string; error: string };
+    console.log(`[Event] ${failedData.token} bridge failed: ${failedData.error}`);
   });
 
   console.log('Event listeners configured for all token types');

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Agent, Task } from '../types/navigation';
 
 // API Configuration - Connect to real Relay API
@@ -12,14 +13,108 @@ const apiClient = axios.create({
   },
 });
 
+// Auth token storage key
+const AUTH_TOKEN_KEY = '@agora:auth_token';
+const WALLET_ADDRESS_KEY = '@agora:wallet_address';
+
+/**
+ * Get auth token from secure storage
+ * @returns The stored auth token or null
+ */
+export async function getAuthToken(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+  } catch (error) {
+    console.error('[Auth] Failed to get auth token:', error);
+    return null;
+  }
+}
+
+/**
+ * Set auth token in secure storage
+ * @param token - The auth token to store
+ */
+export async function setAuthToken(token: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
+  } catch (error) {
+    console.error('[Auth] Failed to set auth token:', error);
+    throw new Error('Failed to save authentication token');
+  }
+}
+
+/**
+ * Clear auth token from storage
+ */
+export async function clearAuthToken(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch (error) {
+    console.error('[Auth] Failed to clear auth token:', error);
+  }
+}
+
+/**
+ * Get connected wallet address
+ * @returns The stored wallet address or null
+ */
+export async function getWalletAddress(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(WALLET_ADDRESS_KEY);
+  } catch (error) {
+    console.error('[Auth] Failed to get wallet address:', error);
+    return null;
+  }
+}
+
+/**
+ * Set wallet address in storage
+ * @param address - The wallet address to store
+ */
+export async function setWalletAddress(address: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(WALLET_ADDRESS_KEY, address);
+  } catch (error) {
+    console.error('[Auth] Failed to set wallet address:', error);
+    throw new Error('Failed to save wallet address');
+  }
+}
+
+/**
+ * Clear wallet address from storage
+ */
+export async function clearWalletAddress(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(WALLET_ADDRESS_KEY);
+  } catch (error) {
+    console.error('[Auth] Failed to clear wallet address:', error);
+  }
+}
+
+/**
+ * Check if user is authenticated
+ * @returns True if auth token exists
+ */
+export async function isAuthenticated(): Promise<boolean> {
+  const token = await getAuthToken();
+  return token !== null;
+}
+
 // Request interceptor for adding auth token
 apiClient.interceptors.request.use(
   async (config) => {
-    // TODO: Get auth token from secure storage when auth is implemented
-    const token = null;
+    // Get auth token from secure storage
+    const token = await getAuthToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Add wallet address if available
+    const walletAddress = await getWalletAddress();
+    if (walletAddress) {
+      config.headers['X-Wallet-Address'] = walletAddress;
+    }
+    
     return config;
   },
   (error) => Promise.reject(error)

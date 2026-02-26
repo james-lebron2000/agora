@@ -196,16 +196,24 @@ export function useAgentPerformance(
     setError(null);
     
     try {
-      // TODO: Replace with actual API call
-      // const response = await fetch(`/api/agents/${agentId}/performance?period=${period}`);
-      // const result = await response.json();
+      // Fetch performance data from API
+      const response = await fetch(`/api/agents/${agentId}/performance?period=${period}`);
       
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 800));
+      if (!response.ok) {
+        throw new Error(`Failed to fetch performance data: ${response.statusText}`);
+      }
       
-      // Use mock data for now
-      const mockData = generateMockData(agentId, period);
-      setData(mockData);
+      const result = await response.json();
+      
+      // Validate response structure
+      if (!result.summary || !result.earningsTrend) {
+        console.warn('[useAgentPerformance] Invalid API response structure, falling back to mock data');
+        const mockData = generateMockData(agentId, period);
+        setData(mockData);
+        return;
+      }
+      
+      setData(result as AgentPerformanceData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch performance data');
     } finally {

@@ -1002,11 +1002,6 @@ describe('Cross-Chain Bridge Module', () => {
     let analytics: BridgeAnalytics;
 
     beforeEach(() => {
-      // Skip if BridgeAnalytics constructor not available
-      if (typeof BridgeAnalytics !== 'function') {
-        console.log('BridgeAnalytics not available - skipping tests');
-        return;
-      }
       analytics = new BridgeAnalytics(mockAddress);
     });
 
