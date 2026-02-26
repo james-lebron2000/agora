@@ -19,6 +19,62 @@ export interface QueuedOperation {
   retryCount: number;
 }
 
+// Legacy export for compatibility - use QueuedOperation instead
+export type PendingChange = QueuedOperation;
+
+// ============================================================================
+// Individual function exports for useOfflineSync hook
+// ============================================================================
+
+/**
+ * Get all pending changes from the queue
+ */
+export async function getPendingChanges(): Promise<QueuedOperation[]> {
+  return OfflineStorage.getOperationQueue();
+}
+
+/**
+ * Remove a pending change from the queue
+ */
+export async function removePendingChange(operationId: string): Promise<void> {
+  return OfflineStorage.removeFromQueue(operationId);
+}
+
+/**
+ * Increment retry count for a pending change
+ */
+export async function incrementRetryCount(operationId: string): Promise<void> {
+  return OfflineStorage.incrementRetryCount(operationId);
+}
+
+/**
+ * Save data to cache
+ */
+export async function saveToCache<T>(key: string, data: T, ttl?: number): Promise<void> {
+  return OfflineStorage.setCache(key, data, ttl);
+}
+
+/**
+ * Load data from cache
+ */
+export async function loadFromCache<T>(key: string): Promise<T | null> {
+  return OfflineStorage.getCache<T>(key);
+}
+
+/**
+ * Add a pending change to the queue
+ */
+export async function addPendingChange(operation: Omit<QueuedOperation, 'id' | 'timestamp' | 'retryCount'>): Promise<void> {
+  return OfflineStorage.queueOperation(operation);
+}
+
+/**
+ * Clear all pending changes
+ */
+export async function clearPendingChanges(): Promise<void> {
+  return OfflineStorage.clearQueue();
+}
+
 export class OfflineStorage {
   /**
    * Cache data with TTL

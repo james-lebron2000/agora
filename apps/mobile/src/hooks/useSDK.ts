@@ -789,7 +789,7 @@ export function useBridgeSDK(address: Address | null | undefined) {
   const getQuote = useCallback(async (params: {
     sourceChain: SupportedChain;
     destinationChain: SupportedChain;
-    token: 'USDC' | 'ETH';
+    token: 'USDC' | 'WETH';
     amount: string;
   }) => {
     if (!address) throw new Error('Address required');

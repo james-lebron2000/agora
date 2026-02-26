@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Animated,
   ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,50 +28,6 @@ interface PerformanceMonitorProps {
   onPress?: () => void;
   compact?: boolean;
 }
-
-interface MiniChartProps {
-  data: number[];
-  color: string;
-  width?: number;
-  height?: number;
-}
-
-// ============================================================================
-// Mini Sparkline Chart
-// ============================================================================
-
-const MiniSparkline: React.FC<MiniChartProps> = ({
-  data,
-  color,
-  width = scale(40),
-  height = verticalScale(20),
-}) => {
-  if (data.length < 2) {
-    return <View style={{ width, height }} />;
-  }
-
-  const maxValue = Math.max(...data, 1);
-  const minValue = Math.min(...data);
-  const range = maxValue - minValue || 1;
-
-  const points = data.map((value, index) => {
-    const x = (index / (data.length - 1)) * width;
-    const y = height - ((value - minValue) / range) * height;
-    return `${x},${y}`;
-  });
-
-  const pathD = `M ${points.join(' L ')}`;
-
-  // For React Native, we need to use SVG from react-native-svg
-  // This is a simplified version - in a real implementation you'd use Path from react-native-svg
-  return (
-    <View style={{ width, height, justifyContent: 'center', alignItems: 'center' }}>
-      <Text style={{ fontSize: responsiveFontSize(10), color: color, fontWeight: '600' }}>
-        {data.length > 0 ? `↗ ${data[data.length - 1].toFixed(0)}` : '...'}
-      </Text>
-    </View>
-  );
-};
 
 // ============================================================================
 // Main Component
@@ -105,9 +60,11 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
     return '#ef4444';
   }, []);
 
-  const getMemoryColor = useCallback((percentage: number): string => {
-    if (percentage <= 0.7) return '#10b981';
-    if (percentage <= 0.85) return '#f59e0b';
+  const getMemoryColor = useCallback((memoryMB: number): string => {
+    // Assuming typical mobile heap limit of ~200MB
+    const percentage = memoryMB / 200;
+    if (percentage <= 0.5) return '#10b981';
+    if (percentage <= 0.75) return '#f59e0b';
     return '#ef4444';
   }, []);
 
@@ -131,6 +88,15 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
         return { top: verticalScale(50), right: scale(16) };
     }
   }, [position]);
+
+  // Handle loading state
+  if (!metrics) {
+    return (
+      <View style={[styles.compactContainer, positionStyles, style]}>
+        <ActivityIndicator size="small" color="#64748b" />
+      </View>
+    );
+  }
 
   // Compact mode - just a small badge
   if (compact) {
@@ -156,6 +122,11 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
       </TouchableOpacity>
     );
   }
+
+  // Extract FPS history for chart
+  const fpsHistory = useMemo(() => {
+    return history.map(m => m.fps);
+  }, [history]);
 
   // Full widget mode
   return (
@@ -190,11 +161,11 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
           <Ionicons
             name="hardware-chip-outline"
             size={moderateScale(16)}
-            color={getMemoryColor(metrics.memory.percentage)}
+            color={getMemoryColor(metrics.memory)}
           />
           <View>
             <Text style={styles.metricValue}>
-              {(metrics.memory.percentage * 100).toFixed(0)}%
+              {Math.round(metrics.memory)}MB
             </Text>
             {showLabel && <Text style={styles.metricLabel}>MEM</Text>}
           </View>
@@ -219,24 +190,25 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
         <View style={styles.expandedContent}>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Latency</Text>
-            <Text style={styles.detailValue}>{metrics.latency.avg.toFixed(0)}ms</Text>
+            <Text style={styles.detailValue}>{metrics.latency.toFixed(0)}ms</Text>
           </View>
 
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Throughput</Text>
-            <Text style={styles.detailValue}>{metrics.throughput.rps.toFixed(1)}/s</Text>
+            <Text style={styles.detailLabel}>History Points</Text>
+            <Text style={styles.detailValue}>{history.length}</Text>
           </View>
 
-          {/* Mini FPS Chart */}
-          {history.fps.length > 2 && (
+          {/* FPS History display */}
+          {fpsHistory.length > 2 && (
             <View style={styles.chartContainer}>
               <Text style={styles.chartLabel}>FPS History</Text>
-              <MiniSparkline
-                data={history.fps}
-                color={getFpsColor(metrics.fps)}
-                width={scale(120)}
-                height={verticalScale(30)}
-              />
+              <View style={styles.fpsHistoryRow}>
+                <Text style={styles.fpsHistoryText}>
+                  Min: {Math.min(...fpsHistory).toFixed(0)} | 
+                  Avg: {(fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length).toFixed(0)} | 
+                  Max: {Math.max(...fpsHistory).toFixed(0)}
+                </Text>
+              </View>
             </View>
           )}
 
@@ -262,6 +234,8 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
 // Styles
 // ============================================================================
 
+import { ActivityIndicator } from 'react-native';
+
 const styles = StyleSheet.create({
   // Compact mode
   compactContainer: {
@@ -278,6 +252,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    backgroundColor: 'white',
   },
   compactText: {
     fontSize: responsiveFontSize(12),
@@ -368,6 +343,16 @@ const styles = StyleSheet.create({
     fontSize: responsiveFontSize(10),
     color: '#94a3b8',
     marginBottom: verticalScale(4),
+  },
+  fpsHistoryRow: {
+    backgroundColor: '#f8fafc',
+    padding: scale(8),
+    borderRadius: moderateScale(8),
+  },
+  fpsHistoryText: {
+    fontSize: responsiveFontSize(11),
+    color: '#64748b',
+    fontWeight: '500',
   },
   statusRow: {
     flexDirection: 'row',

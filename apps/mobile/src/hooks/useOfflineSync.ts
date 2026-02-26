@@ -7,6 +7,8 @@ import {
   incrementRetryCount,
   saveToCache,
   loadFromCache,
+  addPendingChange,
+  clearPendingChanges,
   type PendingChange,
 } from '../services/offlineStorage';
 
@@ -32,6 +34,7 @@ export interface SyncResult {
 }
 
 // Sync function type
+// Use endpoint as the key for sync functions
 type SyncFunction = (change: PendingChange) => Promise<{ success: boolean; conflict?: boolean }>;
 
 /**
@@ -76,7 +79,7 @@ export function useOfflineSync(
         setSyncState(prev => ({
           ...prev,
           pendingCount: pending.length,
-          hasConflicts: pending.some(p => p.retryCount >= MAX_RETRY_COUNT),
+          hasConflicts: pending.some((p: PendingChange) => p.retryCount >= MAX_RETRY_COUNT),
         }));
       }
     } catch (error) {
@@ -113,13 +116,14 @@ export function useOfflineSync(
       }
 
       // Sort by timestamp (oldest first)
-      const sortedPending = pending.sort((a, b) => a.timestamp - b.timestamp);
+      const sortedPending = pending.sort((a: PendingChange, b: PendingChange) => a.timestamp - b.timestamp);
 
       for (const change of sortedPending) {
-        const syncFn = syncFunctions[change.entity];
+        // Use endpoint as the key for sync functions
+        const syncFn = syncFunctions[change.endpoint];
 
         if (!syncFn) {
-          console.warn(`[useOfflineSync] No sync function for entity: ${change.entity}`);
+          console.warn(`[useOfflineSync] No sync function for endpoint: ${change.endpoint}`);
           result.failed.push(change.id);
           continue;
         }
@@ -184,18 +188,24 @@ export function useOfflineSync(
   // Queue a change for sync
   const queueChange = useCallback(async (
     type: PendingChange['type'],
-    entity: string,
-    data: any
+    endpoint: string,
+    payload: any
   ): Promise<PendingChange> => {
-    const { addPendingChange } = await import('../services/offlineStorage');
-    const change = await addPendingChange(type, entity, data);
+    const change: PendingChange = {
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      type,
+      endpoint,
+      payload,
+      timestamp: Date.now(),
+      retryCount: 0,
+    };
+    await addPendingChange(change);
     await updatePendingCount();
     return change;
   }, [updatePendingCount]);
 
   // Clear all pending changes
   const clearPending = useCallback(async () => {
-    const { clearPendingChanges } = await import('../services/offlineStorage');
     await clearPendingChanges();
     await updatePendingCount();
   }, [updatePendingCount]);
@@ -203,7 +213,7 @@ export function useOfflineSync(
   // Retry failed changes
   const retryFailed = useCallback(async () => {
     const pending = await getPendingChanges();
-    const failed = pending.filter(p => p.retryCount > 0);
+    const failed = pending.filter((p: PendingChange) => p.retryCount > 0);
 
     for (const change of failed) {
       change.retryCount = 0;
@@ -312,15 +322,17 @@ export function useCachedData<T>(
 
       // Try to load from cache first
       if (!refresh) {
-        const cached = await loadFromCache<T>(key, { maxAge });
-        if (cached) {
-          setData(cached);
-          setIsLoading(false);
+        const cached = await loadFromCache<CacheEntryWithMetadata<T>>(key);
+        if (cached && cached.data) {
+          const entryAge = Date.now() - cached.timestamp;
+          if (entryAge < maxAge) {
+            setData(cached.data);
+            setIsLoading(false);
 
-          // Check if stale (older than half maxAge)
-          const entry = await loadFromCache<{ timestamp: number }>(key);
-          if (entry && Date.now() - entry.timestamp > maxAge / 2) {
-            setIsStale(true);
+            // Check if stale (older than half maxAge)
+            if (entryAge > maxAge / 2) {
+              setIsStale(true);
+            }
           }
         }
       }
@@ -379,6 +391,18 @@ export function useCachedData<T>(
   };
 }
 
+// Helper type for cached data with metadata
+interface CacheEntryWithMetadata<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
+
+// Extended PendingChange with sync status
+interface PendingChangeWithSync extends PendingChange {
+  syncStatus?: 'pending' | 'synced';
+}
+
 /**
  * Hook for optimistic updates
  */
@@ -407,13 +431,10 @@ export function useOptimisticUpdate<T>(
 
     // Apply optimistic update
     onOptimisticUpdate?.(optimisticData);
-    await saveToCache(key, optimisticData, { syncStatus: 'pending' });
 
     try {
       const result = await updateFn(optimisticData);
 
-      // Mark as synced
-      await saveToCache(key, result, { syncStatus: 'synced' });
       options.onSuccess?.(result);
 
       return result;
@@ -422,21 +443,20 @@ export function useOptimisticUpdate<T>(
       setError(error);
 
       // Rollback
-      const rollback = async () => {
+      const rollback = () => {
         if (originalDataRef.current) {
-          await saveToCache(key, originalDataRef.current, { syncStatus: 'synced' });
           onOptimisticUpdate?.(originalDataRef.current);
         }
       };
 
-      await rollback();
+      rollback();
       options.onError?.(error, rollback);
 
       return null;
     } finally {
       setIsUpdating(false);
     }
-  }, [key, updateFn, options]);
+  }, [updateFn, options]);
 
   return {
     update,
