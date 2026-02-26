@@ -32,6 +32,13 @@ export {
   generatePredictionChartData,
 } from './useSurvivalSimulation';
 
+// Performance Hooks
+export {
+  usePerformanceMonitor,
+  type PerformanceMetrics,
+  type PerformanceReport,
+} from './usePerformanceMonitor';
+
 // Network Hooks
 export {
   useNetworkState,
