@@ -23,8 +23,8 @@ type LazyComponentWithPrefetch<T> = React.LazyExoticComponent<React.ComponentTyp
 };
 
 // Helper to create lazy component with prefetch
-function createLazyComponent<T>(loader: () => Promise<{ default: React.ComponentType<T> }>) {
-  const LazyComponent = lazy(loader) as LazyComponentWithPrefetch<T>;
+function createLazyComponent(loader: () => Promise<{ default: React.ComponentType<any> }>) {
+  const LazyComponent = lazy(loader) as LazyComponentWithPrefetch<any>;
   let prefetchPromise: Promise<void> | null = null;
   
   LazyComponent.prefetch = () => {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion, type Variants } from 'framer-motion';
 
 interface ProfileSkeletonProps {
   variant?: 'full' | 'compact' | 'card';
@@ -50,7 +50,7 @@ function FullSkeleton({ className = '' }: { className?: string }) {
       y: 0,
       transition: {
         duration: 0.4,
-        ease: 'easeOut',
+        ease: 'easeOut' as const,
       },
     },
   };
@@ -62,7 +62,7 @@ function FullSkeleton({ className = '' }: { className?: string }) {
       transition: {
         duration: 1.5,
         repeat: Infinity,
-        ease: 'easeInOut',
+        ease: 'easeInOut' as const,
       },
     },
   };
@@ -278,7 +278,7 @@ function CompactSkeleton({ className = '' }: { className?: string }) {
       transition: {
         duration: 1.5,
         repeat: Infinity,
-        ease: 'easeInOut',
+        ease: "easeInOut" as const,
       },
     },
   };
@@ -322,7 +322,7 @@ function CardSkeleton({ className = '' }: { className?: string }) {
       transition: {
         duration: 1.5,
         repeat: Infinity,
-        ease: 'easeInOut',
+        ease: "easeInOut" as const,
       },
     },
   };
@@ -471,7 +471,7 @@ export function StatsSkeleton({ count = 6 }: { count?: number }) {
       transition: {
         duration: 1.5,
         repeat: Infinity,
-        ease: 'easeInOut',
+        ease: "easeInOut" as const,
       },
     },
   };
@@ -524,7 +524,7 @@ export function AchievementSkeleton({ count = 8 }: { count?: number }) {
       transition: {
         duration: 1.5,
         repeat: Infinity,
-        ease: 'easeInOut',
+        ease: "easeInOut" as const,
       },
     },
   };

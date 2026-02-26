@@ -1,19 +1,21 @@
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useAgent, type AgentHealthStatus } from '../hooks/useAgent'
+import { useAgent } from '../hooks/useAgent'
 import { AgentAvatar } from '../components/AgentAvatar'
 import { AchievementBadgeGrid, generateSampleBadges } from '../components/AchievementBadge'
 import { ActivityHeatmap, generateActivityData } from '../components/ActivityHeatmap'
 import { AgentLevelProgress, calculateLevel } from '../components/AgentLevelProgress'
 import { ShareProfile } from '../components/ShareProfile'
 import { AgentLeaderboard } from '../components/AgentLeaderboard'
-import { useLeaderboard } from '../hooks/useLeaderboard'
+import { useLeaderboard, type TimePeriod, type SortMetric } from '../hooks/useLeaderboard'
 import { AgentPerformanceDashboard } from '../components/AgentPerformanceDashboard'
 import { ProfileSkeleton } from '../components/ProfileSkeleton'
 import { ThemeSelector, ThemeToggleButton } from '../components/ThemeSelector'
 import { AnimatedAchievementGrid, type Achievement as AnimatedAchievement } from '../components/AnimatedAchievementCard'
 import { ProfileExport } from '../components/ProfileExport'
-import { Settings } from 'lucide-react'
+import { Settings, Share2 } from 'lucide-react'
+import type { AgentStatus, AgentReputation, AgentHealth, AgentEconomics, AgentCapability, AgentActivity } from '../hooks/useAgent'
+import type { AgentHealthStatus } from '@agora/sdk/survival'
 import {
   Activity,
   Wallet,
@@ -27,7 +29,6 @@ import {
   AlertCircle,
   CheckCircle,
   History,
-  Settings,
   Loader2,
   RefreshCw,
   Shield,
@@ -333,6 +334,7 @@ export function AgentProfile() {
     { id: 'achievements', label: 'Badges', shortLabel: 'Badges', icon: Award },
     { id: 'leaderboard', label: 'Ranks', shortLabel: 'Ranks', icon: Trophy },
     { id: 'history', label: 'History', shortLabel: 'History', icon: History },
+    { id: 'settings', label: 'Settings', shortLabel: 'Settings', icon: Settings },
   ]
 
   if (isLoading && !agent) {
@@ -773,6 +775,56 @@ export function AgentProfile() {
     </div>
   )
 
+  const renderSettings = () => (
+    <motion.div 
+      className="space-y-6"
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+    >
+      <motion.div variants={itemVariants}>
+        <div className="bg-white rounded-2xl p-5 border border-agora-100 shadow-sm">
+          <h3 className="font-semibold text-agora-900 mb-4 flex items-center gap-2">
+            <Settings className="w-5 h-5 text-agora-500" />
+            Profile Settings
+          </h3>
+          <ThemeSelector />
+        </div>
+      </motion.div>
+      
+      <motion.div variants={itemVariants}>
+        <div className="bg-white rounded-2xl p-5 border border-agora-100 shadow-sm">
+          <h3 className="font-semibold text-agora-900 mb-4 flex items-center gap-2">
+            <Share2 className="w-5 h-5 text-agora-500" />
+            Export & Share
+          </h3>
+          <div className="flex flex-wrap gap-3">
+            <ProfileExport profile={{
+              id: agent.id,
+              name: agent.name,
+              bio: '',
+              walletAddress: '0x1234567890abcdef1234567890abcdef12345678',
+              level: agentLevel.level,
+              xp: 0,
+              reputation: Math.round(agent.reputation.score * 10),
+              tasksCompleted: agent.reputation.completedTasks,
+              tasksPosted: 0,
+              totalEarned: agent.reputation.totalEarnings.toString(),
+              totalSpent: '0',
+              memberSince: Date.now() - 365 * 24 * 60 * 60 * 1000,
+              lastActive: Date.now(),
+              status: agent.status,
+              isVerified: false,
+              isPremium: false,
+              skills: ['AI', 'Web3', 'DeFi'],
+            }} />
+            <ShareProfile agentId={agent.id} agentName={agent.name} />
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-agora-50 to-agora-100/50 pt-safe-top pb-safe-bottom">
       <div className="max-w-3xl mx-auto px-3 sm:px-4 pt-16 sm:pt-20 lg:pt-6 pb-20 sm:pb-24">
@@ -801,16 +853,16 @@ export function AgentProfile() {
                   <ProfileExport profile={{
                     id: agent.id,
                     name: agent.name,
-                    bio: agent.bio || '',
-                    walletAddress: agent.walletAddress,
+                    bio: '',
+                    walletAddress: '0x1234567890abcdef1234567890abcdef12345678',
                     level: agentLevel.level,
-                    xp: agentLevel.xp,
+                    xp: 0,
                     reputation: Math.round(agent.reputation.score * 10),
                     tasksCompleted: agent.reputation.completedTasks,
-                    tasksPosted: agent.reputation.tasksPosted,
+                    tasksPosted: 0,
                     totalEarned: agent.reputation.totalEarnings.toString(),
                     totalSpent: '0',
-                    memberSince: agent.reputation.joinedAt,
+                    memberSince: Date.now() - 365 * 24 * 60 * 60 * 1000,
                     lastActive: Date.now(),
                     status: agent.status,
                     isVerified: false,
@@ -942,6 +994,7 @@ export function AgentProfile() {
             {activeTab === 'achievements' && renderAchievements()}
             {activeTab === 'leaderboard' && renderLeaderboard()}
             {activeTab === 'history' && renderHistory()}
+            {activeTab === 'settings' && renderSettings()}
           </motion.div>
         </AnimatePresence>
       </div>
