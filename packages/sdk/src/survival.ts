@@ -11,7 +11,7 @@
  * @module survival
  */
 
-import { type Address } from 'viem';
+import { isAddress, type Address } from 'viem';
 import {
   type SupportedChain,
   type SupportedToken,
@@ -248,6 +248,62 @@ export const DEFAULT_SURVIVAL_CONFIG: SurvivalConfig = {
   preferredChain: 'base'
 };
 
+const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+
+function normalizeAgentId(agentId: unknown): string {
+  if (typeof agentId !== 'string' || agentId.trim().length === 0) {
+    throw new Error('agentId must be a non-empty string');
+  }
+  return agentId.trim();
+}
+
+function normalizeAddress(address: unknown, fieldName: string = 'address'): Address {
+  if (typeof address !== 'string' || !ADDRESS_REGEX.test(address) || !isAddress(address, { strict: false })) {
+    throw new Error(`${fieldName} must be a valid EVM address`);
+  }
+  return address as Address;
+}
+
+function parseFiniteNumber(value: unknown, fieldName: string): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${fieldName} must be a finite number`);
+  }
+  return parsed;
+}
+
+function parseNonNegative(value: unknown, fieldName: string): number {
+  const parsed = parseFiniteNumber(value, fieldName);
+  if (parsed < 0) {
+    throw new Error(`${fieldName} must be greater than or equal to 0`);
+  }
+  return parsed;
+}
+
+function parsePositiveInteger(value: unknown, fieldName: string): number {
+  const parsed = parseFiniteNumber(value, fieldName);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${fieldName} must be a positive integer`);
+  }
+  return parsed;
+}
+
+function parseRate(value: unknown, fieldName: string): number {
+  const parsed = parseFiniteNumber(value, fieldName);
+  if (parsed < 0 || parsed > 1) {
+    throw new Error(`${fieldName} must be between 0 and 1`);
+  }
+  return parsed;
+}
+
+function normalizeUsdString(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${fieldName} must be a non-empty numeric string`);
+  }
+  const parsed = parseNonNegative(value, fieldName);
+  return parsed.toString();
+}
+
 /**
  * Task acceptance decision result
  */
@@ -311,10 +367,18 @@ export function shouldAcceptTask(
   estimatedCost: string,
   minProfitMargin: number = 0.1
 ): TaskDecision {
+  if (!snapshot || !snapshot.health || !snapshot.economics) {
+    throw new Error('snapshot is required');
+  }
+  const margin = parseRate(minProfitMargin, 'minProfitMargin');
   const balance = parseFloat(snapshot.economics.balance);
   const taskBudget = parseFloat(budget);
   const cost = parseFloat(estimatedCost);
   const minBalance = parseFloat(DEFAULT_SURVIVAL_CONFIG.minSurvivalBalance);
+
+  if (![balance, taskBudget, cost, minBalance].every((value) => Number.isFinite(value))) {
+    throw new Error('snapshot, budget, and estimatedCost must contain valid numeric values');
+  }
 
   // Check survival mode
   if (snapshot.health.status === 'critical' || snapshot.health.status === 'dead') {
@@ -344,10 +408,10 @@ export function shouldAcceptTask(
   const profit = taskBudget - cost;
   const profitMargin = cost > 0 ? profit / cost : 0;
 
-  if (profitMargin < minProfitMargin) {
+  if (profitMargin < margin) {
     return {
       accept: false,
-      reason: `Profit margin (${(profitMargin * 100).toFixed(1)}%) below minimum (${(minProfitMargin * 100).toFixed(0)}%)`
+      reason: `Profit margin (${(profitMargin * 100).toFixed(1)}%) below minimum (${(margin * 100).toFixed(0)}%)`
     };
   }
 
@@ -362,6 +426,39 @@ export function shouldAcceptTask(
   return {
     accept: true,
     reason: `Task profitable (${(profitMargin * 100).toFixed(1)}% margin) and within budget constraints`
+  };
+}
+
+function normalizeSurvivalConfig(config: SurvivalConfig): SurvivalConfig {
+  const minSurvivalBalance = normalizeUsdString(config.minSurvivalBalance, 'minSurvivalBalance');
+  const dailyBurnRate = normalizeUsdString(config.dailyBurnRate, 'dailyBurnRate');
+  const autoBridgeThreshold = normalizeUsdString(config.autoBridgeThreshold, 'autoBridgeThreshold');
+  const healthCheckInterval = parsePositiveInteger(config.healthCheckInterval, 'healthCheckInterval');
+  const heartbeatInterval = parsePositiveInteger(config.heartbeatInterval, 'heartbeatInterval');
+  const healthySuccessRate = parseRate(config.healthySuccessRate, 'healthySuccessRate');
+  const criticalSuccessRate = parseRate(config.criticalSuccessRate, 'criticalSuccessRate');
+  const maxResponseTime = parsePositiveInteger(config.maxResponseTime, 'maxResponseTime');
+  const alertThreshold = parseNonNegative(config.alertThreshold, 'alertThreshold');
+  const preferredChain = config.preferredChain;
+  const autoBridgeTargetToken = config.autoBridgeTargetToken;
+
+  if (criticalSuccessRate > healthySuccessRate) {
+    throw new Error('criticalSuccessRate must be less than or equal to healthySuccessRate');
+  }
+
+  return {
+    ...config,
+    minSurvivalBalance,
+    dailyBurnRate,
+    autoBridgeThreshold,
+    healthCheckInterval,
+    heartbeatInterval,
+    healthySuccessRate,
+    criticalSuccessRate,
+    maxResponseTime,
+    alertThreshold,
+    preferredChain,
+    autoBridgeTargetToken,
   };
 }
 
@@ -412,19 +509,20 @@ export class EchoSurvivalManager {
     address: Address,
     config: Partial<SurvivalConfig> = {}
   ) {
-    this.agentId = agentId;
-    this.address = address;
-    this.config = { ...DEFAULT_SURVIVAL_CONFIG, ...config };
+    const normalizedAgentId = normalizeAgentId(agentId);
+    this.agentId = normalizedAgentId;
+    this.address = normalizeAddress(address);
+    this.config = normalizeSurvivalConfig({ ...DEFAULT_SURVIVAL_CONFIG, ...config });
 
     // Initialize stores
-    if (!heartbeatStore.has(agentId)) {
-      heartbeatStore.set(agentId, []);
+    if (!heartbeatStore.has(normalizedAgentId)) {
+      heartbeatStore.set(normalizedAgentId, []);
     }
-    if (!healthStore.has(agentId)) {
-      healthStore.set(agentId, this.createInitialHealth());
+    if (!healthStore.has(normalizedAgentId)) {
+      healthStore.set(normalizedAgentId, this.createInitialHealth());
     }
-    if (!economicsStore.has(agentId)) {
-      economicsStore.set(agentId, this.createInitialEconomics());
+    if (!economicsStore.has(normalizedAgentId)) {
+      economicsStore.set(normalizedAgentId, this.createInitialEconomics());
     }
   }
 
@@ -632,9 +730,10 @@ export class EchoSurvivalManager {
    * Check agent health status
    */
   checkHealth(agentId: string): AgentHealth {
-    const health = healthStore.get(agentId);
+    const normalizedAgentId = normalizeAgentId(agentId);
+    const health = healthStore.get(normalizedAgentId);
     if (!health) {
-      throw new Error(`Agent ${agentId} not found`);
+      throw new Error(`Agent ${normalizedAgentId} not found`);
     }
     return { ...health };
   }
@@ -652,7 +751,7 @@ export class EchoSurvivalManager {
     
     // Only fetch live balance if explicitly requested (avoids network calls in tests)
     if (fetchBalance) {
-      const targetAddress = address || this.address;
+      const targetAddress = address ? normalizeAddress(address) : this.address;
       const balances = await getAllBalances(targetAddress);
       currentBalance = balances.reduce((sum, b) => {
         return sum + parseFloat(b.usdcBalance);
@@ -857,6 +956,22 @@ export class EchoSurvivalManager {
     if (!current) {
       throw new Error(`Agent ${this.agentId} not found`);
     }
+
+    if (updates.successRate !== undefined) {
+      updates.successRate = parseRate(updates.successRate, 'successRate');
+    }
+    if (updates.consecutiveFailures !== undefined) {
+      updates.consecutiveFailures = parseNonNegative(updates.consecutiveFailures, 'consecutiveFailures');
+    }
+    if (updates.totalTasksCompleted !== undefined) {
+      updates.totalTasksCompleted = parseNonNegative(updates.totalTasksCompleted, 'totalTasksCompleted');
+    }
+    if (updates.totalTasksFailed !== undefined) {
+      updates.totalTasksFailed = parseNonNegative(updates.totalTasksFailed, 'totalTasksFailed');
+    }
+    if (updates.averageResponseTime !== undefined) {
+      updates.averageResponseTime = parseNonNegative(updates.averageResponseTime, 'averageResponseTime');
+    }
     
     const updated: AgentHealth = {
       ...current,
@@ -883,6 +998,7 @@ export class EchoSurvivalManager {
    * Record task completion
    */
   recordTaskCompleted(responseTimeMs: number): void {
+    const normalizedResponseTime = parseNonNegative(responseTimeMs, 'responseTimeMs');
     const health = healthStore.get(this.agentId);
     if (!health) return;
     
@@ -892,7 +1008,7 @@ export class EchoSurvivalManager {
     // Update average response time
     const totalTasks = health.totalTasksCompleted + health.totalTasksFailed;
     health.averageResponseTime = 
-      (health.averageResponseTime * (totalTasks - 1) + responseTimeMs) / totalTasks;
+      (health.averageResponseTime * (totalTasks - 1) + normalizedResponseTime) / totalTasks;
     
     // Update success rate
     health.successRate = health.totalTasksCompleted / totalTasks;
@@ -921,11 +1037,12 @@ export class EchoSurvivalManager {
    * Record earnings
    */
   recordEarnings(amount: string): void {
+    const normalizedAmount = parseNonNegative(amount, 'amount');
     const economics = economicsStore.get(this.agentId);
     if (!economics) return;
     
     const current = parseFloat(economics.totalEarned);
-    const addition = parseFloat(amount);
+    const addition = normalizedAmount;
     economics.totalEarned = (current + addition).toFixed(6);
     
     // Update current balance (earnings - spending)
@@ -945,11 +1062,12 @@ export class EchoSurvivalManager {
    * Record spending
    */
   recordSpending(amount: string): void {
+    const normalizedAmount = parseNonNegative(amount, 'amount');
     const economics = economicsStore.get(this.agentId);
     if (!economics) return;
     
     const current = parseFloat(economics.totalSpent);
-    const addition = parseFloat(amount);
+    const addition = normalizedAmount;
     economics.totalSpent = (current + addition).toFixed(6);
     
     // Update current balance (earnings - spending)
@@ -969,8 +1087,9 @@ export class EchoSurvivalManager {
    * Get heartbeat history
    */
   getHeartbeatHistory(limit: number = 100): HeartbeatRecord[] {
+    const normalizedLimit = parsePositiveInteger(limit, 'limit');
     const heartbeats = heartbeatStore.get(this.agentId) || [];
-    return heartbeats.slice(-limit);
+    return heartbeats.slice(-normalizedLimit);
   }
 
   /**
@@ -1335,8 +1454,9 @@ export class EchoSurvivalManager {
    * Execute an automated survival action
    */
   async executeAutomatedAction(actionId: string): Promise<boolean> {
+    const normalizedActionId = normalizeAgentId(actionId);
     const actions = automatedActionsStore.get(this.agentId) || [];
-    const action = actions.find(a => a.id === actionId);
+    const action = actions.find(a => a.id === normalizedActionId);
 
     if (!action || action.status !== 'pending') {
       return false;
@@ -1440,8 +1560,9 @@ export class EchoSurvivalManager {
    * Get survival history for trend analysis
    */
   getSurvivalHistory(limit: number = 100): SurvivalHistoryEntry[] {
+    const normalizedLimit = parsePositiveInteger(limit, 'limit');
     const history = survivalHistoryStore.get(this.agentId) || [];
-    return history.slice(-limit);
+    return history.slice(-normalizedLimit);
   }
 
   /**
@@ -1489,24 +1610,26 @@ export function getOrCreateSurvivalManager(
   address: Address,
   config?: Partial<SurvivalConfig>
 ): EchoSurvivalManager {
-  if (!globalManagers.has(agentId)) {
-    globalManagers.set(agentId, new EchoSurvivalManager(agentId, address, config));
+  const normalizedAgentId = normalizeAgentId(agentId);
+  const normalizedAddress = normalizeAddress(address);
+  if (!globalManagers.has(normalizedAgentId)) {
+    globalManagers.set(normalizedAgentId, new EchoSurvivalManager(normalizedAgentId, normalizedAddress, config));
   }
-  return globalManagers.get(agentId)!;
+  return globalManagers.get(normalizedAgentId)!;
 }
 
 /**
  * Get survival manager by agent ID
  */
 export function getSurvivalManager(agentId: string): EchoSurvivalManager | undefined {
-  return globalManagers.get(agentId);
+  return globalManagers.get(normalizeAgentId(agentId));
 }
 
 /**
  * Remove survival manager
  */
 export function removeSurvivalManager(agentId: string): boolean {
-  return globalManagers.delete(agentId);
+  return globalManagers.delete(normalizeAgentId(agentId));
 }
 
 export default EchoSurvivalManager;
