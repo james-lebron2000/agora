@@ -7,12 +7,11 @@
  * @module profile-components
  */
 
-import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useState, useEffect, memo } from 'react';
 import {
   AgentProfile,
   Achievement,
   ProfileStats,
-  AchievementTier,
   calculateLevel,
   levelProgress,
   xpForNextLevel,
@@ -86,16 +85,16 @@ export interface Theme {
 export const lightTheme: Theme = {
   mode: 'light',
   colors: {
-    primary: '#3B82F6',
-    secondary: '#8B5CF6',
-    success: '#10B981',
-    warning: '#F59E0B',
-    error: '#EF4444',
-    info: '#06B6D4',
+    primary: '#2563EB',
+    secondary: '#7C3AED',
+    success: '#059669',
+    warning: '#D97706',
+    error: '#DC2626',
+    info: '#0891B2',
     background: '#F8FAFC',
     surface: '#FFFFFF',
-    text: '#1E293B',
-    textSecondary: '#64748B',
+    text: '#0F172A',
+    textSecondary: '#475569',
     border: '#E2E8F0',
     borderLight: '#F1F5F9',
   },
@@ -185,7 +184,7 @@ export interface ThemeProviderProps {
   defaultTheme?: ThemeMode;
 }
 
-export const ThemeProvider: React.FC<ThemeProviderProps> = ({
+export const ThemeProvider: React.FC<ThemeProviderProps> = memo(({
   children,
   defaultTheme = 'light',
 }) => {
@@ -208,7 +207,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
       {children}
     </ThemeContext.Provider>
   );
-};
+});
+
+ThemeProvider.displayName = 'ThemeProvider';
 
 export const useTheme = (): ThemeContextValue => {
   const context = React.useContext(ThemeContext);
@@ -241,6 +242,93 @@ export function truncateAddress(address: string, start = 6, end = 4): string {
 }
 
 // ============================================================================
+// Error Boundary Component
+// ============================================================================
+
+export interface ErrorBoundaryProps {
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
+}
+
+export interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class ProfileErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+    this.props.onError?.(error, errorInfo);
+  }
+
+  render(): React.ReactNode {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div role="alert" aria-live="assertive" style={{ padding: '1rem', color: '#DC2626' }}>
+          <h3>Something went wrong</h3>
+          <p>{this.state.error?.message}</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================================================
+// Loading Skeleton Component
+// ============================================================================
+
+export interface SkeletonProps {
+  width?: string | number;
+  height?: string | number;
+  circle?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+}
+
+export const Skeleton: React.FC<SkeletonProps> = memo(({
+  width = '100%',
+  height = '1rem',
+  circle = false,
+  className,
+  style,
+}) => {
+  const { theme } = useTheme();
+  
+  const skeletonStyle = useMemo(() => ({
+    width,
+    height,
+    borderRadius: circle ? '50%' : theme.borderRadius.md,
+    backgroundColor: theme.colors.borderLight,
+    animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+    ...style,
+  } as React.CSSProperties), [width, height, circle, theme, style]);
+
+  return (
+    <>
+      <div className={className} style={skeletonStyle} aria-hidden="true" />
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
+    </>
+  );
+});
+
+Skeleton.displayName = 'Skeleton';
+
+// ============================================================================
 // ProfileCard Component
 // ============================================================================
 
@@ -254,7 +342,7 @@ export interface ProfileCardProps {
   style?: React.CSSProperties;
 }
 
-export const ProfileCard: React.FC<ProfileCardProps> = ({
+export const ProfileCard: React.FC<ProfileCardProps> = memo(({
   profile,
   variant = 'full',
   showAvatar = true,
@@ -264,164 +352,199 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
   style,
 }) => {
   const { theme } = useTheme();
-  const level = calculateLevel(profile.xp);
-  const progress = levelProgress(profile.xp);
-  const tierColor = getTierColor(
-    level >= 50 ? 'diamond' : level >= 30 ? 'platinum' : level >= 20 ? 'gold' : level >= 10 ? 'silver' : 'bronze'
-  );
+  
+  // Memoized computed values
+  const { level, progress, tierColor, initials } = useMemo(() => {
+    const lvl = calculateLevel(profile.xp);
+    const prog = levelProgress(profile.xp);
+    const tName = lvl >= 50 ? 'diamond' : lvl >= 30 ? 'platinum' : lvl >= 20 ? 'gold' : lvl >= 10 ? 'silver' : 'bronze';
+    return {
+      level: lvl,
+      progress: prog,
+      tierColor: getTierColor(tName),
+      initials: profile.name?.slice(0, 2).toUpperCase() || '??',
+    };
+  }, [profile.xp, profile.name]);
 
-  const styles = useMemo(() => ({
-    container: {
-      backgroundColor: theme.colors.surface,
-      borderRadius: theme.borderRadius.xl,
-      boxShadow: theme.shadows.md,
-      padding: variant === 'compact' ? theme.spacing.md : variant === 'minimal' ? theme.spacing.sm : theme.spacing.lg,
-      width: variant === 'compact' ? '280px' : variant === 'minimal' ? '200px' : '100%',
-      maxWidth: variant === 'full' ? '400px' : undefined,
-      border: `1px solid ${theme.colors.border}`,
-      transition: 'box-shadow 0.2s ease, transform 0.2s ease',
-    } as React.CSSProperties,
-    header: {
-      display: 'flex',
-      alignItems: variant === 'minimal' ? 'center' : 'flex-start',
-      gap: theme.spacing.md,
-      marginBottom: variant === 'minimal' ? 0 : theme.spacing.md,
-    } as React.CSSProperties,
-    avatar: {
-      width: variant === 'compact' ? '48px' : variant === 'minimal' ? '32px' : '80px',
-      height: variant === 'compact' ? '48px' : variant === 'minimal' ? '32px' : '80px',
-      borderRadius: theme.borderRadius.full,
-      objectFit: 'cover' as const,
-      border: `3px solid ${tierColor}`,
-      backgroundColor: theme.colors.borderLight,
-    } as React.CSSProperties,
-    avatarPlaceholder: {
-      width: variant === 'compact' ? '48px' : variant === 'minimal' ? '32px' : '80px',
-      height: variant === 'compact' ? '48px' : variant === 'minimal' ? '32px' : '80px',
-      borderRadius: theme.borderRadius.full,
-      backgroundColor: theme.colors.primary,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      color: 'white',
-      fontSize: variant === 'minimal' ? theme.typography.sizes.base : theme.typography.sizes['2xl'],
-      fontWeight: theme.typography.weights.bold,
-      border: `3px solid ${tierColor}`,
-    } as React.CSSProperties,
-    info: {
-      flex: 1,
-      minWidth: 0,
-    } as React.CSSProperties,
-    name: {
-      fontSize: variant === 'minimal' ? theme.typography.sizes.sm : theme.typography.sizes.xl,
-      fontWeight: theme.typography.weights.semibold,
-      color: theme.colors.text,
-      margin: 0,
-      marginBottom: variant === 'minimal' ? 0 : theme.spacing.xs,
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      whiteSpace: 'nowrap' as const,
-    } as React.CSSProperties,
-    level: {
-      fontSize: theme.typography.sizes.sm,
-      color: theme.colors.textSecondary,
-      display: 'flex',
-      alignItems: 'center',
-      gap: theme.spacing.xs,
-    } as React.CSSProperties,
-    levelBadge: {
-      backgroundColor: tierColor,
-      color: '#000',
-      padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
-      borderRadius: theme.borderRadius.full,
-      fontSize: theme.typography.sizes.xs,
-      fontWeight: theme.typography.weights.bold,
-    } as React.CSSProperties,
-    bio: {
-      fontSize: theme.typography.sizes.sm,
-      color: theme.colors.textSecondary,
-      margin: `${theme.spacing.sm} 0`,
-      lineHeight: 1.5,
-      display: variant === 'minimal' ? 'none' : '-webkit-box',
-      WebkitLineClamp: 2,
-      WebkitBoxOrient: 'vertical' as const,
-      overflow: 'hidden',
-    } as React.CSSProperties,
-    stats: {
-      display: 'grid',
-      gridTemplateColumns: variant === 'compact' ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
-      gap: theme.spacing.sm,
-      marginTop: theme.spacing.md,
-      paddingTop: theme.spacing.md,
-      borderTop: `1px solid ${theme.colors.border}`,
-    } as React.CSSProperties,
-    stat: {
-      textAlign: 'center' as const,
-    } as React.CSSProperties,
-    statValue: {
-      fontSize: theme.typography.sizes.lg,
-      fontWeight: theme.typography.weights.bold,
-      color: theme.colors.text,
-    } as React.CSSProperties,
-    statLabel: {
-      fontSize: theme.typography.sizes.xs,
-      color: theme.colors.textSecondary,
-      textTransform: 'uppercase' as const,
-      letterSpacing: '0.05em',
-    } as React.CSSProperties,
-    progressBar: {
-      height: '4px',
-      backgroundColor: theme.colors.border,
-      borderRadius: theme.borderRadius.full,
-      marginTop: theme.spacing.sm,
-      overflow: 'hidden',
-    } as React.CSSProperties,
-    progressFill: {
-      height: '100%',
-      backgroundColor: theme.colors.primary,
-      borderRadius: theme.borderRadius.full,
-      transition: 'width 0.3s ease',
-    } as React.CSSProperties,
-    editButton: {
-      position: 'absolute' as const,
-      top: theme.spacing.md,
-      right: theme.spacing.md,
-      background: 'none',
-      border: 'none',
-      color: theme.colors.textSecondary,
-      cursor: 'pointer',
-      padding: theme.spacing.sm,
-      borderRadius: theme.borderRadius.md,
-      transition: 'background-color 0.2s ease',
-    } as React.CSSProperties,
-    verifiedBadge: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      marginLeft: theme.spacing.xs,
-      color: theme.colors.primary,
-    } as React.CSSProperties,
-  }), [theme, variant, tierColor]);
+  // Memoized styles
+  const styles = useMemo(() => {
+    const isCompact = variant === 'compact';
+    const isMinimal = variant === 'minimal';
+    
+    return {
+      container: {
+        backgroundColor: theme.colors.surface,
+        borderRadius: theme.borderRadius.xl,
+        boxShadow: theme.shadows.md,
+        padding: isCompact ? theme.spacing.md : isMinimal ? theme.spacing.sm : theme.spacing.lg,
+        width: isCompact ? '280px' : isMinimal ? '200px' : '100%',
+        maxWidth: variant === 'full' ? '400px' : undefined,
+        border: `1px solid ${theme.colors.border}`,
+        transition: 'box-shadow 0.2s ease, transform 0.2s ease',
+        position: 'relative' as const,
+      } as React.CSSProperties,
+      header: {
+        display: 'flex',
+        alignItems: isMinimal ? 'center' : 'flex-start',
+        gap: theme.spacing.md,
+        marginBottom: isMinimal ? 0 : theme.spacing.md,
+      } as React.CSSProperties,
+      avatar: {
+        width: isCompact ? '48px' : isMinimal ? '32px' : '80px',
+        height: isCompact ? '48px' : isMinimal ? '32px' : '80px',
+        borderRadius: theme.borderRadius.full,
+        objectFit: 'cover' as const,
+        border: `3px solid ${tierColor}`,
+        backgroundColor: theme.colors.borderLight,
+      } as React.CSSProperties,
+      avatarPlaceholder: {
+        width: isCompact ? '48px' : isMinimal ? '32px' : '80px',
+        height: isCompact ? '48px' : isMinimal ? '32px' : '80px',
+        borderRadius: theme.borderRadius.full,
+        backgroundColor: theme.colors.primary,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#FFFFFF',
+        fontSize: isMinimal ? theme.typography.sizes.base : theme.typography.sizes['2xl'],
+        fontWeight: theme.typography.weights.bold,
+        border: `3px solid ${tierColor}`,
+      } as React.CSSProperties,
+      info: {
+        flex: 1,
+        minWidth: 0,
+      } as React.CSSProperties,
+      name: {
+        fontSize: isMinimal ? theme.typography.sizes.sm : theme.typography.sizes.xl,
+        fontWeight: theme.typography.weights.semibold,
+        color: theme.colors.text,
+        margin: 0,
+        marginBottom: isMinimal ? 0 : theme.spacing.xs,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap' as const,
+      } as React.CSSProperties,
+      level: {
+        fontSize: theme.typography.sizes.sm,
+        color: theme.colors.textSecondary,
+        display: 'flex',
+        alignItems: 'center',
+        gap: theme.spacing.xs,
+      } as React.CSSProperties,
+      levelBadge: {
+        backgroundColor: tierColor,
+        color: '#000000',
+        padding: `${theme.spacing.xs} ${theme.spacing.sm}`,
+        borderRadius: theme.borderRadius.full,
+        fontSize: theme.typography.sizes.xs,
+        fontWeight: theme.typography.weights.bold,
+      } as React.CSSProperties,
+      bio: {
+        fontSize: theme.typography.sizes.sm,
+        color: theme.colors.textSecondary,
+        margin: `${theme.spacing.sm} 0`,
+        lineHeight: 1.5,
+        display: isMinimal ? 'none' : '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical' as const,
+        overflow: 'hidden',
+      } as React.CSSProperties,
+      stats: {
+        display: 'grid',
+        gridTemplateColumns: isCompact ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+        gap: theme.spacing.sm,
+        marginTop: theme.spacing.md,
+        paddingTop: theme.spacing.md,
+        borderTop: `1px solid ${theme.colors.border}`,
+      } as React.CSSProperties,
+      stat: {
+        textAlign: 'center' as const,
+      } as React.CSSProperties,
+      statValue: {
+        fontSize: theme.typography.sizes.lg,
+        fontWeight: theme.typography.weights.bold,
+        color: theme.colors.text,
+      } as React.CSSProperties,
+      statLabel: {
+        fontSize: theme.typography.sizes.xs,
+        color: theme.colors.textSecondary,
+        textTransform: 'uppercase' as const,
+        letterSpacing: '0.05em',
+      } as React.CSSProperties,
+      progressBar: {
+        height: '4px',
+        backgroundColor: theme.colors.border,
+        borderRadius: theme.borderRadius.full,
+        marginTop: theme.spacing.sm,
+        overflow: 'hidden',
+      } as React.CSSProperties,
+      progressFill: {
+        height: '100%',
+        backgroundColor: theme.colors.primary,
+        borderRadius: theme.borderRadius.full,
+        transition: 'width 0.3s ease',
+        width: `${progress * 100}%`,
+      } as React.CSSProperties,
+      editButton: {
+        position: 'absolute' as const,
+        top: theme.spacing.md,
+        right: theme.spacing.md,
+        background: 'none',
+        border: 'none',
+        color: theme.colors.textSecondary,
+        cursor: 'pointer',
+        padding: theme.spacing.sm,
+        borderRadius: theme.borderRadius.md,
+        transition: 'background-color 0.2s ease, transform 0.2s ease',
+        minWidth: '44px',
+        minHeight: '44px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      } as React.CSSProperties,
+      verifiedBadge: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        marginLeft: theme.spacing.xs,
+        color: theme.colors.primary,
+      } as React.CSSProperties,
+    };
+  }, [theme, variant, tierColor, progress]);
 
-  const initials = profile.name?.slice(0, 2).toUpperCase() || '??';
+  // Event handlers with useCallback
+  const handleEditClick = useCallback(() => {
+    onEdit?.();
+  }, [onEdit]);
+
+  const handleEditMouseEnter = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.backgroundColor = theme.colors.borderLight;
+    e.currentTarget.style.transform = 'scale(1.05)';
+  }, [theme]);
+
+  const handleEditMouseLeave = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.backgroundColor = 'transparent';
+    e.currentTarget.style.transform = 'scale(1)';
+  }, []);
+
+  const isMinimal = variant === 'minimal';
+  const progressPercent = Math.round(progress * 100);
 
   return (
     <article
       className={className}
-      style={styles.container}
+      style={{ ...styles.container, ...style }}
       role="article"
-      aria-label={`Profile card for ${profile.name}`}
+      aria-label={`${profile.name}'s profile card`}
     >
       {onEdit && variant === 'full' && (
         <button
-          onClick={onEdit}
+          onClick={handleEditClick}
+          onMouseEnter={handleEditMouseEnter}
+          onMouseLeave={handleEditMouseLeave}
           style={styles.editButton}
           aria-label="Edit profile"
-          onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
-            e.currentTarget.style.backgroundColor = theme.colors.borderLight;
-          }}
-          onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
-            e.currentTarget.style.backgroundColor = 'transparent';
-          }}
+          title="Edit profile"
+          type="button"
         >
           ✏️
         </button>
@@ -434,6 +557,7 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
               src={profile.avatarUrl}
               alt={`${profile.name}'s avatar`}
               style={styles.avatar}
+              loading="lazy"
             />
           ) : (
             <div style={styles.avatarPlaceholder} aria-hidden="true">
@@ -445,43 +569,62 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
           <h3 style={styles.name}>
             {profile.name}
             {profile.isVerified && (
-              <span style={styles.verifiedBadge} title="Verified">
+              <span 
+                style={styles.verifiedBadge} 
+                title="Verified account"
+                aria-label="Verified account"
+              >
                 ✓
               </span>
             )}
           </h3>
-          {variant !== 'minimal' && (
+          {!isMinimal && (
             <div style={styles.level}>
-              <span style={styles.levelBadge}>Lv.{level}</span>
-              <span>{Math.round(progress * 100)}% to next level</span>
+              <span style={styles.levelBadge} aria-label={`Level ${level}`}>Lv.{level}</span>
+              <span aria-label={`${progressPercent}% progress to next level`}>
+                {progressPercent}% to next level
+              </span>
             </div>
           )}
         </div>
       </div>
 
-      {variant !== 'minimal' && profile.bio && (
+      {!isMinimal && profile.bio && (
         <p style={styles.bio}>{profile.bio}</p>
       )}
 
-      {variant !== 'minimal' && (
-        <div style={styles.progressBar} role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
-          <div style={{ ...styles.progressFill, width: `${progress * 100}%` }} />
+      {!isMinimal && (
+        <div 
+          style={styles.progressBar} 
+          role="progressbar" 
+          aria-valuenow={progressPercent} 
+          aria-valuemin={0} 
+          aria-valuemax={100}
+          aria-label="Level progress"
+        >
+          <div style={styles.progressFill} />
         </div>
       )}
 
-      {showStats && variant !== 'minimal' && (
-        <div style={styles.stats} role="list">
+      {showStats && !isMinimal && (
+        <div style={styles.stats} role="list" aria-label="Profile statistics">
           <div style={styles.stat} role="listitem">
-            <div style={styles.statValue}>{profile.tasksCompleted}</div>
+            <div style={styles.statValue} aria-label={`${profile.tasksCompleted} tasks completed`}>
+              {profile.tasksCompleted}
+            </div>
             <div style={styles.statLabel}>Tasks</div>
           </div>
           <div style={styles.stat} role="listitem">
-            <div style={styles.statValue}>{formatCurrency(profile.totalEarned)}</div>
+            <div style={styles.statValue} aria-label={`Total earned: ${formatCurrency(profile.totalEarned)}`}>
+              {formatCurrency(profile.totalEarned)}
+            </div>
             <div style={styles.statLabel}>Earned</div>
           </div>
           {variant === 'full' && (
             <div style={styles.stat} role="listitem">
-              <div style={styles.statValue}>{profile.reputation}</div>
+              <div style={styles.statValue} aria-label={`Reputation: ${profile.reputation}`}>
+                {profile.reputation}
+              </div>
               <div style={styles.statLabel}>Rep</div>
             </div>
           )}
@@ -489,7 +632,9 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
       )}
     </article>
   );
-};
+});
+
+ProfileCard.displayName = 'ProfileCard';
 
 // ============================================================================
 // AchievementBadge Component
@@ -503,7 +648,7 @@ export interface AchievementBadgeProps {
   style?: React.CSSProperties;
 }
 
-export const AchievementBadge: React.FC<AchievementBadgeProps> = ({
+export const AchievementBadge: React.FC<AchievementBadgeProps> = memo(({
   achievement,
   size = 'md',
   showTooltip = true,
@@ -512,16 +657,20 @@ export const AchievementBadge: React.FC<AchievementBadgeProps> = ({
 }) => {
   const { theme } = useTheme();
   const [isHovered, setIsHovered] = useState(false);
+  const [isTouched, setIsTouched] = useState(false);
 
-  const sizeConfig = {
-    sm: { icon: '20px', container: '32px', fontSize: theme.typography.sizes.sm },
-    md: { icon: '28px', container: '48px', fontSize: theme.typography.sizes.lg },
-    lg: { icon: '40px', container: '72px', fontSize: theme.typography.sizes['2xl'] },
-  };
+  const sizeConfig = useMemo(() => ({
+    sm: { icon: '20px', container: '32px', fontSize: theme.typography.sizes.sm, touchTarget: '44px' },
+    md: { icon: '28px', container: '48px', fontSize: theme.typography.sizes.lg, touchTarget: '48px' },
+    lg: { icon: '40px', container: '72px', fontSize: theme.typography.sizes['2xl'], touchTarget: '72px' },
+  }), [theme]);
 
-  const tierColor = getTierColor(achievement.tier);
-  const isUnlocked = !!achievement.unlockedAt || !!achievement.completedAt;
-  const progress = achievement.progress || 0;
+  const { tierColor, isUnlocked, progress, sizeValue } = useMemo(() => ({
+    tierColor: getTierColor(achievement.tier),
+    isUnlocked: !!achievement.unlockedAt || !!achievement.completedAt,
+    progress: achievement.progress || 0,
+    sizeValue: sizeConfig[size],
+  }), [achievement, sizeConfig, size]);
 
   const styles = useMemo(() => ({
     container: {
@@ -529,25 +678,36 @@ export const AchievementBadge: React.FC<AchievementBadgeProps> = ({
       display: 'inline-flex',
       alignItems: 'center',
       justifyContent: 'center',
-      width: sizeConfig[size].container,
-      height: sizeConfig[size].container,
+      width: sizeValue.touchTarget,
+      height: sizeValue.touchTarget,
+      borderRadius: theme.borderRadius.lg,
+      backgroundColor: 'transparent',
+      border: 'none',
+      cursor: showTooltip ? 'pointer' : 'default',
+      padding: 0,
+    } as React.CSSProperties,
+    badge: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: sizeValue.container,
+      height: sizeValue.container,
       borderRadius: theme.borderRadius.lg,
       backgroundColor: isUnlocked ? `${tierColor}20` : theme.colors.borderLight,
       border: `2px solid ${isUnlocked ? tierColor : theme.colors.border}`,
-      cursor: showTooltip ? 'pointer' : 'default',
       transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-      transform: isHovered ? 'scale(1.05)' : 'scale(1)',
-      boxShadow: isHovered ? theme.shadows.md : 'none',
+      transform: (isHovered || isTouched) ? 'scale(1.05)' : 'scale(1)',
+      boxShadow: (isHovered || isTouched) ? theme.shadows.md : 'none',
     } as React.CSSProperties,
     icon: {
-      fontSize: sizeConfig[size].fontSize,
+      fontSize: sizeValue.fontSize,
       filter: isUnlocked ? 'none' : 'grayscale(100%)',
       opacity: isUnlocked ? 1 : 0.5,
     } as React.CSSProperties,
     progressRing: {
       position: 'absolute' as const,
-      bottom: '-2px',
-      right: '-2px',
+      bottom: '2px',
+      right: '2px',
       width: size === 'sm' ? '12px' : size === 'md' ? '16px' : '20px',
       height: size === 'sm' ? '12px' : size === 'md' ? '16px' : '20px',
       borderRadius: '50%',
@@ -573,9 +733,11 @@ export const AchievementBadge: React.FC<AchievementBadgeProps> = ({
       border: `1px solid ${theme.colors.border}`,
       zIndex: 100,
       minWidth: '200px',
-      opacity: isHovered && showTooltip ? 1 : 0,
-      visibility: isHovered && showTooltip ? 'visible' : 'hidden',
+      maxWidth: '280px',
+      opacity: (isHovered || isTouched) && showTooltip ? 1 : 0,
+      visibility: (isHovered || isTouched) && showTooltip ? 'visible' : 'hidden',
       transition: 'opacity 0.2s ease, visibility 0.2s ease',
+      pointerEvents: 'none',
     } as React.CSSProperties,
     tooltipTitle: {
       fontSize: theme.typography.sizes.sm,
@@ -608,36 +770,57 @@ export const AchievementBadge: React.FC<AchievementBadgeProps> = ({
       width: `${progress}%`,
       transition: 'width 0.3s ease',
     } as React.CSSProperties,
-  }), [theme, size, tierColor, isUnlocked, progress, isHovered, showTooltip]);
+  }), [theme, sizeValue, tierColor, isUnlocked, progress, isHovered, isTouched, showTooltip, size]);
+
+  const handleMouseEnter = useCallback(() => setIsHovered(true), []);
+  const handleMouseLeave = useCallback(() => setIsHovered(false), []);
+  const handleTouchStart = useCallback(() => setIsTouched(true), []);
+  const handleTouchEnd = useCallback(() => setIsTouched(false), []);
+
+  const ariaLabel = isUnlocked 
+    ? `${achievement.name} achievement unlocked - ${achievement.tier} tier`
+    : `${achievement.name} achievement - ${achievement.tier} tier - ${Math.round(progress)}% progress`;
 
   return (
-    <div
+    <button
       className={className}
       style={{ ...styles.container, ...style }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      role="img"
-      aria-label={`${achievement.name} - ${achievement.tier} tier ${isUnlocked ? '(unlocked)' : `(${progress}% progress)`}`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      aria-label={ariaLabel}
+      type="button"
     >
-      <span style={styles.icon}>{achievement.icon}</span>
-      {!isUnlocked && progress > 0 && (
-        <span style={styles.progressRing}>{Math.round(progress)}%</span>
-      )}
+      <div style={styles.badge}>
+        <span style={styles.icon} aria-hidden="true">{achievement.icon}</span>
+        {!isUnlocked && progress > 0 && (
+          <span style={styles.progressRing} aria-hidden="true">{Math.round(progress)}%</span>
+        )}
+      </div>
       {showTooltip && (
-        <div style={styles.tooltip} role="tooltip">
+        <div style={styles.tooltip} role="tooltip" aria-hidden={!(isHovered || isTouched)}>
           <div style={styles.tooltipTitle}>{achievement.name}</div>
           <div style={styles.tooltipDesc}>{achievement.description}</div>
-          <div style={styles.tooltipTier}>{achievement.tier}</div>
+          <div style={styles.tooltipTier}>{achievement.tier} Tier</div>
           {!isUnlocked && (
-            <div style={styles.tooltipProgress} role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
+            <div 
+              style={styles.tooltipProgress} 
+              role="progressbar" 
+              aria-valuenow={Math.round(progress)} 
+              aria-valuemin={0} 
+              aria-valuemax={100}
+            >
               <div style={styles.tooltipProgressFill} />
             </div>
           )}
         </div>
       )}
-    </div>
+    </button>
   );
-};
+});
+
+AchievementBadge.displayName = 'AchievementBadge';
 
 // ============================================================================
 // LevelProgress Component
@@ -651,7 +834,7 @@ export interface LevelProgressProps {
   style?: React.CSSProperties;
 }
 
-export const LevelProgress: React.FC<LevelProgressProps> = ({
+export const LevelProgress: React.FC<LevelProgressProps> = memo(({
   level,
   xp,
   showDetails = true,
@@ -660,18 +843,22 @@ export const LevelProgress: React.FC<LevelProgressProps> = ({
 }) => {
   const { theme } = useTheme();
   
-  const { progress, xpInLevel, xpNeeded } = useMemo(() => {
+  const { progress, xpInLevel, xpNeeded, tierColor, tierName } = useMemo(() => {
     const currentLevelBaseXp = (level - 1) * (level - 1) * 100;
     const nextLevelXp = level * level * 100;
-    const xpInLevel = xp - currentLevelBaseXp;
-    const xpNeeded = nextLevelXp - currentLevelBaseXp;
-    const progress = xpNeeded > 0 ? Math.min(1, Math.max(0, xpInLevel / xpNeeded)) : 1;
-    return { progress, xpInLevel, xpNeeded };
+    const xpInLvl = xp - currentLevelBaseXp;
+    const xpNeed = nextLevelXp - currentLevelBaseXp;
+    const prog = xpNeed > 0 ? Math.min(1, Math.max(0, xpInLvl / xpNeed)) : 1;
+    const tName = level >= 50 ? 'diamond' : level >= 30 ? 'platinum' : level >= 20 ? 'gold' : level >= 10 ? 'silver' : 'bronze';
+    
+    return { 
+      progress: prog, 
+      xpInLevel: xpInLvl, 
+      xpNeeded: xpNeed,
+      tierColor: getTierColor(tName),
+      tierName: tName.charAt(0).toUpperCase() + tName.slice(1),
+    };
   }, [level, xp]);
-
-  const tierColor = getTierColor(
-    level >= 50 ? 'diamond' : level >= 30 ? 'platinum' : level >= 20 ? 'gold' : level >= 10 ? 'silver' : 'bronze'
-  );
 
   const styles = useMemo(() => ({
     container: {
@@ -701,7 +888,7 @@ export const LevelProgress: React.FC<LevelProgressProps> = ({
       justifyContent: 'center',
       fontSize: theme.typography.sizes.xl,
       fontWeight: theme.typography.weights.bold,
-      color: '#000',
+      color: '#000000',
     } as React.CSSProperties,
     levelInfo: {
       display: 'flex',
@@ -753,31 +940,48 @@ export const LevelProgress: React.FC<LevelProgressProps> = ({
     } as React.CSSProperties,
   }), [theme, tierColor, progress]);
 
+  const progressPercent = Math.round(progress * 100);
+
   return (
-    <div className={className} style={{ ...styles.container, ...style }} role="region" aria-label="Level progress">
+    <div 
+      className={className} 
+      style={{ ...styles.container, ...style }} 
+      role="region" 
+      aria-label={`Level ${level} progress`}
+    >
       <div style={styles.header}>
         <div style={styles.levelBadge}>
-          <div style={styles.levelNumber}>{level}</div>
+          <div style={styles.levelNumber} aria-label={`Level ${level}`}>{level}</div>
           <div style={styles.levelInfo}>
             <span style={styles.levelLabel}>Current Level</span>
-            <span style={styles.levelValue}>
-              {level >= 50 ? 'Diamond' : level >= 30 ? 'Platinum' : level >= 20 ? 'Gold' : level >= 10 ? 'Silver' : 'Bronze'}
-            </span>
+            <span style={styles.levelValue} aria-label={`Tier: ${tierName}`}>{tierName}</span>
           </div>
         </div>
       </div>
 
-      <div style={styles.progressContainer} role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
+      <div 
+        style={styles.progressContainer} 
+        role="progressbar" 
+        aria-valuenow={progressPercent} 
+        aria-valuemin={0} 
+        aria-valuemax={100}
+        aria-label={`${progressPercent}% progress to level ${level + 1}`}
+      >
         <div style={styles.progressBar} />
-        <div style={styles.progressGlow} />
+        <div style={styles.progressGlow} aria-hidden="true" />
       </div>
 
       {showDetails && (
         <div style={styles.details}>
           <span>
-            <span style={styles.xpValue}>{formatNumber(xpInLevel)}</span> / {formatNumber(xpNeeded)} XP
+            <span style={styles.xpValue} aria-label={`${formatNumber(xpInLevel)} XP in current level`}>
+              {formatNumber(xpInLevel)}
+            </span> 
+            <span aria-label={`out of ${formatNumber(xpNeeded)} XP needed`}> / {formatNumber(xpNeeded)} XP</span>
           </span>
-          <span>{Math.round(progress * 100)}% to Level {level + 1}</span>
+          <span aria-label={`${progressPercent}% to level ${level + 1}`}>
+            {progressPercent}% to Lv.{level + 1}
+          </span>
         </div>
       )}
 
@@ -789,7 +993,9 @@ export const LevelProgress: React.FC<LevelProgressProps> = ({
       `}</style>
     </div>
   );
-};
+});
+
+LevelProgress.displayName = 'LevelProgress';
 
 // ============================================================================
 // ReputationScore Component
@@ -804,7 +1010,7 @@ export interface ReputationScoreProps {
   style?: React.CSSProperties;
 }
 
-export const ReputationScore: React.FC<ReputationScoreProps> = ({
+export const ReputationScore: React.FC<ReputationScoreProps> = memo(({
   score,
   size = 'md',
   showTrend = true,
@@ -814,37 +1020,41 @@ export const ReputationScore: React.FC<ReputationScoreProps> = ({
 }) => {
   const { theme } = useTheme();
 
-  const sizeConfig = {
+  const sizeConfig = useMemo(() => ({
     sm: { diameter: 48, stroke: 4, fontSize: theme.typography.sizes.sm },
     md: { diameter: 72, stroke: 6, fontSize: theme.typography.sizes.lg },
     lg: { diameter: 120, stroke: 8, fontSize: theme.typography.sizes['2xl'] },
-  };
+  }), [theme]);
 
   const { diameter, stroke, fontSize } = sizeConfig[size];
   const radius = (diameter - stroke) / 2;
   const circumference = radius * 2 * Math.PI;
   const offset = circumference - (score / 100) * circumference;
 
-  const getScoreColor = (s: number): string => {
-    if (s >= 90) return theme.colors.success;
-    if (s >= 70) return theme.colors.primary;
-    if (s >= 50) return theme.colors.warning;
+  const scoreColor = useMemo(() => {
+    if (score >= 90) return theme.colors.success;
+    if (score >= 70) return theme.colors.primary;
+    if (score >= 50) return theme.colors.warning;
     return theme.colors.error;
-  };
+  }, [score, theme]);
 
-  const scoreColor = getScoreColor(score);
-
-  const trendIcons = {
+  const trendIcons = useMemo(() => ({
     up: '↑',
     down: '↓',
     stable: '→',
-  };
+  }), []);
 
-  const trendColors = {
+  const trendColors = useMemo(() => ({
     up: theme.colors.success,
     down: theme.colors.error,
     stable: theme.colors.textSecondary,
-  };
+  }), [theme]);
+
+  const trendLabels = useMemo(() => ({
+    up: 'Trending up',
+    down: 'Trending down',
+    stable: 'Stable',
+  }), []);
 
   const styles = useMemo(() => ({
     container: {
@@ -893,26 +1103,33 @@ export const ReputationScore: React.FC<ReputationScoreProps> = ({
       textTransform: 'uppercase' as const,
       letterSpacing: '0.05em',
     } as React.CSSProperties,
-  }), [theme, diameter, stroke, scoreColor, offset, circumference, fontSize, trend]);
+  }), [theme, diameter, stroke, scoreColor, offset, circumference, fontSize, trend, trendColors]);
 
   return (
-    <div className={className} style={{ ...styles.container, ...style }} role="img" aria-label={`Reputation score: ${score}`}>
+    <div 
+      className={className} 
+      style={{ ...styles.container, ...style }} 
+      role="img" 
+      aria-label={`Reputation score: ${score} out of 100, ${trendLabels[trend]}`}
+    >
       <div style={{ position: 'relative', width: diameter, height: diameter }}>
-        <svg width={diameter} height={diameter} style={styles.svg}>
+        <svg width={diameter} height={diameter} style={styles.svg} aria-hidden="true">
           <circle cx={diameter / 2} cy={diameter / 2} r={radius} style={styles.background} />
           <circle cx={diameter / 2} cy={diameter / 2} r={radius} style={styles.progress} />
         </svg>
-        <div style={styles.label}>{score}</div>
+        <div style={styles.label} aria-hidden="true">{score}</div>
       </div>
       {showTrend && (
-        <div style={styles.trend}>
-          <span>{trendIcons[trend]}</span>
+        <div style={styles.trend} aria-label={trendLabels[trend]}>
+          <span aria-hidden="true">{trendIcons[trend]}</span>
           <span style={styles.labelText}>Reputation</span>
         </div>
       )}
     </div>
   );
-};
+});
+
+ReputationScore.displayName = 'ReputationScore';
 
 // ============================================================================
 // ProfileStatsGrid Component
@@ -925,7 +1142,7 @@ export interface ProfileStatsGridProps {
   style?: React.CSSProperties;
 }
 
-export const ProfileStatsGrid: React.FC<ProfileStatsGridProps> = ({
+export const ProfileStatsGrid: React.FC<ProfileStatsGridProps> = memo(({
   stats,
   columns = 3,
   className,
@@ -933,7 +1150,7 @@ export const ProfileStatsGrid: React.FC<ProfileStatsGridProps> = ({
 }) => {
   const { theme } = useTheme();
 
-  const statItems = [
+  const statItems = useMemo(() => [
     { key: 'tasksCompleted', label: 'Tasks Done', value: stats.tasksCompleted, icon: '✓' },
     { key: 'tasksCompletedThisMonth', label: 'This Month', value: stats.tasksCompletedThisMonth, icon: '📅' },
     { key: 'successRate', label: 'Success Rate', value: `${Math.round(stats.successRate * 100)}%`, icon: '📈' },
@@ -942,7 +1159,7 @@ export const ProfileStatsGrid: React.FC<ProfileStatsGridProps> = ({
     { key: 'currentStreak', label: 'Streak', value: `${stats.currentStreak}d`, icon: '🔥' },
     { key: 'longestStreak', label: 'Best Streak', value: `${stats.longestStreak}d`, icon: '🏆' },
     { key: 'averageResponseTime', label: 'Response', value: `${stats.averageResponseTime}m`, icon: '⚡' },
-  ];
+  ], [stats]);
 
   const styles = useMemo(() => ({
     container: {
@@ -960,6 +1177,7 @@ export const ProfileStatsGrid: React.FC<ProfileStatsGridProps> = ({
       alignItems: 'center',
       textAlign: 'center' as const,
       transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+      minHeight: '80px',
     } as React.CSSProperties,
     icon: {
       fontSize: theme.typography.sizes.xl,
@@ -979,6 +1197,16 @@ export const ProfileStatsGrid: React.FC<ProfileStatsGridProps> = ({
     } as React.CSSProperties,
   }), [theme, columns]);
 
+  const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.transform = 'translateY(-2px)';
+    e.currentTarget.style.boxShadow = theme.shadows.md;
+  }, [theme]);
+
+  const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.transform = 'translateY(0)';
+    e.currentTarget.style.boxShadow = 'none';
+  }, []);
+
   return (
     <div className={className} style={{ ...styles.container, ...style }} role="list" aria-label="Profile statistics">
       {statItems.map((stat) => (
@@ -986,23 +1214,20 @@ export const ProfileStatsGrid: React.FC<ProfileStatsGridProps> = ({
           key={stat.key}
           style={styles.statCard}
           role="listitem"
-          onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => {
-            e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = theme.shadows.md;
-          }}
-          onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = 'none';
-          }}
+          aria-label={`${stat.label}: ${stat.value}`}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
         >
           <span style={styles.icon} aria-hidden="true">{stat.icon}</span>
-          <span style={styles.value}>{stat.value}</span>
+          <span style={styles.value} aria-hidden="true">{stat.value}</span>
           <span style={styles.label}>{stat.label}</span>
         </div>
       ))}
     </div>
   );
-};
+});
+
+ProfileStatsGrid.displayName = 'ProfileStatsGrid';
 
 // ============================================================================
 // SkillTags Component
@@ -1016,7 +1241,7 @@ export interface SkillTagsProps {
   style?: React.CSSProperties;
 }
 
-export const SkillTags: React.FC<SkillTagsProps> = ({
+export const SkillTags: React.FC<SkillTagsProps> = memo(({
   skills,
   maxDisplay,
   onTagClick,
@@ -1049,6 +1274,9 @@ export const SkillTags: React.FC<SkillTagsProps> = ({
       border: `1px solid ${theme.colors.border}`,
       cursor: onTagClick ? 'pointer' : 'default',
       transition: 'background-color 0.2s ease, transform 0.2s ease, border-color 0.2s ease',
+      minHeight: '32px',
+      display: 'inline-flex',
+      alignItems: 'center',
     } as React.CSSProperties,
     moreButton: {
       backgroundColor: 'transparent',
@@ -1060,6 +1288,7 @@ export const SkillTags: React.FC<SkillTagsProps> = ({
       border: `1px dashed ${theme.colors.border}`,
       cursor: 'pointer',
       transition: 'background-color 0.2s ease, border-color 0.2s ease',
+      minHeight: '32px',
     } as React.CSSProperties,
   }), [theme, onTagClick]);
 
@@ -1069,6 +1298,34 @@ export const SkillTags: React.FC<SkillTagsProps> = ({
     }
   }, [onTagClick]);
 
+  const handleShowAll = useCallback(() => {
+    setShowAll(true);
+  }, []);
+
+  const handleTagMouseEnter = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.backgroundColor = theme.colors.border;
+    e.currentTarget.style.borderColor = theme.colors.primary;
+    if (onTagClick) {
+      e.currentTarget.style.transform = 'scale(1.05)';
+    }
+  }, [theme, onTagClick]);
+
+  const handleTagMouseLeave = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.backgroundColor = theme.colors.borderLight;
+    e.currentTarget.style.borderColor = theme.colors.border;
+    e.currentTarget.style.transform = 'scale(1)';
+  }, []);
+
+  const handleMoreMouseEnter = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.backgroundColor = theme.colors.borderLight;
+    e.currentTarget.style.borderColor = theme.colors.primary;
+  }, [theme]);
+
+  const handleMoreMouseLeave = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.style.backgroundColor = 'transparent';
+    e.currentTarget.style.borderColor = theme.colors.border;
+  }, [theme]);
+
   return (
     <div className={className} style={{ ...styles.container, ...style }} role="list" aria-label="Skills">
       {displaySkills.map((skill, index) => (
@@ -1076,20 +1333,11 @@ export const SkillTags: React.FC<SkillTagsProps> = ({
           key={`${skill}-${index}`}
           style={styles.tag}
           onClick={() => handleTagClick(skill)}
-          onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
-            e.currentTarget.style.backgroundColor = theme.colors.border;
-            e.currentTarget.style.borderColor = theme.colors.primary;
-            if (onTagClick) {
-              e.currentTarget.style.transform = 'scale(1.05)';
-            }
-          }}
-          onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
-            e.currentTarget.style.backgroundColor = theme.colors.borderLight;
-            e.currentTarget.style.borderColor = theme.colors.border;
-            e.currentTarget.style.transform = 'scale(1)';
-          }}
+          onMouseEnter={handleTagMouseEnter}
+          onMouseLeave={handleTagMouseLeave}
           role="listitem"
-          aria-label={`Skill: ${skill}`}
+          aria-label={`Skill: ${skill}${onTagClick ? ', clickable' : ''}`}
+          type="button"
         >
           {skill}
         </button>
@@ -1097,23 +1345,20 @@ export const SkillTags: React.FC<SkillTagsProps> = ({
       {hiddenCount > 0 && !showAll && (
         <button
           style={styles.moreButton}
-          onClick={() => setShowAll(true)}
-          onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
-            e.currentTarget.style.backgroundColor = theme.colors.borderLight;
-            e.currentTarget.style.borderColor = theme.colors.primary;
-          }}
-          onMouseLeave={(e: React.MouseEvent<HTMLButtonElement>) => {
-            e.currentTarget.style.backgroundColor = 'transparent';
-            e.currentTarget.style.borderColor = theme.colors.border;
-          }}
+          onClick={handleShowAll}
+          onMouseEnter={handleMoreMouseEnter}
+          onMouseLeave={handleMoreMouseLeave}
           aria-label={`Show ${hiddenCount} more skills`}
+          type="button"
         >
           +{hiddenCount} more
         </button>
       )}
     </div>
   );
-};
+});
+
+SkillTags.displayName = 'SkillTags';
 
 // ============================================================================
 // Re-exports for convenience
@@ -1123,7 +1368,6 @@ export {
   AgentProfile,
   Achievement,
   ProfileStats,
-  AchievementTier,
   calculateLevel,
   levelProgress,
   xpForNextLevel,
@@ -1145,4 +1389,6 @@ export default {
   formatNumber,
   formatCurrency,
   truncateAddress,
+  ProfileErrorBoundary,
+  Skeleton,
 };

@@ -80,6 +80,29 @@ export declare const useTheme: () => ThemeContextValue;
 export declare function formatNumber(num: number, decimals?: number): string;
 export declare function formatCurrency(value: string | number, currency?: string): string;
 export declare function truncateAddress(address: string, start?: number, end?: number): string;
+export interface ErrorBoundaryProps {
+    children: React.ReactNode;
+    fallback?: React.ReactNode;
+    onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
+}
+export interface ErrorBoundaryState {
+    hasError: boolean;
+    error: Error | null;
+}
+export declare class ProfileErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+    constructor(props: ErrorBoundaryProps);
+    static getDerivedStateFromError(error: Error): ErrorBoundaryState;
+    componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void;
+    render(): React.ReactNode;
+}
+export interface SkeletonProps {
+    width?: string | number;
+    height?: string | number;
+    circle?: boolean;
+    className?: string;
+    style?: React.CSSProperties;
+}
+export declare const Skeleton: React.FC<SkeletonProps>;
 export interface ProfileCardProps {
     profile: AgentProfile;
     variant?: 'compact' | 'full' | 'minimal';
@@ -130,7 +153,7 @@ export interface SkillTagsProps {
     style?: React.CSSProperties;
 }
 export declare const SkillTags: React.FC<SkillTagsProps>;
-export { AgentProfile, Achievement, ProfileStats, AchievementTier, calculateLevel, levelProgress, xpForNextLevel, getTierColor, } from './profile.js';
+export { AgentProfile, Achievement, ProfileStats, calculateLevel, levelProgress, xpForNextLevel, getTierColor, } from './profile.js';
 declare const _default: {
     ProfileCard: React.FC<ProfileCardProps>;
     AchievementBadge: React.FC<AchievementBadgeProps>;
@@ -145,6 +168,8 @@ declare const _default: {
     formatNumber: typeof formatNumber;
     formatCurrency: typeof formatCurrency;
     truncateAddress: typeof truncateAddress;
+    ProfileErrorBoundary: typeof ProfileErrorBoundary;
+    Skeleton: React.FC<SkeletonProps>;
 };
 export default _default;
 //# sourceMappingURL=profile-components.d.ts.map
