@@ -54,4 +54,6 @@ export { calculateAgentScore, formatPriceRange, getStarRating, formatETA, } from
 export { PerformanceTracker, MemoryMonitor, MetricCollector, createPerformanceTracker, createMemoryMonitor, createMetricCollector, } from './performance-monitor.js';
 // DateTime Formatter utilities (v1.0) - Internationalized date/time formatting
 export { formatDate, formatTime, formatDuration, timeAgo, } from './utils/formatters.js';
+// Mobile module (v1.0) - Device detection, optimization, and gesture handling
+export { DeviceDetector, MobileOptimizer, TouchGestureHandler, isMobile, isTablet, getOptimizedConfig, DEFAULT_GESTURE_CONFIG, } from './mobile.js';
 //# sourceMappingURL=index.js.map

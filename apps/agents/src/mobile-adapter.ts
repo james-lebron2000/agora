@@ -12,7 +12,7 @@
 import {
   AgoraAgent,
   type AgoraAgentOptions,
-} from '../../../packages/sdk/src/agent.js';
+} from '@agora/sdk/agent.js';
 import {
   DeviceDetector,
   MobileOptimizer,
@@ -30,7 +30,7 @@ import {
   isMobile,
   isTablet,
   getOptimizedConfig,
-} from '../../../packages/sdk/src/mobile.js';
+} from '@agora/sdk/mobile.js';
 
 /**
  * Mobile agent configuration options
