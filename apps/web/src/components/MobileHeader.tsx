@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Menu, X, Bell } from 'lucide-react'
 import { WalletButton } from './WalletButton'
 
-type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge' | 'profile'
+type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge' | 'profile' | 'ad-auction'
 
 interface MobileHeaderProps {
   currentRoute: Route
@@ -21,6 +21,7 @@ export function MobileHeader({ currentRoute, onNavigate, title }: MobileHeaderPr
     ar: 'AR HUD',
     bridge: 'Bridge',
     profile: 'Profile',
+    'ad-auction': 'Ad Auction',
   }
 
   return (

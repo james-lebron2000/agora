@@ -42,6 +42,7 @@ const Echo = createLazyComponent(() => import('./pages/Echo').then(m => ({ defau
 const Tokenomics = createLazyComponent(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
 const ARHud = createLazyComponent(() => import('./pages/ARHud').then(m => ({ default: m.ARHud })))
 const AgentProfile = createLazyComponent(() => import('./pages/AgentProfile').then(m => ({ default: m.AgentProfile })))
+const AdAuction = createLazyComponent(() => import('./pages/AdAuction').then(m => ({ default: m.AdAuction })))
 
 // Route prefetch map for navigation preloading
 const routePrefetchMap: Record<Route, () => Promise<void>> = {
@@ -52,6 +53,7 @@ const routePrefetchMap: Record<Route, () => Promise<void>> = {
   ar: ARHud.prefetch,
   bridge: () => Promise.resolve(), // Bridge uses WalletProvider, no lazy load needed for the card
   profile: AgentProfile.prefetch,
+  'ad-auction': AdAuction.prefetch,
 };
 
 // ============================================================================
@@ -141,7 +143,7 @@ const MOCK_METRICS: NetworkMetrics = {
   volume24h: 12450,
 }
 
-type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge' | 'profile'
+type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge' | 'profile' | 'ad-auction'
 
 const FALLBACK_AGENTS: AgentSummary[] = [
   {
@@ -228,6 +230,7 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
     if (window.location.pathname === '/tokenomics') return 'tokenomics'
     if (window.location.pathname === '/bridge') return 'bridge'
     if (window.location.pathname === '/profile') return 'profile'
+    if (window.location.pathname === '/ad-auction') return 'ad-auction'
     if (window.location.pathname.startsWith('/analytics')) return 'analytics'
     return 'home'
   }
@@ -253,7 +256,9 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
                 ? '/bridge'
                 : next === 'profile'
                   ? '/profile'
-                  : '/'
+                  : next === 'ad-auction'
+                    ? '/ad-auction'
+                    : '/'
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path)
       setRoute(next)
@@ -730,6 +735,13 @@ function AppContent() {
         onClick={() => navigate('profile')}
         onHover={() => prefetchRoute('profile')}
       />
+      <NavLink
+        label="Ad Auction"
+        href="/ad-auction"
+        active={route === 'ad-auction'}
+        onClick={() => navigate('ad-auction')}
+        onHover={() => prefetchRoute('ad-auction')}
+      />
     </>
   )
 
@@ -796,6 +808,16 @@ function AppContent() {
       <Suspense fallback={<PageLoader />}>
         <MobileHeader currentRoute={route} onNavigate={navigate} />
         <AgentProfile />
+        <MobileBottomNav currentRoute={route} onNavigate={navigate} />
+      </Suspense>
+    )
+  }
+
+  if (route === 'ad-auction') {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <MobileHeader currentRoute={route} onNavigate={navigate} />
+        <AdAuction />
         <MobileBottomNav currentRoute={route} onNavigate={navigate} />
       </Suspense>
     )

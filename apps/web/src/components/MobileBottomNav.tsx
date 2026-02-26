@@ -9,10 +9,11 @@ import {
   X,
   User,
   Settings,
-  Bell
+  Bell,
+  Gavel
 } from 'lucide-react'
 
-type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge' | 'profile'
+type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge' | 'profile' | 'ad-auction'
 
 interface MobileBottomNavProps {
   currentRoute: Route
@@ -54,6 +55,7 @@ export function MobileBottomNav({ currentRoute, onNavigate }: MobileBottomNavPro
   const menuItems = [
     { id: 'tokenomics' as Route, label: 'Tokenomics', icon: Coins },
     { id: 'profile' as Route, label: 'Profile', icon: User },
+    { id: 'ad-auction' as Route, label: 'Ad Auction', icon: Gavel },
   ]
 
   return (
