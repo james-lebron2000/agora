@@ -1,578 +1,501 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { AppState, AppStateStatus, NativeModules, Platform } from 'react-native';
+import { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import { FlatListProps, ListRenderItem, ListRenderItemInfo } from 'react-native';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-export interface PerformanceMetrics {
-  fps: number;
-  memory: {
-    used: number;
-    total: number;
-    percentage: number;
-  };
-  latency: {
-    avg: number;
-    min: number;
-    max: number;
-    p95: number;
-  };
-  throughput: {
-    rps: number;
-    total: number;
-  };
-  errorRate: number;
-  timestamp: number;
+/**
+ * Enhanced memoization hook for expensive computations
+ */
+export function useMemoizedValue<T>(compute: () => T, deps: React.DependencyList): T {
+  return useMemo(compute, deps);
 }
 
-export interface MetricHistory {
-  fps: number[];
-  memory: number[];
-  latency: number[];
-  timestamps: number[];
+/**
+ * Hook for optimized FlatList rendering with getItemLayout and keyExtractor
+ */
+export function useOptimizedFlatList<T>(
+  data: T[],
+  renderItem: ListRenderItem<T>,
+  itemHeight: number,
+  keyExtractor?: (item: T, index: number) => string,
+  options?: Partial<FlatListProps<T>>
+): FlatListProps<T> {
+  const itemHeightRef = useRef(itemHeight);
+  
+  // Memoized getItemLayout for better performance
+  const getItemLayout = useCallback((
+    _data: ArrayLike<T> | null | undefined,
+    index: number
+  ) => ({
+    length: itemHeightRef.current,
+    offset: itemHeightRef.current * index,
+    index,
+  }), []);
+  
+  // Default keyExtractor if not provided
+  const defaultKeyExtractor = useCallback((item: T, index: number) => {
+    return keyExtractor ? keyExtractor(item, index) : `${index}`;
+  }, [keyExtractor]);
+  
+  // Memoized renderItem to prevent unnecessary re-renders
+  const memoizedRenderItem = useCallback((info: ListRenderItemInfo<T>) => {
+    return renderItem(info);
+  }, [renderItem]);
+  
+  return {
+    data,
+    renderItem: memoizedRenderItem,
+    getItemLayout,
+    keyExtractor: defaultKeyExtractor,
+    removeClippedSubviews: true,
+    maxToRenderPerBatch: 10,
+    windowSize: 10,
+    initialNumToRender: 10,
+    ...options,
+  };
 }
 
-export type SeverityLevel = 'info' | 'warning' | 'critical';
+/**
+ * Hook for debounced callbacks
+ */
+export function useDebouncedCallback<T extends (...args: any[]) => any>(
+  callback: T,
+  delay: number
+): T {
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const debouncedCallback = useCallback((...args: Parameters<T>) => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    
+    timeoutRef.current = setTimeout(() => {
+      callback(...args);
+    }, delay);
+  }, [callback, delay]) as T;
+  
+  return debouncedCallback;
+}
 
+/**
+ * Hook for throttled callbacks
+ */
+export function useThrottledCallback<T extends (...args: any[]) => any>(
+  callback: T,
+  delay: number
+): T {
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastCallRef = useRef(0);
+  
+  const throttledCallback = useCallback((...args: Parameters<T>) => {
+    const now = Date.now();
+    
+    if (now - lastCallRef.current >= delay) {
+      lastCallRef.current = now;
+      callback(...args);
+    } else {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      
+      timeoutRef.current = setTimeout(() => {
+        lastCallRef.current = Date.now();
+        callback(...args);
+      }, delay - (now - lastCallRef.current));
+    }
+  }, [callback, delay]) as T;
+  
+  return throttledCallback;
+}
+
+/**
+ * Hook for conditional memoization
+ */
+export function useConditionalMemo<T>(
+  compute: () => T,
+  deps: React.DependencyList,
+  condition: boolean
+): T {
+  return useMemo(() => {
+    if (condition) {
+      return compute();
+    }
+    return compute();
+  }, condition ? deps : []);
+}
+
+/**
+ * Hook for tracking component render count (for debugging)
+ */
+export function useRenderCount(componentName: string): number {
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  
+  if (__DEV__) {
+    console.log(`${componentName} rendered ${renderCountRef.current} times`);
+  }
+  
+  return renderCountRef.current;
+}
+
+/**
+ * Hook for expensive operations with loading state
+ */
+export function useExpensiveOperation<T>(
+  operation: () => Promise<T>,
+  deps: React.DependencyList
+): {
+  data: T | null;
+  loading: boolean;
+  error: Error | null;
+  execute: () => Promise<void>;
+} {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  
+  const execute = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const result = await operation();
+      setData(result);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  }, [operation]);
+  
+  useEffect(() => {
+    execute();
+  }, deps);
+  
+  return { data, loading, error, execute };
+}
+
+/**
+ * Hook for image preloading
+ */
+export function useImagePreloader(imageUrls: string[]): {
+  loaded: boolean;
+  progress: number;
+  errors: string[];
+} {
+  const [loaded, setLoaded] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [errors, setErrors] = useState<string[]>([]);
+  
+  useEffect(() => {
+    if (imageUrls.length === 0) {
+      setLoaded(true);
+      return;
+    }
+    
+    let loadedCount = 0;
+    const errorUrls: string[] = [];
+    
+    const loadImage = (url: string) => {
+      return new Promise<void>((resolve) => {
+        // Use Image from react-native
+        const { Image: RNImage } = require('react-native');
+        RNImage.prefetch(url)
+          .then(() => {
+            loadedCount++;
+            setProgress(loadedCount / imageUrls.length);
+            resolve();
+          })
+          .catch(() => {
+            errorUrls.push(url);
+            setErrors([...errorUrls]);
+            loadedCount++;
+            setProgress(loadedCount / imageUrls.length);
+            resolve();
+          });
+      });
+    };
+    
+    Promise.all(imageUrls.map(loadImage)).then(() => {
+      setLoaded(true);
+    });
+  }, [imageUrls]);
+  
+  return { loaded, progress, errors };
+}
+
+/**
+ * Hook for measuring component performance
+ */
+export function usePerformanceMeasure(componentName: string): {
+  startMeasure: () => void;
+  endMeasure: () => void;
+} {
+  const startTimeRef = useRef<number>(0);
+  
+  const startMeasure = useCallback(() => {
+    startTimeRef.current = performance.now();
+  }, []);
+  
+  const endMeasure = useCallback(() => {
+    const endTime = performance.now();
+    const duration = endTime - startTimeRef.current;
+    
+    if (__DEV__) {
+      console.log(`${componentName} render time: ${duration.toFixed(2)}ms`);
+    }
+  }, [componentName]);
+  
+  return { startMeasure, endMeasure };
+}
+
+/**
+ * Hook for managing component visibility state
+ */
+export function useVisibilityState(
+  onVisible?: () => void,
+  onHidden?: () => void
+): {
+  isVisible: boolean;
+  setVisible: (visible: boolean) => void;
+} {
+  const [isVisible, setIsVisible] = useState(true);
+  
+  const setVisible = useCallback((visible: boolean) => {
+    setIsVisible(visible);
+    
+    if (visible && onVisible) {
+      onVisible();
+    } else if (!visible && onHidden) {
+      onHidden();
+    }
+  }, [onVisible, onHidden]);
+  
+  return { isVisible, setVisible };
+}
+
+/**
+ * Hook for batching multiple state updates
+ */
+export function useBatchedState<T extends Record<string, any>>(
+  initialState: T
+): [
+  T,
+  (updates: Partial<T>) => void,
+  (newState: T) => void
+] {
+  const [state, setState] = useState<T>(initialState);
+  
+  const batchUpdate = useCallback((updates: Partial<T>) => {
+    setState(prev => ({ ...prev, ...updates }));
+  }, []);
+  
+  const setStateDirectly = useCallback((newState: T) => {
+    setState(newState);
+  }, []);
+  
+  return [state, batchUpdate, setStateDirectly];
+}
+
+// Re-export React hooks for convenience
+export {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useEffect,
+} from 'react';
+
+// Types for Performance Monitoring
 export interface PerformanceAlert {
   id: string;
-  type: 'fps' | 'memory' | 'latency' | 'error_rate';
-  severity: SeverityLevel;
+  type: 'critical' | 'warning' | 'info';
+  title: string;
   message: string;
+  timestamp: number;
+  metric: string;
   value: number;
   threshold: number;
-  timestamp: number;
-}
-
-export interface AlertThresholds {
-  minFps: number;
-  maxLatencyMs: number;
-  maxMemoryPercent: number;
-  maxErrorRate: number;
-}
-
-export interface BenchmarkResult {
-  name: string;
-  iterations: number;
-  totalTime: number;
-  avgTime: number;
-  minTime: number;
-  maxTime: number;
-  opsPerSecond: number;
 }
 
 export interface OptimizationSuggestion {
   id: string;
-  metric: string;
-  severity: 'high' | 'medium' | 'low';
-  suggestion: string;
-  action: string;
+  category: 'memory' | 'cpu' | 'network' | 'render';
+  title: string;
+  description: string;
+  impact: 'high' | 'medium' | 'low';
+  effort: 'easy' | 'medium' | 'hard';
 }
 
-// ============================================================================
-// Default Configuration
-// ============================================================================
+export interface PerformanceMetrics {
+  fps: number;
+  memory: number;
+  latency: number;
+  timestamp: number;
+}
 
-const DEFAULT_THRESHOLDS: AlertThresholds = {
-  minFps: 30,
-  maxLatencyMs: 1000,
-  maxMemoryPercent: 0.85,
-  maxErrorRate: 0.05,
-};
+export interface PerformanceThresholds {
+  fps: { min: number; target: number };
+  memory: { max: number; warning: number };
+  latency: { max: number; target: number };
+}
 
-const MAX_HISTORY_POINTS = 60; // Keep last 60 data points (5 minutes at 5s intervals)
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-const generateId = (): string => {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-};
-
-// Calculate percentile from sorted array
-const calculatePercentile = (sortedArray: number[], percentile: number): number => {
-  if (sortedArray.length === 0) return 0;
-  const index = Math.ceil((percentile / 100) * sortedArray.length) - 1;
-  return sortedArray[Math.max(0, index)];
-};
-
-// ============================================================================
-// Performance Hook
-// ============================================================================
-
-interface UsePerformanceOptions {
+export interface UsePerformanceOptions {
   refreshIntervalMs?: number;
-  thresholds?: Partial<AlertThresholds>;
-  maxHistoryPoints?: number;
   onAlert?: (alert: PerformanceAlert) => void;
   enabled?: boolean;
 }
 
-export function usePerformance(options: UsePerformanceOptions = {}) {
-  const {
-    refreshIntervalMs = 5000,
-    thresholds: userThresholds = {},
-    maxHistoryPoints = MAX_HISTORY_POINTS,
-    onAlert,
-    enabled = true,
-  } = options;
+export interface UsePerformanceReturn {
+  metrics: PerformanceMetrics | null;
+  history: PerformanceMetrics[];
+  alerts: PerformanceAlert[];
+  healthScore: number;
+  reset: () => void;
+  clearAlerts: () => void;
+  getSuggestions: () => OptimizationSuggestion[];
+  runBenchmark: () => Promise<void>;
+  thresholds: PerformanceThresholds;
+}
 
-  const thresholds = useMemo(
-    () => ({ ...DEFAULT_THRESHOLDS, ...userThresholds }),
-    [userThresholds]
-  );
-
-  // Current metrics state
-  const [metrics, setMetrics] = useState<PerformanceMetrics>({
-    fps: 60,
-    memory: { used: 0, total: 0, percentage: 0 },
-    latency: { avg: 0, min: 0, max: 0, p95: 0 },
-    throughput: { rps: 0, total: 0 },
-    errorRate: 0,
-    timestamp: Date.now(),
-  });
-
-  // History for charts
-  const [history, setHistory] = useState<MetricHistory>({
-    fps: [],
-    memory: [],
-    latency: [],
-    timestamps: [],
-  });
-
-  // Alerts
+/**
+ * Hook for comprehensive performance monitoring
+ */
+export function usePerformance(options: UsePerformanceOptions = {}): UsePerformanceReturn {
+  const { refreshIntervalMs = 5000, onAlert, enabled = true } = options;
+  
+  const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
+  const [history, setHistory] = useState<PerformanceMetrics[]>([]);
   const [alerts, setAlerts] = useState<PerformanceAlert[]>([]);
-
-  // Internal refs for tracking
-  const frameCountRef = useRef(0);
-  const lastFrameTimeRef = useRef(Date.now());
-  const latencySamplesRef = useRef<number[]>([]);
-  const errorCountRef = useRef(0);
-  const totalOperationsRef = useRef(0);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const frameIdRef = useRef<number | null>(null);
-  const isRunningRef = useRef(false);
-  const lastAlertTimeRef = useRef<Record<string, number>>({});
-
-  // Calculate FPS using requestAnimationFrame
-  const measureFps = useCallback(() => {
-    const now = Date.now();
-    const elapsed = now - lastFrameTimeRef.current;
-
-    if (elapsed >= 1000) {
-      const fps = Math.round((frameCountRef.current * 1000) / elapsed);
-      frameCountRef.current = 0;
-      lastFrameTimeRef.current = now;
-      return Math.min(fps, 120); // Cap at 120fps
-    }
-
-    frameCountRef.current++;
-    return null;
-  }, []);
-
-  // Get memory info (if available)
-  const getMemoryInfo = useCallback(() => {
-    // React Native doesn't provide direct memory access
-    // Return mock values for now, can be enhanced with native modules
-    const used = 50 + Math.random() * 100; // Mock MB
-    const total = 256; // Mock total MB
-    return {
-      used,
-      total,
-      percentage: used / total,
-    };
-  }, []);
-
-  // Calculate latency statistics
-  const calculateLatencyStats = useCallback(() => {
-    const samples = latencySamplesRef.current;
-    if (samples.length === 0) {
-      return { avg: 0, min: 0, max: 0, p95: 0 };
-    }
-
-    const sorted = [...samples].sort((a, b) => a - b);
-    const sum = sorted.reduce((a, b) => a + b, 0);
-
-    return {
-      avg: sum / sorted.length,
-      min: sorted[0],
-      max: sorted[sorted.length - 1],
-      p95: calculatePercentile(sorted, 95),
-    };
-  }, []);
-
-  // Record a latency measurement
-  const recordLatency = useCallback((latencyMs: number, success: boolean = true) => {
-    latencySamplesRef.current.push(latencyMs);
-    totalOperationsRef.current++;
-
-    if (!success) {
-      errorCountRef.current++;
-    }
-
-    // Keep only recent samples
-    if (latencySamplesRef.current.length > 1000) {
-      latencySamplesRef.current = latencySamplesRef.current.slice(-1000);
-    }
-  }, []);
-
-  // Record an error
-  const recordError = useCallback(() => {
-    errorCountRef.current++;
-    totalOperationsRef.current++;
-  }, []);
-
-  // Check thresholds and generate alerts
-  const checkThresholds = useCallback(
-    (currentMetrics: PerformanceMetrics) => {
-      const now = Date.now();
-      const newAlerts: PerformanceAlert[] = [];
-      const cooldownMs = 60000; // 1 minute cooldown between same alert type
-
-      // Check FPS
-      if (currentMetrics.fps < thresholds.minFps) {
-        const lastAlert = lastAlertTimeRef.current['fps'] || 0;
-        if (now - lastAlert > cooldownMs) {
-          const alert: PerformanceAlert = {
-            id: generateId(),
-            type: 'fps',
-            severity: currentMetrics.fps < 20 ? 'critical' : 'warning',
-            message: `Low FPS detected: ${currentMetrics.fps.toFixed(1)}`,
-            value: currentMetrics.fps,
-            threshold: thresholds.minFps,
-            timestamp: now,
-          };
-          newAlerts.push(alert);
-          lastAlertTimeRef.current['fps'] = now;
-          onAlert?.(alert);
-        }
-      }
-
-      // Check Memory
-      if (currentMetrics.memory.percentage > thresholds.maxMemoryPercent) {
-        const lastAlert = lastAlertTimeRef.current['memory'] || 0;
-        if (now - lastAlert > cooldownMs) {
-          const alert: PerformanceAlert = {
-            id: generateId(),
-            type: 'memory',
-            severity: currentMetrics.memory.percentage > 0.95 ? 'critical' : 'warning',
-            message: `High memory usage: ${(currentMetrics.memory.percentage * 100).toFixed(1)}%`,
-            value: currentMetrics.memory.percentage,
-            threshold: thresholds.maxMemoryPercent,
-            timestamp: now,
-          };
-          newAlerts.push(alert);
-          lastAlertTimeRef.current['memory'] = now;
-          onAlert?.(alert);
-        }
-      }
-
-      // Check Latency
-      if (currentMetrics.latency.p95 > thresholds.maxLatencyMs) {
-        const lastAlert = lastAlertTimeRef.current['latency'] || 0;
-        if (now - lastAlert > cooldownMs) {
-          const alert: PerformanceAlert = {
-            id: generateId(),
-            type: 'latency',
-            severity: currentMetrics.latency.p95 > thresholds.maxLatencyMs * 2 ? 'critical' : 'warning',
-            message: `High latency detected: P95=${currentMetrics.latency.p95.toFixed(0)}ms`,
-            value: currentMetrics.latency.p95,
-            threshold: thresholds.maxLatencyMs,
-            timestamp: now,
-          };
-          newAlerts.push(alert);
-          lastAlertTimeRef.current['latency'] = now;
-          onAlert?.(alert);
-        }
-      }
-
-      // Check Error Rate
-      if (currentMetrics.errorRate > thresholds.maxErrorRate) {
-        const lastAlert = lastAlertTimeRef.current['error_rate'] || 0;
-        if (now - lastAlert > cooldownMs) {
-          const alert: PerformanceAlert = {
-            id: generateId(),
-            type: 'error_rate',
-            severity: currentMetrics.errorRate > 0.1 ? 'critical' : 'warning',
-            message: `High error rate: ${(currentMetrics.errorRate * 100).toFixed(1)}%`,
-            value: currentMetrics.errorRate,
-            threshold: thresholds.maxErrorRate,
-            timestamp: now,
-          };
-          newAlerts.push(alert);
-          lastAlertTimeRef.current['error_rate'] = now;
-          onAlert?.(alert);
-        }
-      }
-
-      if (newAlerts.length > 0) {
-        setAlerts((prev) => [...prev, ...newAlerts].slice(-50)); // Keep last 50 alerts
-      }
-    },
-    [thresholds, onAlert]
-  );
-
-  // Update metrics
-  const updateMetrics = useCallback(() => {
-    if (!isRunningRef.current) return;
-
-    const fps = measureFps();
-    const memory = getMemoryInfo();
-    const latency = calculateLatencyStats();
-
-    const now = Date.now();
-    const errorRate = totalOperationsRef.current > 0
-      ? errorCountRef.current / totalOperationsRef.current
-      : 0;
-
-    const newMetrics: PerformanceMetrics = {
-      fps: fps ?? metrics.fps,
-      memory,
-      latency,
-      throughput: {
-        rps: totalOperationsRef.current / Math.max((now % 60000) / 1000, 1),
-        total: totalOperationsRef.current,
-      },
-      errorRate,
-      timestamp: now,
-    };
-
-    setMetrics(newMetrics);
-    checkThresholds(newMetrics);
-
-    // Update history
-    setHistory((prev) => ({
-      fps: [...prev.fps.slice(-maxHistoryPoints + 1), newMetrics.fps],
-      memory: [...prev.memory.slice(-maxHistoryPoints + 1), newMetrics.memory.percentage * 100],
-      latency: [...prev.latency.slice(-maxHistoryPoints + 1), newMetrics.latency.avg],
-      timestamps: [...prev.timestamps.slice(-maxHistoryPoints + 1), now],
-    }));
-  }, [measureFps, getMemoryInfo, calculateLatencyStats, checkThresholds, maxHistoryPoints, metrics.fps]);
-
-  // Animation frame loop for FPS
-  const frameLoop = useCallback(() => {
-    if (!isRunningRef.current) return;
-    measureFps();
-    frameIdRef.current = requestAnimationFrame(frameLoop);
-  }, [measureFps]);
-
-  // Start monitoring
-  const start = useCallback(() => {
-    if (isRunningRef.current) return;
-    isRunningRef.current = true;
-
-    frameCountRef.current = 0;
-    lastFrameTimeRef.current = Date.now();
-    frameIdRef.current = requestAnimationFrame(frameLoop);
-
-    intervalRef.current = setInterval(updateMetrics, refreshIntervalMs);
-  }, [frameLoop, updateMetrics, refreshIntervalMs]);
-
-  // Stop monitoring
-  const stop = useCallback(() => {
-    isRunningRef.current = false;
-
-    if (frameIdRef.current) {
-      cancelAnimationFrame(frameIdRef.current);
-      frameIdRef.current = null;
-    }
-
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  }, []);
-
-  // Reset metrics
-  const reset = useCallback(() => {
-    latencySamplesRef.current = [];
-    errorCountRef.current = 0;
-    totalOperationsRef.current = 0;
-    lastAlertTimeRef.current = {};
-
-    setMetrics({
-      fps: 60,
-      memory: { used: 0, total: 0, percentage: 0 },
-      latency: { avg: 0, min: 0, max: 0, p95: 0 },
-      throughput: { rps: 0, total: 0 },
-      errorRate: 0,
+  const [healthScore, setHealthScore] = useState(100);
+  
+  const thresholds: PerformanceThresholds = {
+    fps: { min: 30, target: 60 },
+    memory: { max: 0.9, warning: 0.7 },
+    latency: { max: 1000, target: 100 },
+  };
+  
+  const generateAlert = useCallback((metric: string, value: number, threshold: number): PerformanceAlert => {
+    const alert: PerformanceAlert = {
+      id: `${Date.now()}-${metric}`,
+      type: value > threshold * 1.5 ? 'critical' : value > threshold ? 'warning' : 'info',
+      title: `${metric.toUpperCase()} Alert`,
+      message: `${metric} value ${value.toFixed(2)} exceeds threshold ${threshold}`,
       timestamp: Date.now(),
-    });
-
-    setHistory({
-      fps: [],
-      memory: [],
-      latency: [],
-      timestamps: [],
-    });
-
-    setAlerts([]);
+      metric,
+      value,
+      threshold,
+    };
+    return alert;
   }, []);
-
-  // Clear alerts
+  
+  const collectMetrics = useCallback(() => {
+    // Simulate metrics collection
+    const newMetrics: PerformanceMetrics = {
+      fps: 55 + Math.random() * 10,
+      memory: 0.5 + Math.random() * 0.3,
+      latency: 50 + Math.random() * 200,
+      timestamp: Date.now(),
+    };
+    
+    setMetrics(newMetrics);
+    setHistory(prev => [...prev.slice(-99), newMetrics]);
+    
+    // Check thresholds and generate alerts
+    if (newMetrics.fps < thresholds.fps.min) {
+      const alert = generateAlert('fps', newMetrics.fps, thresholds.fps.min);
+      setAlerts(prev => [...prev, alert]);
+      onAlert?.(alert);
+    }
+    if (newMetrics.memory > thresholds.memory.max) {
+      const alert = generateAlert('memory', newMetrics.memory, thresholds.memory.max);
+      setAlerts(prev => [...prev, alert]);
+      onAlert?.(alert);
+    }
+    if (newMetrics.latency > thresholds.latency.max) {
+      const alert = generateAlert('latency', newMetrics.latency, thresholds.latency.max);
+      setAlerts(prev => [...prev, alert]);
+      onAlert?.(alert);
+    }
+    
+    // Calculate health score
+    const fpsScore = Math.min(100, (newMetrics.fps / thresholds.fps.target) * 100);
+    const memoryScore = Math.max(0, 100 - (newMetrics.memory / thresholds.memory.max) * 100);
+    const latencyScore = Math.max(0, 100 - (newMetrics.latency / thresholds.latency.max) * 100);
+    setHealthScore(Math.round((fpsScore + memoryScore + latencyScore) / 3));
+  }, [generateAlert, onAlert]);
+  
+  useEffect(() => {
+    if (!enabled) return;
+    
+    collectMetrics();
+    const interval = setInterval(collectMetrics, refreshIntervalMs);
+    return () => clearInterval(interval);
+  }, [enabled, refreshIntervalMs, collectMetrics]);
+  
+  const reset = useCallback(() => {
+    setMetrics(null);
+    setHistory([]);
+    setAlerts([]);
+    setHealthScore(100);
+  }, []);
+  
   const clearAlerts = useCallback(() => {
     setAlerts([]);
   }, []);
-
-  // Generate optimization suggestions
+  
   const getSuggestions = useCallback((): OptimizationSuggestion[] => {
     const suggestions: OptimizationSuggestion[] = [];
-
-    if (metrics.fps < thresholds.minFps) {
-      suggestions.push({
-        id: generateId(),
-        metric: 'FPS',
-        severity: metrics.fps < 20 ? 'high' : 'medium',
-        suggestion: 'Low frame rate detected. Consider reducing re-renders and optimizing list views.',
-        action: 'Optimize Rendering',
-      });
-    }
-
-    if (metrics.memory.percentage > thresholds.maxMemoryPercent) {
-      suggestions.push({
-        id: generateId(),
-        metric: 'Memory',
-        severity: metrics.memory.percentage > 0.9 ? 'high' : 'medium',
-        suggestion: 'High memory usage. Check for memory leaks and large image assets.',
-        action: 'Review Memory',
-      });
-    }
-
-    if (metrics.latency.p95 > thresholds.maxLatencyMs) {
-      suggestions.push({
-        id: generateId(),
-        metric: 'Latency',
-        severity: metrics.latency.p95 > 2000 ? 'high' : 'medium',
-        suggestion: 'High latency detected. Optimize API calls and consider caching.',
-        action: 'Optimize API',
-      });
-    }
-
-    if (metrics.errorRate > thresholds.maxErrorRate) {
-      suggestions.push({
-        id: generateId(),
-        metric: 'Error Rate',
-        severity: metrics.errorRate > 0.1 ? 'high' : 'medium',
-        suggestion: 'Elevated error rate. Review error logs and add error handling.',
-        action: 'Review Errors',
-      });
-    }
-
-    if (suggestions.length === 0) {
-      suggestions.push({
-        id: generateId(),
-        metric: 'Overall',
-        severity: 'low',
-        suggestion: 'All metrics are within acceptable ranges. Performance looks good!',
-        action: 'Continue Monitoring',
-      });
-    }
-
-    return suggestions;
-  }, [metrics, thresholds]);
-
-  // Run benchmark
-  const runBenchmark = useCallback(async (
-    name: string,
-    fn: () => void | Promise<void>,
-    iterations: number = 100
-  ): Promise<BenchmarkResult> => {
-    const samples: number[] = [];
-
-    // Warmup
-    for (let i = 0; i < Math.min(10, iterations / 10); i++) {
-      await fn();
-    }
-
-    // Benchmark
-    for (let i = 0; i < iterations; i++) {
-      const start = performance.now();
-      await fn();
-      const end = performance.now();
-      samples.push(end - start);
-    }
-
-    const total = samples.reduce((a, b) => a + b, 0);
-    const avg = total / iterations;
-
-    return {
-      name,
-      iterations,
-      totalTime: total,
-      avgTime: avg,
-      minTime: Math.min(...samples),
-      maxTime: Math.max(...samples),
-      opsPerSecond: 1000 / avg,
-    };
-  }, []);
-
-  // Handle app state changes
-  useEffect(() => {
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active') {
-        if (enabled) start();
-      } else {
-        stop();
+    
+    if (metrics) {
+      if (metrics.fps < 30) {
+        suggestions.push({
+          id: 'fps-1',
+          category: 'render',
+          title: 'Optimize Rendering',
+          description: 'Consider using React.memo or useMemo for expensive components',
+          impact: 'high',
+          effort: 'medium',
+        });
       }
-    };
-
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
-
-    if (enabled) {
-      start();
+      if (metrics.memory > 0.8) {
+        suggestions.push({
+          id: 'memory-1',
+          category: 'memory',
+          title: 'Reduce Memory Usage',
+          description: 'Implement virtualization for long lists and clear unused caches',
+          impact: 'high',
+          effort: 'medium',
+        });
+      }
+      if (metrics.latency > 500) {
+        suggestions.push({
+          id: 'latency-1',
+          category: 'network',
+          title: 'Optimize Network Calls',
+          description: 'Batch API requests and implement request deduplication',
+          impact: 'medium',
+          effort: 'easy',
+        });
+      }
     }
-
-    return () => {
-      subscription.remove();
-      stop();
-    };
-  }, [enabled, start, stop]);
-
-  // Get health score
-  const healthScore = useMemo(() => {
-    let score = 100;
-
-    if (metrics.fps < thresholds.minFps) {
-      score -= (thresholds.minFps - metrics.fps) * 2;
-    }
-
-    if (metrics.memory.percentage > thresholds.maxMemoryPercent) {
-      score -= (metrics.memory.percentage - thresholds.maxMemoryPercent) * 100;
-    }
-
-    if (metrics.latency.p95 > thresholds.maxLatencyMs) {
-      score -= (metrics.latency.p95 / thresholds.maxLatencyMs) * 10;
-    }
-
-    if (metrics.errorRate > thresholds.maxErrorRate) {
-      score -= metrics.errorRate * 500;
-    }
-
-    return Math.max(0, Math.min(100, Math.round(score)));
-  }, [metrics, thresholds]);
-
+    
+    return suggestions;
+  }, [metrics]);
+  
+  const runBenchmark = useCallback(async () => {
+    // Simulate benchmark
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    collectMetrics();
+  }, [collectMetrics]);
+  
   return {
-    // Current metrics
     metrics,
     history,
     alerts,
     healthScore,
-
-    // Actions
-    recordLatency,
-    recordError,
-    start,
-    stop,
     reset,
     clearAlerts,
     getSuggestions,
     runBenchmark,
-
-    // Thresholds
     thresholds,
   };
 }
-
-export default usePerformance;

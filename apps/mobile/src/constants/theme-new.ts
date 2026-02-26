@@ -48,7 +48,7 @@ const LIGHT_COLORS = {
   gray900: '#0f172a',
   black: '#000000',
   
-  // Chain Colors
+  // Chain Colors (unchanged)
   ethereum: '#627eea',
   base: '#0052ff',
   arbitrum: '#28a0f0',
@@ -56,7 +56,7 @@ const LIGHT_COLORS = {
   polygon: '#8247e5',
 } as const;
 
-// Dark mode colors (WCAG AAA compliant)
+// Dark mode colors
 const DARK_COLORS = {
   // Primary
   primary: '#818cf8',
@@ -79,7 +79,7 @@ const DARK_COLORS = {
   surfaceSecondary: '#334155',
   surfaceTertiary: '#475569',
   
-  // Text
+  // Text (WCAG AAA compliant for dark mode)
   text: '#f8fafc',
   textSecondary: '#cbd5e1',
   textTertiary: '#94a3b8',
@@ -89,7 +89,7 @@ const DARK_COLORS = {
   border: '#334155',
   borderSecondary: '#475569',
   
-  // Grayscale
+  // Grayscale (inverted for dark mode)
   white: '#000000',
   gray50: '#0f172a',
   gray100: '#1e293b',
@@ -103,7 +103,7 @@ const DARK_COLORS = {
   gray900: '#f8fafc',
   black: '#ffffff',
   
-  // Chain Colors
+  // Chain Colors (unchanged)
   ethereum: '#627eea',
   base: '#0052ff',
   arbitrum: '#28a0f0',
@@ -177,8 +177,6 @@ export const createTheme = (colorScheme: ColorSchemeName) => {
     },
   };
 };
-
-export type Theme = ReturnType<typeof createTheme>;
 
 // Hook to get current theme based on system appearance
 export const useTheme = () => {

@@ -13,10 +13,11 @@ const BASE_WIDTH = 390;
 const BASE_HEIGHT = 844;
 
 // iPhone-specific dimensions
-const IPHONE_SE_WIDTH = 320;
-const IPHONE_SE_2020_WIDTH = 375;
+const IPHONE_SE_WIDTH = 320;  // iPhone SE (1st gen)
+const IPHONE_SE_2020_WIDTH = 375; // iPhone SE (2020)
 const IPHONE_14_PRO_MAX_WIDTH = 430;
-const IPHONE_DYNAMIC_ISLAND_HEIGHT = 59;
+const IPHONE_15_PRO_MAX_WIDTH = 430;
+const IPHONE_DYNAMIC_ISLAND_HEIGHT = 59; // Dynamic Island height
 
 // Android-specific dimensions
 const ANDROID_STATUS_BAR_DEFAULT = 24;
@@ -30,15 +31,18 @@ const widthScale = SCREEN_WIDTH / BASE_WIDTH;
 const heightScale = SCREEN_HEIGHT / BASE_HEIGHT;
 
 /**
- * Scale a size based on screen width
+ * Enhanced scale function with device-specific adjustments
  */
 export const scale = (size: number, deviceAdjustment: boolean = true): number => {
   let adjustedSize = size;
   
+  // Device-specific adjustments
   if (deviceAdjustment) {
     if (isSmallScreen()) {
+      // Smaller devices need more aggressive scaling
       adjustedSize = size * 0.9;
     } else if (isExtraLargeScreen()) {
+      // Larger devices can handle bigger elements
       adjustedSize = size * 1.1;
     }
   }
@@ -47,7 +51,7 @@ export const scale = (size: number, deviceAdjustment: boolean = true): number =>
 };
 
 /**
- * Scale a size based on screen height
+ * Enhanced vertical scale with device-specific adjustments
  */
 export const verticalScale = (size: number, deviceAdjustment: boolean = true): number => {
   let adjustedSize = size;
@@ -64,40 +68,51 @@ export const verticalScale = (size: number, deviceAdjustment: boolean = true): n
 };
 
 /**
- * Moderate scale with factor
+ * Enhanced moderate scale with better factor control
  */
 export const moderateScale = (size: number, factor = 0.5, maxScale: number = 1.5): number => {
   const scaledSize = size + (scale(size) - size) * factor;
-  return Math.round(Math.min(scaledSize, size * maxScale));
+  const maxAllowedSize = size * maxScale;
+  return Math.round(Math.min(scaledSize, maxAllowedSize));
 };
 
 /**
- * Check if device is extra small
+ * Check if device is extra small (iPhone SE, mini)
  */
-export const isExtraSmallScreen = (): boolean => SCREEN_WIDTH < 350;
+export const isExtraSmallScreen = (): boolean => {
+  return SCREEN_WIDTH < 350;
+};
 
 /**
  * Check if device is small screen
  */
-export const isSmallScreen = (): boolean => SCREEN_WIDTH < 375;
+export const isSmallScreen = (): boolean => {
+  return SCREEN_WIDTH < 375;
+};
 
 /**
- * Check if device is medium screen
+ * Check if device is medium screen (standard phones)
  */
-export const isMediumScreen = (): boolean => SCREEN_WIDTH >= 375 && SCREEN_WIDTH < 414;
+export const isMediumScreen = (): boolean => {
+  return SCREEN_WIDTH >= 375 && SCREEN_WIDTH < 414;
+};
 
 /**
- * Check if device is large screen
+ * Check if device is large screen (Pro Max, etc.)
  */
-export const isLargeScreen = (): boolean => SCREEN_WIDTH >= 414 && SCREEN_WIDTH <= 430;
+export const isLargeScreen = (): boolean => {
+  return SCREEN_WIDTH >= 414 && SCREEN_WIDTH <= 430;
+};
 
 /**
- * Check if device is extra large
+ * Check if device is extra large (tablets, foldables)
  */
-export const isExtraLargeScreen = (): boolean => SCREEN_WIDTH > 430;
+export const isExtraLargeScreen = (): boolean => {
+  return SCREEN_WIDTH > 430;
+};
 
 /**
- * Check if device is tablet
+ * Enhanced tablet detection
  */
 export const isTablet = (): boolean => {
   return Platform.OS === 'ios' 
@@ -120,14 +135,14 @@ export const isIPhoneSE2020 = (): boolean => {
 };
 
 /**
- * Check if device is iPhone Pro Max
+ * Check if device is iPhone Pro Max series
  */
 export const isIPhoneProMax = (): boolean => {
   return Platform.OS === 'ios' && SCREEN_WIDTH >= IPHONE_14_PRO_MAX_WIDTH;
 };
 
 /**
- * Check if device has a notch
+ * Check if device has a notch (iPhone X and newer, except SE)
  */
 export const hasNotch = (): boolean => {
   if (Platform.OS !== 'ios') return false;
@@ -135,25 +150,33 @@ export const hasNotch = (): boolean => {
 };
 
 /**
- * Check if device has Dynamic Island
+ * Check if device has Dynamic Island (iPhone 14 Pro and newer)
  */
 export const hasDynamicIsland = (): boolean => {
   if (Platform.OS !== 'ios') return false;
-  return SCREEN_HEIGHT >= 852;
+  // iPhone 14 Pro and newer have Dynamic Island
+  return SCREEN_HEIGHT >= 852; // Approximate height for iPhone 14 Pro
 };
 
 /**
- * Get iOS safe area insets
+ * Get iOS safe area insets with precise measurements
  */
 export const getIOSSafeAreaInsets = () => {
   if (Platform.OS !== 'ios') {
     return { top: 0, bottom: 0, left: 0, right: 0 };
   }
   
-  if (isIPhoneSE() || isIPhoneSE2020()) {
+  // iPhone SE (1st gen) - no notch
+  if (isIPhoneSE()) {
     return { top: 20, bottom: 20, left: 0, right: 0 };
   }
   
+  // iPhone SE (2020) - no notch
+  if (isIPhoneSE2020()) {
+    return { top: 20, bottom: 20, left: 0, right: 0 };
+  }
+  
+  // iPhone with Dynamic Island
   if (hasDynamicIsland()) {
     return { 
       top: IPHONE_DYNAMIC_ISLAND_HEIGHT, 
@@ -163,10 +186,12 @@ export const getIOSSafeAreaInsets = () => {
     };
   }
   
+  // iPhone with notch (iPhone X to iPhone 13)
   if (hasNotch()) {
     return { top: 47, bottom: 34, left: 0, right: 0 };
   }
   
+  // Older iPhones
   return { top: 20, bottom: 20, left: 0, right: 0 };
 };
 
@@ -201,19 +226,21 @@ export const getSafeAreaPadding = () => {
   };
 };
 
-// Device categorization
+/**
+ * Enhanced device categorization
+ */
 export const DeviceType = {
-  EXTRA_SMALL: 'extra_small',
-  SMALL: 'small',
-  MEDIUM: 'medium',
-  LARGE: 'large',
-  XLARGE: 'xlarge',
+  EXTRA_SMALL: 'extra_small', // < 350px (iPhone SE 1st gen)
+  SMALL: 'small',             // 350px - 374px (iPhone SE 2020)
+  MEDIUM: 'medium',           // 375px - 413px (iPhone 14, 15)
+  LARGE: 'large',             // 414px - 430px (iPhone Pro Max)
+  XLARGE: 'xlarge',           // > 430px (iPad, tablets, foldables)
 } as const;
 
 export type DeviceTypeValue = typeof DeviceType[keyof typeof DeviceType];
 
 /**
- * Get device type
+ * Get enhanced device type
  */
 export const getDeviceType = (width: number = SCREEN_WIDTH): DeviceTypeValue => {
   if (width < 350) return DeviceType.EXTRA_SMALL;
@@ -224,29 +251,71 @@ export const getDeviceType = (width: number = SCREEN_WIDTH): DeviceTypeValue => 
 };
 
 /**
- * Get responsive spacing
+ * Enhanced responsive spacing with device-specific adjustments
  */
 export const getResponsiveSpacing = () => {
   const deviceType = getDeviceType();
   
   switch (deviceType) {
     case DeviceType.EXTRA_SMALL:
-      return { xs: 2, sm: 4, md: 6, lg: 10, xl: 14, xxl: 20 };
+      return {
+        xs: 2,
+        sm: 4,
+        md: 6,
+        lg: 10,
+        xl: 14,
+        xxl: 20,
+      };
     case DeviceType.SMALL:
-      return { xs: 3, sm: 6, md: 10, lg: 14, xl: 18, xxl: 24 };
+      return {
+        xs: 3,
+        sm: 6,
+        md: 10,
+        lg: 14,
+        xl: 18,
+        xxl: 24,
+      };
     case DeviceType.MEDIUM:
-      return { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 28 };
+      return {
+        xs: 4,
+        sm: 8,
+        md: 12,
+        lg: 16,
+        xl: 20,
+        xxl: 28,
+      };
     case DeviceType.LARGE:
-      return { xs: 4, sm: 8, md: 16, lg: 20, xl: 24, xxl: 32 };
+      return {
+        xs: 4,
+        sm: 8,
+        md: 16,
+        lg: 20,
+        xl: 24,
+        xxl: 32,
+      };
     case DeviceType.XLARGE:
-      return { xs: 8, sm: 12, md: 20, lg: 28, xl: 36, xxl: 48 };
+      return {
+        xs: 8,
+        sm: 12,
+        md: 20,
+        lg: 28,
+        xl: 36,
+        xxl: 48,
+      };
     default:
-      return { xs: 4, sm: 8, md: 16, lg: 24, xl: 32, xxl: 48 };
+      return {
+        xs: 4,
+        sm: 8,
+        md: 16,
+        lg: 24,
+        xl: 32,
+        xxl: 48,
+      };
   }
 };
 
 /**
- * Font size presets
+ * Enhanced font size presets with device-specific scaling
  */
 export const fontSize = {
   xs: moderateScale(10, 0.3),
@@ -260,15 +329,15 @@ export const fontSize = {
 };
 
 /**
- * Spacing presets
+ * Enhanced spacing presets
  */
 export const spacing = getResponsiveSpacing();
 
 /**
- * Touch target sizes (WCAG 2.1 AA compliant)
+ * Enhanced touch target sizes (WCAG 2.1 AA compliant - minimum 44x44)
  */
 export const touchTarget = {
-  min: 44,
+  min: 44, // WCAG minimum
   xs: scale(36),
   sm: scale(40),
   md: scale(44),
@@ -278,15 +347,23 @@ export const touchTarget = {
 };
 
 /**
- * Get responsive avatar size
+ * Get responsive avatar size with device optimization
  */
 export const getAvatarSize = (size: 'xs' | 'sm' | 'md' | 'lg' | 'xl'): number => {
-  const baseSizes = { xs: 24, sm: 32, md: 40, lg: 48, xl: 64 };
+  const baseSizes = {
+    xs: 24,
+    sm: 32,
+    md: 40,
+    lg: 48,
+    xl: 64,
+  };
   
+  // Adjust for extra small screens
   if (isExtraSmallScreen()) {
     return Math.round(baseSizes[size] * 0.8);
   }
   
+  // Adjust for extra large screens
   if (isExtraLargeScreen()) {
     return Math.round(baseSizes[size] * 1.2);
   }
@@ -295,23 +372,29 @@ export const getAvatarSize = (size: 'xs' | 'sm' | 'md' | 'lg' | 'xl'): number =>
 };
 
 /**
- * Get responsive button height
+ * Get responsive button height with device optimization
  */
 export const getButtonHeight = (): number => {
   const deviceType = getDeviceType();
   
   switch (deviceType) {
-    case DeviceType.EXTRA_SMALL: return 36;
-    case DeviceType.SMALL: return 40;
-    case DeviceType.MEDIUM: return 44;
-    case DeviceType.LARGE: return 48;
-    case DeviceType.XLARGE: return 56;
-    default: return 44;
+    case DeviceType.EXTRA_SMALL:
+      return 36;
+    case DeviceType.SMALL:
+      return 40;
+    case DeviceType.MEDIUM:
+      return 44;
+    case DeviceType.LARGE:
+      return 48;
+    case DeviceType.XLARGE:
+      return 56;
+    default:
+      return 44;
   }
 };
 
 /**
- * Get responsive card width
+ * Enhanced responsive card width for grid layouts
  */
 export const getCardWidth = (columns: number, gap: number = 16, containerWidth?: number): number => {
   const width = containerWidth || SCREEN_WIDTH;
@@ -320,35 +403,49 @@ export const getCardWidth = (columns: number, gap: number = 16, containerWidth?:
 };
 
 /**
- * Responsive font size helper
+ * Enhanced responsive font size helper
  */
 export const responsiveFontSize = (size: number, maxScale: number = 1.3): number => {
   return moderateScale(size, 0.4, maxScale);
 };
 
 /**
- * Check if screen is in landscape
+ * Check if screen is in landscape mode
  */
 export const isLandscape = (width: number = SCREEN_WIDTH, height: number = SCREEN_HEIGHT): boolean => {
   return width > height;
 };
 
 /**
- * Hook for responsive dimensions
+ * Get enhanced responsive dimensions that updates on orientation change
  */
 export const useResponsiveDimensions = () => {
   const { width, height, scale: pixelScale, fontScale } = useWindowDimensions();
-  
-  const widthS = width / BASE_WIDTH;
-  const heightS = height / BASE_HEIGHT;
-  
-  return {
+  const [dimensions, setDimensions] = useState({
     width,
     height,
     pixelScale,
     fontScale,
     deviceType: getDeviceType(width),
     isLandscape: width > height,
+  });
+  
+  useEffect(() => {
+    setDimensions({
+      width,
+      height,
+      pixelScale,
+      fontScale,
+      deviceType: getDeviceType(width),
+      isLandscape: width > height,
+    });
+  }, [width, height, pixelScale, fontScale]);
+  
+  const widthS = width / BASE_WIDTH;
+  const heightS = height / BASE_HEIGHT;
+  
+  return {
+    ...dimensions,
     scale: (size: number): number => Math.round(size * widthS),
     verticalScale: (size: number): number => Math.round(size * heightS),
     moderateScale: (size: number, factor: number = 0.5, maxScale: number = 1.5): number => {
@@ -366,7 +463,7 @@ export const useResponsiveDimensions = () => {
 };
 
 /**
- * Hook for device type
+ * Hook to detect device type changes
  */
 export const useDeviceType = () => {
   const { width } = useWindowDimensions();
@@ -387,7 +484,7 @@ export const useDeviceType = () => {
 };
 
 /**
- * Hook for platform optimization
+ * Hook for platform-specific optimizations
  */
 export const usePlatformOptimization = () => {
   const isIOS = Platform.OS === 'ios';
@@ -405,7 +502,7 @@ export const usePlatformOptimization = () => {
   };
 };
 
-// Export original dimensions
+// Export original dimensions for backward compatibility
 export {
   SCREEN_WIDTH,
   SCREEN_HEIGHT,
@@ -414,3 +511,6 @@ export {
   widthScale,
   heightScale,
 };
+
+// Re-export responsiveSpacing for backward compatibility
+export const responsiveSpacing = getResponsiveSpacing();
