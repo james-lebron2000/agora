@@ -9,12 +9,24 @@ import {
   getAllBalances,
   getBridgeQuote,
   findCheapestChain,
+  getTokenBalance,
   SUPPORTED_CHAINS,
   USDC_ADDRESSES,
+  USDT_ADDRESSES,
+  DAI_ADDRESSES,
+  WETH_ADDRESSES,
   LAYERZERO_CHAIN_IDS,
   LAYERZERO_USDC_OFT,
+  LAYERZERO_USDT_OFT,
+  LAYERZERO_DAI_OFT,
+  LAYERZERO_WETH_OFT,
+  LAYERZERO_OFT_ADDRESSES,
+  TOKEN_ADDRESSES,
+  TOKEN_DECIMALS,
+  SUPPORTED_TOKENS,
   RPC_URLS,
   type SupportedChain,
+  type SupportedToken,
   type BridgeTransaction,
   type BridgeTransactionFilter
 } from './bridge.js';
@@ -84,6 +96,38 @@ describe('Cross-Chain Bridge Module', () => {
       expect(USDC_ADDRESSES.ethereum).toBe('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48');
     });
 
+    it('should have correct USDT addresses', () => {
+      expect(USDT_ADDRESSES.base).toBe('0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2');
+      expect(USDT_ADDRESSES.optimism).toBe('0x94b008aA00579c1307B0EF2c499aD98a8ce58e58');
+      expect(USDT_ADDRESSES.arbitrum).toBe('0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9');
+      expect(USDT_ADDRESSES.ethereum).toBe('0xdAC17F958D2ee523a2206206994597C13D831ec7');
+    });
+
+    it('should have correct DAI addresses', () => {
+      expect(DAI_ADDRESSES.base).toBe('0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb');
+      expect(DAI_ADDRESSES.optimism).toBe('0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1');
+      expect(DAI_ADDRESSES.arbitrum).toBe('0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1');
+      expect(DAI_ADDRESSES.ethereum).toBe('0x6B175474E89094C44Da98b954EedeAC495271d0F');
+    });
+
+    it('should have correct WETH addresses', () => {
+      expect(WETH_ADDRESSES.base).toBe('0x4200000000000000000000000000000000000006');
+      expect(WETH_ADDRESSES.optimism).toBe('0x4200000000000000000000000000000000000006');
+      expect(WETH_ADDRESSES.arbitrum).toBe('0x82aF49447D8a07e3bd95BD0d56f35241523fBab1');
+      expect(WETH_ADDRESSES.ethereum).toBe('0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2');
+    });
+
+    it('should have correct LayerZero OFT addresses for all tokens', () => {
+      // Verify structure exists for all tokens
+      for (const token of SUPPORTED_TOKENS) {
+        expect(LAYERZERO_OFT_ADDRESSES).toHaveProperty(token);
+        for (const chain of ['base', 'optimism', 'arbitrum', 'ethereum'] as SupportedChain[]) {
+          expect(LAYERZERO_OFT_ADDRESSES[token]).toHaveProperty(chain);
+          expect(LAYERZERO_OFT_ADDRESSES[token][chain]).toMatch(/^0x[a-fA-F0-9]{40}$/);
+        }
+      }
+    });
+
     it('should have correct LayerZero chain IDs', () => {
       expect(LAYERZERO_CHAIN_IDS.base).toBe(30184);
       expect(LAYERZERO_CHAIN_IDS.optimism).toBe(30111);
@@ -96,6 +140,21 @@ describe('Cross-Chain Bridge Module', () => {
       expect(RPC_URLS.optimism).toHaveLength(2);
       expect(RPC_URLS.arbitrum).toHaveLength(2);
       expect(RPC_URLS.ethereum).toHaveLength(2);
+    });
+
+    it('should have correct token decimals', () => {
+      expect(TOKEN_DECIMALS.USDC).toBe(6);
+      expect(TOKEN_DECIMALS.USDT).toBe(6);
+      expect(TOKEN_DECIMALS.DAI).toBe(18);
+      expect(TOKEN_DECIMALS.WETH).toBe(18);
+    });
+
+    it('should have all supported tokens', () => {
+      expect(SUPPORTED_TOKENS).toContain('USDC');
+      expect(SUPPORTED_TOKENS).toContain('USDT');
+      expect(SUPPORTED_TOKENS).toContain('DAI');
+      expect(SUPPORTED_TOKENS).toContain('WETH');
+      expect(SUPPORTED_TOKENS).toHaveLength(4);
     });
   });
 
@@ -154,6 +213,32 @@ describe('Cross-Chain Bridge Module', () => {
     });
   });
 
+  describe('getTokenBalance', () => {
+    it('should return token balance for USDT', async () => {
+      mockPublicClient.readContract.mockResolvedValue(5000000n); // 5 USDT with 6 decimals
+      const balance = await getTokenBalance(mockAddress, 'base', 'USDT');
+      expect(balance).toBe('5');
+    });
+
+    it('should return token balance for DAI', async () => {
+      mockPublicClient.readContract.mockResolvedValue(parseUnits('100', 18)); // 100 DAI
+      const balance = await getTokenBalance(mockAddress, 'optimism', 'DAI');
+      expect(balance).toBe('100');
+    });
+
+    it('should return native balance for WETH', async () => {
+      mockPublicClient.getBalance.mockResolvedValue(parseUnits('2.5', 18));
+      const balance = await getTokenBalance(mockAddress, 'arbitrum', 'WETH');
+      expect(balance).toBe('2.5');
+    });
+
+    it('should return 0 on error for unsupported token', async () => {
+      mockPublicClient.readContract.mockRejectedValue(new Error('Contract not found'));
+      const balance = await getTokenBalance(mockAddress, 'base', 'USDT');
+      expect(balance).toBe('0');
+    });
+  });
+
   describe('getBridgeQuote', () => {
     it('should return quote for valid cross-chain transfer', async () => {
       const mockFee = { nativeFee: parseUnits('0.001', 18), lzTokenFee: 0n };
@@ -177,6 +262,69 @@ describe('Cross-Chain Bridge Module', () => {
       });
     });
 
+    it('should return quote for USDT bridging', async () => {
+      const mockFee = { nativeFee: parseUnits('0.0012', 18), lzTokenFee: 0n };
+      mockPublicClient.readContract.mockResolvedValue(mockFee);
+
+      const quote = await getBridgeQuote({
+        sourceChain: 'base',
+        destinationChain: 'arbitrum',
+        token: 'USDT',
+        amount: '50'
+      }, mockAddress);
+
+      expect(quote).toMatchObject({
+        sourceChain: 'base',
+        destinationChain: 'arbitrum',
+        token: 'USDT',
+        amount: '50',
+        estimatedFee: expect.any(String),
+        estimatedTime: expect.any(Number)
+      });
+    });
+
+    it('should return quote for DAI bridging', async () => {
+      const mockFee = { nativeFee: parseUnits('0.0015', 18), lzTokenFee: 0n };
+      mockPublicClient.readContract.mockResolvedValue(mockFee);
+
+      const quote = await getBridgeQuote({
+        sourceChain: 'optimism',
+        destinationChain: 'base',
+        token: 'DAI',
+        amount: '200'
+      }, mockAddress);
+
+      expect(quote).toMatchObject({
+        sourceChain: 'optimism',
+        destinationChain: 'base',
+        token: 'DAI',
+        amount: '200',
+        estimatedFee: expect.any(String),
+        estimatedTime: expect.any(Number)
+      });
+    });
+
+    it('should return quote for WETH bridging', async () => {
+      const mockFee = { nativeFee: parseUnits('0.001', 18), lzTokenFee: 0n };
+      mockPublicClient.readContract.mockResolvedValue(mockFee);
+
+      const quote = await getBridgeQuote({
+        sourceChain: 'arbitrum',
+        destinationChain: 'optimism',
+        token: 'WETH',
+        amount: '1.5'
+      }, mockAddress);
+
+      expect(quote).toMatchObject({
+        sourceChain: 'arbitrum',
+        destinationChain: 'optimism',
+        token: 'WETH',
+        amount: '1.5',
+        estimatedFee: expect.any(String),
+        estimatedTime: expect.any(Number)
+      });
+    });
+
     it('should throw error for same source and destination chain', async () => {
       await expect(getBridgeQuote({
         sourceChain: 'base',
@@ -184,6 +332,15 @@ describe('Cross-Chain Bridge Module', () => {
         token: 'USDC',
         amount: '100'
       }, mockAddress)).rejects.toThrow('Source and destination chains must be different');
+    });
+
+    it('should throw error for unsupported token', async () => {
+      await expect(getBridgeQuote({
+        sourceChain: 'base',
+        destinationChain: 'optimism',
+        token: 'INVALID' as SupportedToken,
+        amount: '100'
+      }, mockAddress)).rejects.toThrow('Unsupported token');
     });
   });
 
@@ -352,6 +509,218 @@ describe('Cross-Chain Bridge Module', () => {
           const result = await bridge.bridgeUSDC(dest, '100');
           expect(result.success).toBe(true);
         }
+      });
+    });
+
+    describe('bridgeToken', () => {
+      const mockTxHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as Hex;
+
+      beforeEach(() => {
+        vi.clearAllMocks();
+        let callCount = 0;
+        mockPublicClient.readContract.mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) return Promise.resolve(parseUnits('1000', 6)); // balance check
+          if (callCount === 2) return Promise.resolve({ nativeFee: parseUnits('0.001', 18), lzTokenFee: 0n }); // quote
+          if (callCount === 3) return Promise.resolve(parseUnits('0.1', 18)); // native balance
+          return Promise.resolve(0n); // allowance
+        });
+        mockWalletClient.writeContract.mockResolvedValue(mockTxHash);
+        mockPublicClient.getTransactionReceipt.mockResolvedValue({
+          status: 'success',
+          blockNumber: 100n
+        });
+        mockPublicClient.getBlockNumber.mockResolvedValue(101n);
+      });
+
+      it('should delegate to bridgeUSDC for USDC token', async () => {
+        const bridge = new CrossChainBridge(mockPrivateKey, 'base');
+        const result = await bridge.bridgeToken('optimism', 'USDC', '100');
+        expect(result.success).toBe(true);
+        expect(result.token).toBe('USDC');
+      });
+
+      it('should bridge USDT successfully', async () => {
+        const bridge = new CrossChainBridge(mockPrivateKey, 'base');
+        const result = await bridge.bridgeToken('optimism', 'USDT', '100');
+        expect(result.success).toBe(true);
+        expect(result.token).toBe('USDT');
+        expect(result.txHash).toBe(mockTxHash);
+      });
+
+      it('should bridge DAI successfully', async () => {
+        vi.clearAllMocks();
+        let callCount = 0;
+        mockPublicClient.readContract.mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) return Promise.resolve(parseUnits('1000', 18)); // DAI has 18 decimals
+          if (callCount === 2) return Promise.resolve({ nativeFee: parseUnits('0.001', 18), lzTokenFee: 0n });
+          if (callCount === 3) return Promise.resolve(parseUnits('0.1', 18));
+          return Promise.resolve(0n);
+        });
+        mockWalletClient.writeContract.mockResolvedValue(mockTxHash);
+        mockPublicClient.getTransactionReceipt.mockResolvedValue({
+          status: 'success',
+          blockNumber: 100n
+        });
+        mockPublicClient.getBlockNumber.mockResolvedValue(101n);
+
+        const bridge = new CrossChainBridge(mockPrivateKey, 'optimism');
+        const result = await bridge.bridgeToken('base', 'DAI', '100');
+        expect(result.success).toBe(true);
+        expect(result.token).toBe('DAI');
+      });
+
+      it('should bridge WETH successfully', async () => {
+        vi.clearAllMocks();
+        let callCount = 0;
+        mockPublicClient.readContract.mockImplementation(() => {
+          callCount++;
+          // For WETH, balance check uses getBalance (native), not readContract
+          return Promise.resolve(0n);
+        });
+        mockPublicClient.getBalance.mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) return Promise.resolve(parseUnits('10', 18)); // WETH balance
+          if (callCount === 2) return Promise.resolve(parseUnits('0.1', 18)); // native balance for fees
+          return Promise.resolve(0n);
+        });
+        mockWalletClient.writeContract.mockResolvedValue(mockTxHash);
+        mockPublicClient.getTransactionReceipt.mockResolvedValue({
+          status: 'success',
+          blockNumber: 100n
+        });
+        mockPublicClient.getBlockNumber.mockResolvedValue(101n);
+
+        const bridge = new CrossChainBridge(mockPrivateKey, 'arbitrum');
+        const result = await bridge.bridgeToken('optimism', 'WETH', '1');
+        expect(result.success).toBe(true);
+        expect(result.token).toBe('WETH');
+      });
+
+      it('should fail for unsupported token', async () => {
+        const bridge = new CrossChainBridge(mockPrivateKey, 'base');
+        const result = await bridge.bridgeToken('optimism', 'INVALID' as SupportedToken, '100');
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Unsupported token');
+      });
+
+      it('should fail when source and destination are the same', async () => {
+        const bridge = new CrossChainBridge(mockPrivateKey, 'base');
+        const result = await bridge.bridgeToken('base', 'USDT', '100');
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Source and destination chains must be different');
+      });
+
+      it('should fail when token balance is insufficient', async () => {
+        vi.clearAllMocks();
+        mockPublicClient.readContract.mockResolvedValueOnce(parseUnits('10', 6)); // Only 10 USDT
+
+        const bridge = new CrossChainBridge(mockPrivateKey, 'base');
+        const result = await bridge.bridgeToken('optimism', 'USDT', '100');
+        expect(result.success).toBe(false);
+        expect(result.error).toContain('Insufficient USDT balance');
+      });
+
+      it('should support all L2 to L2 routes for all tokens', async () => {
+        const tokens: SupportedToken[] = ['USDT', 'DAI'];
+        const routes: [SupportedChain, SupportedChain][] = [
+          ['base', 'optimism'],
+          ['base', 'arbitrum'],
+          ['optimism', 'base'],
+          ['optimism', 'arbitrum'],
+          ['arbitrum', 'base'],
+          ['arbitrum', 'optimism']
+        ];
+
+        for (const token of tokens) {
+          for (const [source, dest] of routes) {
+            vi.clearAllMocks();
+            let callCount = 0;
+            mockPublicClient.readContract.mockImplementation(() => {
+              callCount++;
+              const decimals = token === 'DAI' ? 18 : 6;
+              if (callCount === 1) return Promise.resolve(parseUnits('1000', decimals));
+              if (callCount === 2) return Promise.resolve({ nativeFee: parseUnits('0.001', 18), lzTokenFee: 0n });
+              if (callCount === 3) return Promise.resolve(parseUnits('0.1', 18));
+              return Promise.resolve(0n);
+            });
+            mockWalletClient.writeContract.mockResolvedValue(mockTxHash);
+            mockPublicClient.getTransactionReceipt.mockResolvedValue({
+              status: 'success',
+              blockNumber: 100n
+            });
+            mockPublicClient.getBlockNumber.mockResolvedValue(101n);
+
+            const bridge = new CrossChainBridge(mockPrivateKey, source);
+            const result = await bridge.bridgeToken(dest, token, '100');
+            expect(result.success).toBe(true);
+            expect(result.token).toBe(token);
+          }
+        }
+      });
+
+      it('should emit approval events for token approval', async () => {
+        const bridge = new CrossChainBridge(mockPrivateKey, 'base');
+        const approvalListener = vi.fn();
+        bridge.on('approvalRequired', approvalListener);
+        bridge.on('approvalConfirmed', approvalListener);
+
+        vi.clearAllMocks();
+        let callCount = 0;
+        mockPublicClient.readContract.mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) return Promise.resolve(parseUnits('1000', 6)); // balance
+          if (callCount === 2) return Promise.resolve({ nativeFee: parseUnits('0.001', 18), lzTokenFee: 0n }); // quote
+          if (callCount === 3) return Promise.resolve(parseUnits('0.1', 18)); // native balance
+          return Promise.resolve(0n); // allowance (always 0 to trigger approval)
+        });
+
+        await bridge.bridgeToken('optimism', 'USDT', '100');
+
+        expect(approvalListener).toHaveBeenCalled();
+      });
+    });
+
+    describe('getTokenBalance', () => {
+      it('should get USDT balance', async () => {
+        mockPublicClient.readContract.mockResolvedValue(parseUnits('500', 6));
+        const bridge = new CrossChainBridge(mockPrivateKey, 'base');
+        const balance = await bridge.getTokenBalance('USDT');
+        expect(balance).toBe('500');
+      });
+
+      it('should get DAI balance', async () => {
+        mockPublicClient.readContract.mockResolvedValue(parseUnits('200', 18));
+        const bridge = new CrossChainBridge(mockPrivateKey, 'optimism');
+        const balance = await bridge.getTokenBalance('DAI');
+        expect(balance).toBe('200');
+      });
+
+      it('should get WETH balance as native balance', async () => {
+        mockPublicClient.getBalance.mockResolvedValue(parseUnits('5', 18));
+        const bridge = new CrossChainBridge(mockPrivateKey, 'arbitrum');
+        const balance = await bridge.getTokenBalance('WETH');
+        expect(balance).toBe('5');
+      });
+    });
+
+    describe('getAllTokenBalances', () => {
+      it('should return all token balances for all chains', async () => {
+        mockPublicClient.readContract.mockResolvedValue(parseUnits('100', 6));
+        mockPublicClient.getBalance.mockResolvedValue(parseUnits('1', 18));
+
+        const bridge = new CrossChainBridge(mockPrivateKey, 'base');
+        const balances = await bridge.getAllTokenBalances();
+
+        expect(balances).toHaveProperty('base');
+        expect(balances).toHaveProperty('optimism');
+        expect(balances).toHaveProperty('arbitrum');
+        expect(balances).toHaveProperty('ethereum');
+        expect(balances.base).toHaveProperty('USDC');
+        expect(balances.base).toHaveProperty('USDT');
+        expect(balances.base).toHaveProperty('DAI');
+        expect(balances.base).toHaveProperty('WETH');
       });
     });
   });
