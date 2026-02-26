@@ -15,6 +15,7 @@ import TaskPostScreen from '../screens/TaskPostScreen';
 import TaskDetailScreen from '../screens/TaskDetailScreen';
 import ConnectWalletScreen from '../screens/ConnectWalletScreen';
 import EchoScreen from '../screens/EchoScreen';
+import PerformanceScreen from '../screens/PerformanceScreen';
 
 // Hooks
 import { useWalletStore } from '../store/walletStore';
@@ -149,6 +150,15 @@ export default function AppNavigator() {
               options={{ 
                 headerShown: true,
                 title: 'Echo Survival',
+                presentation: 'modal'
+              }}
+            />
+            <Stack.Screen 
+              name="Performance" 
+              component={PerformanceScreen}
+              options={{ 
+                headerShown: true,
+                title: 'Performance',
                 presentation: 'modal'
               }}
             />

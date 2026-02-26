@@ -17,6 +17,9 @@ export { ShareProfile } from './ShareProfile';
 export { ProfileStats } from './ProfileStats';
 export { AchievementGallery, type Achievement, type AchievementTier } from './AchievementGallery';
 
+// Performance Components
+export { PerformanceMonitor } from './PerformanceMonitor';
+
 // Responsive utilities
 export {
   scale,

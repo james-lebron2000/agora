@@ -16,6 +16,7 @@ export type RootStackParamList = {
   TaskDetail: { taskId: string };
   Bridge: undefined;
   Echo: { agentId?: string };
+  Performance: undefined;
 };
 
 export type Agent = {
