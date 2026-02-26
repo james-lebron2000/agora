@@ -20,6 +20,8 @@ export { createMultiChainClient, createMultiChainWallet, loadOrCreateMultiChainW
 export { CrossChainBridge, createChainPublicClient, getUSDCBalance, getNativeBalance, getAllBalances, getBridgeQuote, findCheapestChain, estimateBridgeFee, SUPPORTED_CHAINS, USDC_ADDRESSES, LAYERZERO_ENDPOINTS, LAYERZERO_CHAIN_IDS, LAYERZERO_USDC_OFT, RPC_URLS, BridgeTransactionHistory, BridgeTransactionMonitor, BridgeError, defaultLogger, listenLayerZeroMessages, getBridgeHistory } from './bridge.js';
 // Performance Optimization module (v1.0)
 export { PerformanceMonitor, createPerformanceMonitor, benchmark, measureLatency, measureLatencyAsync, withLatencyTracking, withLatencyTrackingAsync, trackMemory, generateOptimizationReport, } from './performance.js';
+// API Cache Layer (v1.0)
+export { ApiCache, getGlobalCache, setGlobalCache, cachedFetch, withCache, } from './cache.js';
 // Agent Profile module (v1.1) - with frontend optimizations
 export { ProfileManager, createProfileManager, calculateLevel, xpForNextLevel, levelProgress, getTierColor, getDefaultAchievements, 
 // Frontend optimizations
