@@ -45,3 +45,13 @@ export {
   type UseSurvivalOptions,
   type UseSurvivalReturn,
 } from './useSurvival';
+
+// ============================================================================
+// Error Handling Hooks
+// ============================================================================
+
+export {
+  useErrorHandler,
+  type ErrorInfo,
+  type UseErrorHandlerReturn,
+} from './useErrorHandler';
