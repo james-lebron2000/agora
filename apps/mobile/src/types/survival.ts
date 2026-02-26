@@ -186,3 +186,224 @@ export interface SurvivalMetric {
   icon?: string;
   color?: string;
 }
+
+// ============================================
+// Prediction Types
+// ============================================
+
+import type {
+  PredictionResult as SDKPredictionResult,
+  SurvivalTrendPrediction as SDKSurvivalTrendPrediction,
+  EconomicForecast as SDKEconomicForecast,
+  HistoricalDataPoint,
+} from '@agora/sdk/survival-prediction';
+
+// Re-export SDK prediction types
+export type { HistoricalDataPoint };
+export type { SDKPredictionResult, SDKSurvivalTrendPrediction, SDKEconomicForecast };
+
+/** Prediction result with confidence interval */
+export interface PredictionResult<T> {
+  value: T;
+  confidence: number; // 0-1
+  lowerBound: T;
+  upperBound: T;
+  timestamp: number;
+}
+
+/** Survival trend prediction with UI metadata */
+export interface SurvivalTrendPrediction {
+  currentScore: number;
+  predictedScore: PredictionResult<number>;
+  trend: 'improving' | 'stable' | 'declining';
+  trendStrength: number; // 0-1
+  daysToCritical: number | null;
+  daysToRecovery: number | null;
+}
+
+/** Economic forecast with UI metadata */
+export interface EconomicForecast {
+  currentBalance: string;
+  predictedBalance: PredictionResult<string>;
+  runwayPrediction: PredictionResult<number>;
+  burnRateTrend: 'increasing' | 'stable' | 'decreasing';
+  bankruptcyRisk: number; // 0-1 probability
+  breakEvenDate: number | null; // timestamp
+}
+
+/** Prediction history entry */
+export interface PredictionHistoryEntry {
+  timestamp: number;
+  trend: SurvivalTrendPrediction;
+  forecast: EconomicForecast;
+}
+
+/** Prediction options */
+export interface PredictionOptions {
+  daysAhead?: number;
+  autoRefresh?: boolean;
+  refreshInterval?: number;
+  minDataPoints?: number;
+}
+
+/** Prediction hook return type */
+export interface UsePredictionReturn {
+  // State
+  trend: SurvivalTrendPrediction | null;
+  forecast: EconomicForecast | null;
+  history: PredictionHistoryEntry[];
+  isLoading: boolean;
+  isRefreshing: boolean;
+  error: string | null;
+  lastUpdated: number;
+  hasEnoughData: boolean;
+  
+  // Actions
+  refresh: () => Promise<void>;
+  predict: (daysAhead?: number) => Promise<void>;
+  addDataPoint: (point: HistoricalDataPoint) => void;
+  clearHistory: () => void;
+  
+  // Status helpers
+  isBankruptcyRisk: boolean;
+  daysUntilCritical: number | null;
+  confidenceLevel: number;
+}
+
+// ============================================
+// Simulation Types
+// ============================================
+
+import type {
+  SimulationParams as SDKSimulationParams,
+  SimulationResult as SDKSimulationResult,
+  DailyResult,
+  SimulationEvent,
+  ScenarioComparison as SDKScenarioComparison,
+} from '@agora/sdk/survival-simulation';
+
+// Re-export SDK simulation types
+export type { DailyResult, SimulationEvent };
+export type { SDKSimulationParams, SDKSimulationResult, SDKScenarioComparison };
+
+/** Scenario type for simulations */
+export type ScenarioType = 'optimistic' | 'pessimistic' | 'realistic' | 'custom';
+
+/** Simulation parameters with UI-friendly defaults */
+export interface SimulationParams {
+  initialBalance: number;
+  dailyIncome: number;
+  dailyExpenses: number;
+  taskSuccessRate: number; // 0-1
+  avgTaskReward: number;
+  days: number;
+  volatility: number; // 0-1
+  seed?: number;
+}
+
+/** Simulation result with UI metadata */
+export interface SimulationResult {
+  scenario: ScenarioType;
+  params: SimulationParams;
+  dailyResults: DailyResult[];
+  summary: {
+    finalBalance: number;
+    totalIncome: number;
+    totalExpenses: number;
+    minBalance: number;
+    maxBalance: number;
+    daysSurvived: number;
+    bankruptcyDay: number | null;
+    avgSurvivalScore: number;
+    finalSurvivalScore: number;
+  };
+  riskAssessment: {
+    bankruptcyProbability: number;
+    criticalPeriods: Array<{ start: number; end: number }>;
+    recommendedActions: string[];
+  };
+}
+
+/** Scenario comparison result */
+export interface ScenarioComparison {
+  scenarios: Record<ScenarioType, SimulationResult>;
+  recommendation: ScenarioType;
+  riskAnalysis: {
+    bestCaseOutcome: number;
+    worstCaseOutcome: number;
+    expectedOutcome: number;
+    probabilityOfSuccess: number;
+  };
+}
+
+/** Monte Carlo aggregate results */
+export interface MonteCarloAggregate {
+  meanFinalBalance: number;
+  medianFinalBalance: number;
+  stdDev: number;
+  bankruptcyRate: number;
+  confidenceInterval: [number, number];
+}
+
+/** Monte Carlo simulation result */
+export interface MonteCarloResult {
+  results: SimulationResult[];
+  aggregate: MonteCarloAggregate;
+}
+
+/** Simulation options */
+export interface SimulationOptions {
+  defaultDays?: number;
+  defaultVolatility?: number;
+  enableMonteCarlo?: boolean;
+  monteCarloIterations?: number;
+}
+
+/** Simulation hook return type */
+export interface UseSimulationReturn {
+  // State
+  result: SimulationResult | null;
+  comparison: ScenarioComparison | null;
+  monteCarlo: MonteCarloResult | null;
+  isLoading: boolean;
+  isComparing: boolean;
+  isRunningMonteCarlo: boolean;
+  error: string | null;
+  lastUpdated: number;
+  
+  // Actions
+  simulate: (params: Partial<SimulationParams>) => Promise<SimulationResult>;
+  compareScenarios: (baseParams?: Partial<SimulationParams>) => Promise<ScenarioComparison>;
+  runMonteCarlo: (params: Partial<SimulationParams>, iterations?: number) => Promise<MonteCarloResult>;
+  clearResults: () => void;
+  
+  // Preset scenarios
+  runOptimistic: (days?: number) => Promise<SimulationResult>;
+  runPessimistic: (days?: number) => Promise<SimulationResult>;
+  runRealistic: (days?: number) => Promise<SimulationResult>;
+  
+  // Status helpers
+  hasResults: boolean;
+  bankruptcyProbability: number;
+  isSafe: boolean;
+}
+
+/** Chart data for visualization */
+export interface SimulationChartData {
+  labels: string[];
+  datasets: Array<{
+    label: string;
+    data: number[];
+    color?: string;
+  }>;
+}
+
+/** Prediction chart data for visualization */
+export interface PredictionChartData {
+  labels: string[];
+  actual: number[];
+  predicted: number[];
+  lowerBound: number[];
+  upperBound: number[];
+  confidence: number[];
+}
