@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { redisService } from '../services/redis';
 import { webSocketService } from '../services/websocket';
+import { monitoringService } from '../services/monitoring';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { SuccessResponse, HealthStatus } from '../types';
@@ -8,7 +9,44 @@ import { SuccessResponse, HealthStatus } from '../types';
 const router = Router();
 const packageJson = require('../../package.json');
 
-// Basic health check
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     summary: Basic health check
+ *     description: |
+ *       Simple health check endpoint that returns the API status.
+ *       This endpoint is publicly accessible and does not require authentication.
+ *       
+ *       Use this for load balancer health checks and basic uptime monitoring.
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: API is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         status:
+ *                           type: string
+ *                           example: 'healthy'
+ *             examples:
+ *               healthy:
+ *                 summary: Healthy response
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     status: 'healthy'
+ *                   timestamp: '2024-01-15T10:30:00.000Z'
+ *                   requestId: '550e8400-e29b-41d4-a716-446655440000'
+ *       500:
+ *         $ref: '#/components/responses/InternalError'
+ */
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const response: SuccessResponse<{ status: string }> = {
@@ -24,7 +62,47 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// Detailed health check
+/**
+ * @openapi
+ * /health/detailed:
+ *   get:
+ *     summary: Detailed health check
+ *     description: |
+ *       Comprehensive health check that includes:
+ *       - API version and uptime
+ *       - Redis connection status and latency
+ *       - Microservice health (agents, tasks, payments)
+ *       - Overall system status
+ *       
+ *       The response status code reflects the health state:
+ *       - `200`: All systems healthy
+ *       - `200` (with degraded status): Some systems degraded but functional
+ *       - `503`: Critical systems unhealthy
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Health status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/HealthStatus'
+ *       503:
+ *         description: Service unhealthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/HealthStatus'
+ *       500:
+ *         $ref: '#/components/responses/InternalError'
+ */
 router.get('/detailed', async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Check Redis
@@ -51,15 +129,19 @@ router.get('/detailed', async (req: Request, res: Response, next: NextFunction) 
       ? 'unhealthy' 
       : (allHealthy ? 'healthy' : 'degraded');
 
-    const health: HealthStatus = {
+    // Get additional metrics
+    const metrics = monitoringService.getMetrics();
+
+    const health: HealthStatus & { metrics?: typeof metrics } = {
       status,
       timestamp: new Date().toISOString(),
       version: packageJson.version,
       uptime: process.uptime(),
       dependencies,
+      metrics,
     };
 
-    const response: SuccessResponse<HealthStatus> = {
+    const response: SuccessResponse<typeof health> = {
       success: true,
       data: health,
       timestamp: new Date().toISOString(),
@@ -73,7 +155,40 @@ router.get('/detailed', async (req: Request, res: Response, next: NextFunction) 
   }
 });
 
-// Readiness check
+/**
+ * @openapi
+ * /health/ready:
+ *   get:
+ *     summary: Readiness probe
+ *     description: |
+ *       Kubernetes-style readiness probe.
+ *       Returns 200 when the service is ready to accept traffic,
+ *       503 when critical dependencies (like Redis) are not ready.
+ *       
+ *       Use this endpoint for Kubernetes readiness probes.
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Service is ready to accept traffic
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         ready:
+ *                           type: boolean
+ *                           example: true
+ *       503:
+ *         description: Service is not ready
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 router.get('/ready', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const redisHealth = await redisService.healthCheck();
@@ -101,7 +216,33 @@ router.get('/ready', async (req: Request, res: Response, next: NextFunction) => 
   }
 });
 
-// Liveness check
+/**
+ * @openapi
+ * /health/live:
+ *   get:
+ *     summary: Liveness probe
+ *     description: |
+ *       Kubernetes-style liveness probe.
+ *       Always returns 200 if the process is running.
+ *       
+ *       Use this endpoint for Kubernetes liveness probes.
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: Service is alive
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         alive:
+ *                           type: boolean
+ *                           example: true
+ */
 router.get('/live', (req: Request, res: Response) => {
   res.json({
     success: true,
@@ -111,7 +252,34 @@ router.get('/live', (req: Request, res: Response) => {
   });
 });
 
-// WebSocket stats
+/**
+ * @openapi
+ * /health/ws:
+ *   get:
+ *     summary: WebSocket statistics
+ *     description: |
+ *       Retrieve real-time WebSocket connection statistics.
+ *       
+ *       **Authentication Required**: Bearer token with `admin:read` permission
+ *     tags: [Health]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: WebSocket statistics retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/SuccessResponse'
+ *                 - properties:
+ *                     data:
+ *                       $ref: '#/components/schemas/WebSocketStats'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ */
 router.get('/ws', (req: Request, res: Response, next: NextFunction) => {
   try {
     const stats = webSocketService.getStats();
@@ -124,6 +292,42 @@ router.get('/ws', (req: Request, res: Response, next: NextFunction) => {
     };
 
     res.json(response);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
+ * /health/metrics:
+ *   get:
+ *     summary: Prometheus metrics
+ *     description: |
+ *       Expose application metrics in Prometheus format.
+ *       Includes request counts, latencies, error rates, and custom business metrics.
+ *       
+ *       **Note**: This endpoint returns plain text in Prometheus exposition format,
+ *       not JSON.
+ *     tags: [Health]
+ *     produces:
+ *       - text/plain
+ *     responses:
+ *       200:
+ *         description: Prometheus metrics in plain text format
+ *         content:
+ *           text/plain:
+ *             schema:
+ *               type: string
+ *             example: |
+ *               # HELP http_requests_total Total HTTP requests
+ *               # TYPE http_requests_total counter
+ *               http_requests_total{method="GET",route="/health",status="200"} 42
+ */
+router.get('/metrics', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const metrics = await monitoringService.getPrometheusMetrics();
+    res.set('Content-Type', monitoringService.getContentType());
+    res.send(metrics);
   } catch (error) {
     next(error);
   }

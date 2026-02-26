@@ -11,6 +11,8 @@ import { logger } from './utils/logger';
 import { requestIdMiddleware, errorHandler } from './middleware/errorHandler';
 import { createTieredRateLimitMiddleware } from './middleware/rateLimiter';
 import { optionalAuthMiddleware } from './middleware/auth';
+import { metricsMiddleware } from './middleware/metrics';
+import { setupSwagger } from './docs/openapi';
 
 import authRoutes from './routes/auth';
 import agentsRoutes from './routes/agents';
@@ -76,6 +78,9 @@ app.use(compression());
 // Request ID and logging
 app.use(requestIdMiddleware);
 
+// Metrics collection (before routes)
+app.use(metricsMiddleware);
+
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -86,6 +91,9 @@ app.use(createTieredRateLimitMiddleware());
 
 // Health check endpoint (no auth required)
 app.use('/health', healthRoutes);
+
+// API documentation
+setupSwagger(app);
 
 // API routes
 app.use('/auth', authRoutes);
@@ -102,7 +110,7 @@ app.get('/', (req, res) => {
   res.json({
     name: 'Agora API Gateway',
     version: '1.0.0',
-    documentation: '/docs',
+    documentation: '/api-docs',
     health: '/health',
     websocket: '/ws',
   });
@@ -163,6 +171,7 @@ process.on('unhandledRejection', (reason, promise) => {
 server.listen(config.port, () => {
   logger.info(`🚀 API Gateway running on port ${config.port}`);
   logger.info(`📊 Health check: http://localhost:${config.port}/health`);
+  logger.info(`📚 API Docs: http://localhost:${config.port}/api-docs`);
   logger.info(`🔌 WebSocket: ws://localhost:${config.port}/ws`);
   logger.info(`🌍 Environment: ${config.nodeEnv}`);
 });
