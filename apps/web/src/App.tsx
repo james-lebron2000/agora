@@ -5,8 +5,7 @@ import { Hero } from './components/Hero'
 import { AnalyticsDashboard } from './components/AnalyticsDashboard'
 import { NetworkStats, type NetworkMetrics } from './components/NetworkStats'
 import { UseCaseShowcase } from './components/UseCaseShowcase'
-import { BridgeCard } from './components/BridgeCard'
-import { BridgeStatus } from './components/BridgeStatus'
+
 import { MobileHeader } from './components/MobileHeader'
 import { MobileBottomNav } from './components/MobileBottomNav'
 import { ErrorBoundary, SectionErrorBoundary } from './components/ErrorBoundary'
@@ -44,6 +43,7 @@ const ARHud = createLazyComponent(() => import('./pages/ARHud').then(m => ({ def
 const AgentProfile = createLazyComponent(() => import('./pages/AgentProfile').then(m => ({ default: m.AgentProfile })))
 const AdAuction = createLazyComponent(() => import('./pages/AdAuction').then(m => ({ default: m.AdAuction })))
 const SurvivalDashboard = createLazyComponent(() => import('./pages/dashboard/survival').then(m => ({ default: m.default })))
+const BridgePage = createLazyComponent(() => import('./pages/bridge').then(m => ({ default: m.default })))
 
 // Route prefetch map for navigation preloading
 const routePrefetchMap: Record<Route, () => Promise<void>> = {
@@ -52,7 +52,7 @@ const routePrefetchMap: Record<Route, () => Promise<void>> = {
   tokenomics: Tokenomics.prefetch,
   echo: Echo.prefetch,
   ar: ARHud.prefetch,
-  bridge: () => Promise.resolve(), // Bridge uses WalletProvider, no lazy load needed for the card
+  bridge: BridgePage.prefetch,
   profile: AgentProfile.prefetch,
   'ad-auction': AdAuction.prefetch,
   survival: SurvivalDashboard.prefetch,
@@ -780,28 +780,11 @@ function AppContent() {
 
   if (route === 'bridge') {
     return (
-      <WalletProvider>
-        <Suspense fallback={<PageLoader />}>
-          <MobileHeader currentRoute={route} onNavigate={navigate} />
-          <div className="min-h-screen bg-agora-50 pt-20 lg:pt-0">
-            <div className="max-w-7xl mx-auto px-4 py-8">
-              <div className="mb-6">
-                <h1 className="text-2xl lg:text-3xl font-bold text-agora-900">Cross-Chain Bridge</h1>
-                <p className="text-agora-600 mt-2 text-sm lg:text-base">Bridge USDC and ETH across Base, Optimism, Arbitrum, and Ethereum</p>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2">
-                  <BridgeCard />
-                </div>
-                <div>
-                  <BridgeStatus />
-                </div>
-              </div>
-            </div>
-          </div>
-          <MobileBottomNav currentRoute={route} onNavigate={navigate} />
-        </Suspense>
-      </WalletProvider>
+      <Suspense fallback={<PageLoader />}>
+        <MobileHeader currentRoute={route} onNavigate={navigate} />
+        <BridgePage />
+        <MobileBottomNav currentRoute={route} onNavigate={navigate} />
+      </Suspense>
     )
   }
   
