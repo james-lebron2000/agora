@@ -57,6 +57,7 @@ import {
 import { useWalletStore } from '../store/walletStore';
 import { useTasks, useSurvival, useProfileApi } from '../hooks/useApi';
 import { useProfile } from '../hooks/useProfile';
+import { useOfflineSync } from '../hooks/useOfflineSync';
 import type { Task } from '../types/navigation';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -231,6 +232,16 @@ export default function ProfileScreen() {
   const [leaderboardPeriod, setLeaderboardPeriod] = useState<TimePeriod>('all-time');
   const [leaderboardSort, setLeaderboardSort] = useState<SortMetric>('earnings');
 
+  // Offline sync integration
+  const {
+    isOnline,
+    isSyncing,
+    pendingOperations,
+    lastSyncTime,
+    syncError,
+    forceSync,
+  } = useOfflineSync();
+
   // Generate activity data
   const activityData = useMemo(() => generateActivityData(90), []);
 
@@ -376,6 +387,34 @@ export default function ProfileScreen() {
         >
         {/* Enhanced Header with AgentAvatar */}
         <View style={styles.header}>
+          {/* Sync Status Indicator */}
+          <View style={styles.syncStatusContainer}>
+            {!isOnline && (
+              <View style={styles.offlineBadge}>
+                <Ionicons name="cloud-offline-outline" size={12} color="#fff" />
+                <Text style={styles.offlineText}>Offline</Text>
+              </View>
+            )}
+            {isSyncing && (
+              <View style={styles.syncingBadge}>
+                <ActivityIndicator size="small" color="#fff" style={styles.syncSpinner} />
+                <Text style={styles.syncingText}>Syncing...</Text>
+              </View>
+            )}
+            {!isSyncing && pendingOperations > 0 && isOnline && (
+              <TouchableOpacity onPress={forceSync} style={styles.pendingBadge}>
+                <Ionicons name="sync-outline" size={12} color="#fff" />
+                <Text style={styles.pendingText}>{pendingOperations} pending</Text>
+              </TouchableOpacity>
+            )}
+            {lastSyncTime && !isSyncing && pendingOperations === 0 && (
+              <View style={styles.syncedBadge}>
+                <Ionicons name="checkmark-circle-outline" size={12} color="#fff" />
+                <Text style={styles.syncedText}>Synced</Text>
+              </View>
+            )}
+          </View>
+
           <TouchableOpacity style={styles.editPill} onPress={() => setIsEditOpen(true)}>
             <Ionicons name="create-outline" size={14} color="#4f46e5" />
             <Text style={styles.editPillText}>Edit</Text>
@@ -916,5 +955,73 @@ const styles = StyleSheet.create({
     fontSize: responsiveFontSize(12),
     color: '#94a3b8',
     marginBottom: verticalScale(26),
+  },
+  // Sync status styles
+  syncStatusContainer: {
+    position: 'absolute',
+    top: verticalScale(12),
+    left: scale(16),
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: scale(8),
+  },
+  offlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#64748b',
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(4),
+    borderRadius: moderateScale(12),
+    gap: scale(4),
+  },
+  offlineText: {
+    color: '#fff',
+    fontSize: responsiveFontSize(11),
+    fontWeight: '600',
+  },
+  syncingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(4),
+    borderRadius: moderateScale(12),
+    gap: scale(4),
+  },
+  syncSpinner: {
+    transform: [{ scale: 0.7 }],
+  },
+  syncingText: {
+    color: '#fff',
+    fontSize: responsiveFontSize(11),
+    fontWeight: '600',
+  },
+  pendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f59e0b',
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(4),
+    borderRadius: moderateScale(12),
+    gap: scale(4),
+  },
+  pendingText: {
+    color: '#fff',
+    fontSize: responsiveFontSize(11),
+    fontWeight: '600',
+  },
+  syncedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10b981',
+    paddingHorizontal: scale(8),
+    paddingVertical: verticalScale(4),
+    borderRadius: moderateScale(12),
+    gap: scale(4),
+  },
+  syncedText: {
+    color: '#fff',
+    fontSize: responsiveFontSize(11),
+    fontWeight: '600',
   },
 });
