@@ -29,6 +29,10 @@
     "./performance": {
       "import": "./dist/performance.js",
       "types": "./dist/performance.d.ts"
+    },
+    "./cache": {
+      "import": "./dist/cache.js",
+      "types": "./dist/cache.d.ts"
     }
   },
   "scripts": {

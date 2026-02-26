@@ -163,6 +163,22 @@ export {
   type PerformanceAlert,
 } from './performance.js';
 
+// API Cache Layer (v1.0)
+export {
+  ApiCache,
+  getGlobalCache,
+  setGlobalCache,
+  cachedFetch,
+  withCache,
+  type CacheEntry,
+  type CacheStats,
+  type CacheConfig,
+  type CacheOptions,
+  type CachedFetchOptions,
+  type UseCachedFetchResult,
+  type UseCachedFetch,
+} from './cache.js';
+
 // Agent Profile module (v1.1) - with frontend optimizations
 export {
   ProfileManager,
