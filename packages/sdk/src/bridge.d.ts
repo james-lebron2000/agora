@@ -847,6 +847,68 @@ export interface BridgeTransactionFilter {
     startTime?: number;
     endTime?: number;
 }
+export interface BridgeStatistics {
+    totalTransactions: number;
+    successfulTransactions: number;
+    failedTransactions: number;
+    successRate: number;
+    averageCompletionTimeMs: number;
+    totalVolumeUSD: string;
+    averageFeeUSD: string;
+    chainStats: Record<SupportedChain, ChainStatistics>;
+    tokenStats: Record<SupportedToken, TokenStatistics>;
+    dailyStats: DailyStatistics[];
+    lastUpdated: number;
+}
+export interface ChainStatistics {
+    chain: SupportedChain;
+    totalSent: number;
+    totalReceived: number;
+    totalVolumeUSD: string;
+    averageFeeUSD: string;
+    successRate: number;
+}
+export interface TokenStatistics {
+    token: SupportedToken;
+    totalTransactions: number;
+    totalVolume: string;
+    totalVolumeUSD: string;
+    averageFeeUSD: string;
+    successRate: number;
+}
+export interface DailyStatistics {
+    date: string;
+    transactions: number;
+    successful: number;
+    failed: number;
+    volumeUSD: string;
+    averageFeeUSD: string;
+    averageCompletionTimeMs: number;
+}
+export interface FeeTrendDataPoint {
+    timestamp: number;
+    sourceChain: SupportedChain;
+    destinationChain: SupportedChain;
+    token: SupportedToken;
+    feeUSD: string;
+    gasPriceGwei: string;
+}
+export interface BridgeAnalyticsConfig {
+    enableFeeTracking: boolean;
+    enableCompletionTimeTracking: boolean;
+    maxHistoryDays: number;
+    priceOracle?: PriceOracle;
+}
+export interface PriceOracle {
+    getPrice(token: SupportedToken): Promise<number>;
+    getNativeTokenPrice(chain: SupportedChain): Promise<number>;
+}
+export declare class CoinGeckoPriceOracle implements PriceOracle {
+    private cache;
+    private readonly CACHE_TTL;
+    getPrice(token: SupportedToken): Promise<number>;
+    getNativeTokenPrice(chain: SupportedChain): Promise<number>;
+}
 export declare class BridgeTransactionHistory {
     private storageKey;
     private transactions;
@@ -860,8 +922,134 @@ export declare class BridgeTransactionHistory {
     clearHistory(): void;
     getPendingTransactions(): BridgeTransaction[];
     getTransactionCount(): number;
+    /**
+     * Get all transactions for analytics
+     */
+    getAllTransactions(): BridgeTransaction[];
 }
 export declare function getBridgeHistory(address: Address, chain?: SupportedChain): BridgeTransaction[];
+/**
+ * Bridge Analytics class for tracking statistics and trends
+ * Provides comprehensive analytics on bridge transactions including:
+ * - Success/failure rates
+ * - Average completion times
+ * - Volume and fee trends
+ * - Chain and token-specific metrics
+ *
+ * @example
+ * ```typescript
+ * const analytics = new BridgeAnalytics(address);
+ *
+ * // Get overall statistics
+ * const stats = await analytics.getStatistics();
+ * console.log(`Success rate: ${stats.successRate}%`);
+ *
+ * // Track a new transaction
+ * analytics.trackTransaction({
+ *   txHash: '0x...',
+ *   sourceChain: 'base',
+ *   destinationChain: 'optimism',
+ *   token: 'USDC',
+ *   amount: '100',
+ *   feeUSD: '0.50'
+ * });
+ *
+ * // Get fee trends
+ * const trends = analytics.getFeeTrends('base', 'optimism', 'USDC');
+ * ```
+ */
+export declare class BridgeAnalytics {
+    private history;
+    private feeTrends;
+    private config;
+    private priceOracle;
+    private readonly storageKey;
+    constructor(address: Address, config?: Partial<BridgeAnalyticsConfig>);
+    /**
+     * Load fee trends from storage
+     */
+    private loadFeeTrends;
+    /**
+     * Save fee trends to storage
+     */
+    private saveFeeTrends;
+    /**
+     * Clean data older than maxHistoryDays
+     */
+    private cleanOldData;
+    /**
+     * Calculate USD value from token amount
+     */
+    private calculateUSDValue;
+    /**
+     * Get comprehensive bridge statistics
+     */
+    getStatistics(): Promise<BridgeStatistics>;
+    /**
+     * Calculate chain-specific statistics
+     */
+    private calculateChainStatistics;
+    /**
+     * Calculate token-specific statistics
+     */
+    private calculateTokenStatistics;
+    /**
+     * Calculate daily statistics
+     */
+    private calculateDailyStatistics;
+    /**
+     * Estimate completion time based on chain pair
+     */
+    private estimateCompletionTime;
+    /**
+     * Track a fee data point for trend analysis
+     */
+    trackFee(sourceChain: SupportedChain, destinationChain: SupportedChain, token: SupportedToken, nativeFee: string, gasPriceGwei: string): Promise<void>;
+    /**
+     * Get fee trends for a specific route
+     */
+    getFeeTrends(sourceChain?: SupportedChain, destinationChain?: SupportedChain, token?: SupportedToken, limit?: number): FeeTrendDataPoint[];
+    /**
+     * Get average fee for a route
+     */
+    getAverageFee(sourceChain: SupportedChain, destinationChain: SupportedChain, token: SupportedToken): string;
+    /**
+     * Get fee trend analysis (increasing/decreasing/stable)
+     */
+    getFeeTrendAnalysis(sourceChain: SupportedChain, destinationChain: SupportedChain, token: SupportedToken): {
+        trend: 'increasing' | 'decreasing' | 'stable';
+        changePercent: number;
+    };
+    /**
+     * Get best time to bridge (based on historical fee data)
+     */
+    getBestTimeToBridge(sourceChain: SupportedChain, destinationChain: SupportedChain, token: SupportedToken): {
+        bestHour: number;
+        averageFee: string;
+    };
+    /**
+     * Track a new transaction for analytics
+     */
+    trackTransaction(data: {
+        txHash: Hex;
+        sourceChain: SupportedChain;
+        destinationChain: SupportedChain;
+        token: SupportedToken;
+        amount: string;
+        feeUSD?: string;
+    }): void;
+    /**
+     * Export analytics data
+     */
+    exportData(): {
+        statistics: BridgeStatistics | null;
+        feeTrends: FeeTrendDataPoint[];
+    };
+    /**
+     * Clear all analytics data
+     */
+    clearData(): void;
+}
 export declare const RPC_URLS: Record<SupportedChain, string[]>;
 export interface ChainBalance {
     chain: SupportedChain;
@@ -22051,9 +22239,40 @@ export interface BridgeLogger {
  */
 export declare const defaultLogger: BridgeLogger;
 /**
+ * LayerZero message tracking status
+ */
+export interface LayerZeroTrackingStatus {
+    messageHash: Hex;
+    srcEid: number;
+    dstEid: number;
+    nonce: bigint;
+    status: 'pending' | 'inflight' | 'delivered' | 'verified' | 'failed';
+    blockNumber?: bigint;
+    timestamp: number;
+    retries: number;
+}
+/**
+ * Transaction polling configuration
+ */
+export interface PollingConfig {
+    intervalMs: number;
+    maxRetries: number;
+    sourceConfirmationTimeoutMs: number;
+    messageDeliveryTimeoutMs: number;
+    destinationConfirmationTimeoutMs: number;
+    requiredConfirmations: number;
+}
+/**
  * Bridge Transaction Monitor
  * Monitors cross-chain transactions from source to destination
  * Tracks LayerZero message status and provides real-time updates
+ *
+ * Features:
+ * - Automatic transaction status polling
+ * - LayerZero message delivery tracking
+ * - Cross-chain completion detection
+ * - Configurable timeouts and retry logic
+ * - Real-time progress updates via EventEmitter
  *
  * @example
  * ```typescript
@@ -22061,6 +22280,10 @@ export declare const defaultLogger: BridgeLogger;
  *
  * monitor.on('statusUpdate', (status) => {
  *   console.log(`Progress: ${status.progress}%`);
+ * });
+ *
+ * monitor.on('messageDelivered', (status) => {
+ *   console.log('LayerZero message delivered!');
  * });
  *
  * const status = await monitor.monitorTransaction(
@@ -22076,13 +22299,18 @@ export declare class BridgeTransactionMonitor extends EventEmitter {
     private logger;
     private activeMonitors;
     private statusCache;
-    private readonly DEFAULT_CONFIRMATIONS;
-    private readonly SOURCE_CONFIRMATION_TIMEOUT;
-    private readonly MESSAGE_DELIVERY_TIMEOUT;
-    private readonly DESTINATION_CONFIRMATION_TIMEOUT;
-    private readonly POLL_INTERVAL;
-    private readonly MAX_RETRIES;
-    constructor(sourceChain: SupportedChain, logger?: BridgeLogger);
+    private lzStatusCache;
+    private pollingConfig;
+    private readonly DEFAULT_CONFIG;
+    constructor(sourceChain: SupportedChain, logger?: BridgeLogger, pollingConfig?: Partial<PollingConfig>);
+    /**
+     * Update polling configuration
+     */
+    updatePollingConfig(config: Partial<PollingConfig>): void;
+    /**
+     * Get current polling configuration
+     */
+    getPollingConfig(): PollingConfig;
     /**
      * Monitor a bridge transaction end-to-end
      * Tracks source confirmation, message delivery, and destination confirmation
@@ -22094,14 +22322,16 @@ export declare class BridgeTransactionMonitor extends EventEmitter {
     }): Promise<BridgeTransactionStatusDetails>;
     /**
      * Monitor source chain transaction confirmation
+     * Implements polling with retry logic and progress events
      */
     private monitorSourceConfirmation;
     /**
-     * Monitor LayerZero message delivery
+     * Monitor LayerZero message delivery with enhanced tracking
      */
     private monitorMessageDelivery;
     /**
      * Monitor destination chain transaction confirmation
+     * Implements polling for OFT receive events with progress tracking
      */
     private monitorDestinationConfirmation;
     /**

@@ -52,4 +52,6 @@ export { SurvivalSimulator, createSimulatorFromSnapshot, simulateFromSnapshot, g
 export { calculateAgentScore, formatPriceRange, getStarRating, formatETA, } from './portfolio.js';
 // Performance Monitor module (v1.0) - Simple performance tracking and metrics
 export { PerformanceTracker, MemoryMonitor, MetricCollector, createPerformanceTracker, createMemoryMonitor, createMetricCollector, } from './performance-monitor.js';
+// DateTime Formatter utilities (v1.0) - Internationalized date/time formatting
+export { formatDate, formatTime, formatDuration, timeAgo, } from './utils/formatters.js';
 //# sourceMappingURL=index.js.map

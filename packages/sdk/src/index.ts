@@ -500,3 +500,27 @@ export {
   formatDuration,
   timeAgo,
 } from './utils/formatters.js';
+
+// Mobile module (v1.0) - Device detection, optimization, and gesture handling
+export {
+  DeviceDetector,
+  MobileOptimizer,
+  TouchGestureHandler,
+  isMobile,
+  isTablet,
+  getOptimizedConfig,
+  DEFAULT_GESTURE_CONFIG,
+  type DeviceType,
+  type OS,
+  type Orientation,
+  type DeviceInfo,
+  type PerformanceLevel,
+  type NetworkType,
+  type DeviceDetectorOptions,
+  type OptimizationConfig,
+  type PerformanceMetrics,
+  type GestureType,
+  type GestureHandler,
+  type TouchEventData,
+  type GestureConfig,
+} from './mobile.js';

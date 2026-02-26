@@ -310,7 +310,7 @@ export class SurvivalExecutor extends EventEmitter {
             amount
         });
         // Execute the bridge transaction
-        const result = await this.bridge.bridgeTokens({
+        const result = await this.bridge.bridgeToken({
             sourceChain,
             destinationChain,
             token,

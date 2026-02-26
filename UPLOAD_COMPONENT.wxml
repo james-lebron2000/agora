@@ -1,0 +1,25 @@
+<!-- pages/upload/upload.wxml -->
+<view class="container">
+  <view class="upload-section">
+    <button type="primary" bindtap="chooseAndUpload">
+      选择图片并上传
+    </button>
+  </view>
+  
+  <view class="status-section" wx:if="{{uploadStatus}}">
+    <text>上传状态: {{uploadStatus}}</text>
+  </view>
+  
+  <view class="result-section" wx:if="{{fileId}}">
+    <text>文件ID: {{fileId}}</text>
+    <text>文件URL: {{fileUrl}}</text>
+  </view>
+  
+  <view class="parse-section" wx:if="{{parseStatus}}">
+    <text>解析状态: {{parseStatus}}</text>
+    <view wx:if="{{parseResult}}">
+      <text>诊断: {{parseResult.diagnosis}}</text>
+      <text>分期: {{parseResult.stage}}</text>
+    </view>
+  </view>
+</view>

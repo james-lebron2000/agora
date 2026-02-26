@@ -392,8 +392,8 @@ export class SurvivalMonitor extends EventEmitter {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    type: 'predictive_alert',
-                    ...alert
+                    ...alert,
+                    notificationType: 'predictive_alert'
                 })
             });
         }
