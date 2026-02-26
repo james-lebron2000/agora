@@ -32,11 +32,14 @@ export {
   generatePredictionChartData,
 } from './useSurvivalSimulation';
 
-// Performance Hooks
+// Performance Monitor Hooks (enhanced monitoring)
 export {
   usePerformanceMonitor,
-  type PerformanceMetrics,
+  type PerformanceMetrics as PerformanceMonitorMetrics,
   type PerformanceReport,
+  type PerformanceAlert,
+  type UsePerformanceMonitorOptions,
+  type UsePerformanceMonitorReturn,
 } from './usePerformanceMonitor';
 
 // Network Hooks
