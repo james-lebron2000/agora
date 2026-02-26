@@ -1,0 +1,538 @@
+ = false;
+
+  constructor(config: AnalyticsConfig = {}) {
+    super();
+    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.eventTracker = new EventTracker(config);
+    this.metricsCollector = new MetricsCollector(config);
+
+    // Forward events from components
+    this.eventTracker.on('eventTracked', (event) => this.emit('eventTracked', event));
+    this.eventTracker.on('flush', (events) => this.emit('eventsFlushed', events));
+    this.metricsCollector.on('counterIncremented', (data) => this.emit('metricUpdated', data));
+
+    if (this.config.autoStart) {
+      this.start();
+    }
+  }
+
+  /**
+   * Start the analytics manager
+   */
+  start(): void {
+    if (this.isRunning) return;
+
+    this.isRunning = true;
+    this.eventTracker.start();
+
+    this.emit('started');
+    this.logDebug('AnalyticsManager started');
+  }
+
+  /**
+   * Stop the analytics manager
+   */
+  stop(): void {
+    if (!this.isRunning) return;
+
+    this.isRunning = false;
+    this.eventTracker.stop();
+    this.stopDashboard();
+
+    this.emit('stopped');
+    this.logDebug('AnalyticsManager stopped');
+  }
+
+  // Event Tracking Methods
+
+  /**
+   * Track a custom event
+   */
+  trackEvent(
+    category: EventCategory,
+    action: string,
+    options: EventOptions = {}
+  ): AnalyticsEvent | null {
+    return this.eventTracker.trackEvent(category, action, options);
+  }
+
+  /**
+   * Track a page view
+   */
+  trackPageView(
+    path: string,
+    options: EventOptions & { title?: string; referrer?: string } = {}
+  ): AnalyticsEvent | null {
+    return this.eventTracker.trackPageView(path, options);
+  }
+
+  /**
+   * Track a user interaction
+   */
+  trackInteraction(
+    type: string,
+    element: string,
+    options: EventOptions & { value?: number } = {}
+  ): AnalyticsEvent | null {
+    return this.eventTracker.trackInteraction(type, element, options);
+  }
+
+  /**
+   * Track an agent event
+   */
+  trackAgentEvent(
+    agentId: string,
+    action: string,
+    options: EventOptions = {}
+  ): AnalyticsEvent | null {
+    return this.eventTracker.trackAgentEvent(agentId, action, options);
+  }
+
+  /**
+   * Track a transaction
+   */
+  trackTransaction(
+    action: string,
+    value: number,
+    currency: string,
+    options: EventOptions = {}
+  ): AnalyticsEvent | null {
+    return this.eventTracker.trackTransaction(action, value, currency, options);
+  }
+
+  /**
+   * Track an error
+   */
+  trackError(
+    error: Error,
+    category: EventCategory = 'system',
+    options: EventOptions = {}
+  ): AnalyticsEvent | null {
+    return this.eventTracker.trackError(error, category, options);
+  }
+
+  // Metric Methods
+
+  /**
+   * Increment a counter
+   */
+  increment(
+    name: string,
+    value: number = 1,
+    labels?: Record<string, string>,
+    description?: string
+  ): void {
+    this.metricsCollector.increment(name, value, labels, description);
+  }
+
+  /**
+   * Set a gauge value
+   */
+  gauge(
+    name: string,
+    value: number,
+    labels?: Record<string, string>,
+    description?: string,
+    unit?: string
+  ): void {
+    this.metricsCollector.gauge(name, value, labels, description, unit);
+  }
+
+  /**
+   * Observe a histogram value
+   */
+  observe(
+    name: string,
+    value: number,
+    labels?: Record<string, string>,
+    buckets?: number[],
+    description?: string,
+    unit?: string
+  ): void {
+    this.metricsCollector.observe(name, value, labels, buckets, description, unit);
+  }
+
+  /**
+   * Start a timer
+   */
+  startTimer(name: string, description?: string): (labels?: Record<string, string>) => number {
+    return this.metricsCollector.startTimer(name, description);
+  }
+
+  /**
+   * Record a timer value
+   */
+  recordTimer(
+    name: string,
+    duration: number,
+    labels?: Record<string, string>,
+    description?: string
+  ): void {
+    this.metricsCollector.recordTimer(name, duration, labels, description);
+  }
+
+  // Session Management
+
+  /**
+   * Start a new session
+   */
+  startSession(sessionId: string, metadata?: Record<string, unknown>): void {
+    const now = Date.now();
+    this.sessions.set(sessionId, { startTime: now, lastActivity: now });
+    this.trackEvent('user', 'session_start', { sessionId, metadata });
+  }
+
+  /**
+   * End a session
+   */
+  endSession(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      const duration = Date.now() - session.startTime;
+      this.trackEvent('user', 'session_end', { 
+        sessionId, 
+        metadata: { duration } 
+      });
+      this.sessions.delete(sessionId);
+    }
+  }
+
+  /**
+   * Update session activity
+   */
+  touchSession(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.lastActivity = Date.now();
+    }
+  }
+
+  /**
+   * Get active session count
+   */
+  getActiveSessionCount(): number {
+    return this.sessions.size;
+  }
+
+  // Dashboard Methods
+
+  /**
+   * Start dashboard data feed
+   */
+  startDashboard(config: DashboardConfig): void {
+    this.dashboardConfig = config;
+
+    if (this.dashboardTimer) {
+      clearInterval(this.dashboardTimer);
+    }
+
+    const interval = config.updateIntervalMs || 5000;
+    this.dashboardTimer = setInterval(() => {
+      const snapshot = this.generateDashboardSnapshot();
+      this.emit('dashboardUpdate', snapshot);
+    }, interval);
+  }
+
+  /**
+   * Stop dashboard data feed
+   */
+  stopDashboard(): void {
+    if (this.dashboardTimer) {
+      clearInterval(this.dashboardTimer);
+      this.dashboardTimer = undefined;
+    }
+  }
+
+  /**
+   * Generate dashboard snapshot
+   */
+  generateDashboardSnapshot(): DashboardSnapshot {
+    const now = Date.now();
+    const recentEvents = this.eventTracker.getRecentEvents(100);
+    const aggregationPeriod = this.dashboardConfig?.aggregationPeriod || '5m';
+    const metrics = this.metricsCollector.aggregate(aggregationPeriod);
+
+    // Calculate KPIs
+    const kpis: KeyPerformanceIndicators = {
+      totalEvents: this.eventTracker.getEventCounts().size,
+      eventsPerSecond: recentEvents.length / 60, // Per minute average
+      averageLatency: this.calculateAverageLatency(),
+      errorRate: this.calculateErrorRate(recentEvents),
+      activeSessions: this.sessions.size,
+      uniqueUsers: this.calculateUniqueUsers(recentEvents),
+    };
+
+    return {
+      timestamp: now,
+      metrics: new Map(metrics.map(m => [m.name, m])),
+      recentEvents,
+      alerts: this.alerts.filter(a => !a.acknowledged).slice(0, 10),
+      kpis,
+    };
+  }
+
+  // Export Methods
+
+  /**
+   * Export analytics data
+   */
+  export(options: ExportOptions): string {
+    const events = this.eventTracker.getRecentEvents(10000);
+    const metrics = this.metricsCollector.getAllTimeSeries();
+
+    const data = {
+      exportedAt: Date.now(),
+      events: events.filter(e => {
+        if (options.startTime && e.timestamp < options.startTime) return false;
+        if (options.endTime && e.timestamp > options.endTime) return false;
+        if (options.categories && !options.categories.includes(e.category)) return false;
+        return true;
+      }),
+      metrics: Array.from(metrics.entries()).filter(([name]) => {
+        if (options.metrics && !options.metrics.includes(name)) return false;
+        return true;
+      }).map(([name, ts]) => ({ name, ...ts })),
+    };
+
+    if (options.format === 'csv') {
+      return this.exportToCSV(data, options.includeMetadata);
+    }
+
+    return JSON.stringify(data, null, 2);
+  }
+
+  /**
+   * Export events to CSV format
+   */
+  private exportToCSV(data: any, includeMetadata?: boolean): string {
+    const headers = ['timestamp', 'category', 'action', 'severity', 'source', 'userId', 'agentId', 'sessionId'];
+    if (includeMetadata) headers.push('metadata');
+
+    const rows = data.events.map((e: AnalyticsEvent) => {
+      const row = [
+        new Date(e.timestamp).toISOString(),
+        e.category,
+        e.action,
+        e.severity,
+        e.source,
+        e.userId || '',
+        e.agentId || '',
+        e.sessionId || '',
+      ];
+      if (includeMetadata) row.push(JSON.stringify(e.metadata));
+      return row.join(',');
+    });
+
+    return [headers.join(','), ...rows].join('\n');
+  }
+
+  // Alert Methods
+
+  /**
+   * Create an alert
+   */
+  createAlert(
+    severity: EventSeverity,
+    message: string,
+    metric?: string,
+    threshold?: number,
+    currentValue?: number
+  ): AnalyticsAlert {
+    const alert: AnalyticsAlert = {
+      id: generateId(),
+      timestamp: Date.now(),
+      severity,
+      message,
+      metric,
+      threshold,
+      currentValue,
+      acknowledged: false,
+    };
+
+    this.alerts.push(alert);
+    this.emit('alert', alert);
+    return alert;
+  }
+
+  /**
+   * Acknowledge an alert
+   */
+  acknowledgeAlert(alertId: string): boolean {
+    const alert = this.alerts.find(a => a.id === alertId);
+    if (alert) {
+      alert.acknowledged = true;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Get all alerts
+   */
+  getAlerts(includeAcknowledged: boolean = false): AnalyticsAlert[] {
+    if (includeAcknowledged) return [...this.alerts];
+    return this.alerts.filter(a => !a.acknowledged);
+  }
+
+  // Agent Performance Methods
+
+  /**
+   * Track agent performance metrics
+   */
+  trackAgentPerformance(metrics: AgentPerformanceMetrics): void {
+    this.gauge(`agent_${metrics.agentId}_tasks_completed`, metrics.tasksCompleted);
+    this.gauge(`agent_${metrics.agentId}_success_rate`, metrics.successRate);
+    this.recordTimer(`agent_${metrics.agentId}_response_time`, metrics.responseTime);
+  }
+
+  /**
+   * Track user engagement
+   */
+  trackUserEngagement(metrics: UserEngagementMetrics): void {
+    this.recordTimer(`user_${metrics.userId}_session_duration`, metrics.sessionDuration);
+    this.increment(`user_${metrics.userId}_interactions`, metrics.interactions);
+  }
+
+  /**
+   * Track revenue metrics
+   */
+  trackRevenue(metrics: RevenueMetrics): void {
+    this.gauge('revenue_total', metrics.totalRevenue, { currency: metrics.currency });
+    this.gauge('revenue_transaction_count', metrics.transactionCount);
+    this.gauge('revenue_average_value', metrics.averageTransactionValue, { currency: metrics.currency });
+  }
+
+  /**
+   * Track system health
+   */
+  trackSystemHealth(metrics: SystemHealthMetrics): void {
+    this.gauge('system_cpu_usage', metrics.cpuUsage);
+    this.gauge('system_memory_usage', metrics.memoryUsage);
+    this.gauge('system_disk_usage', metrics.diskUsage);
+    this.recordTimer('system_network_latency', metrics.networkLatency);
+    this.gauge('system_error_rate', metrics.errorRate);
+    this.gauge('system_uptime', metrics.uptime);
+  }
+
+  // Utility Methods
+
+  /**
+   * Get current configuration
+   */
+  getConfig(): AnalyticsConfig {
+    return { ...this.config };
+  }
+
+  /**
+   * Check if running
+   */
+  getIsRunning(): boolean {
+    return this.isRunning;
+  }
+
+  /**
+   * Get event tracker instance
+   */
+  getEventTracker(): EventTracker {
+    return this.eventTracker;
+  }
+
+  /**
+   * Get metrics collector instance
+   */
+  getMetricsCollector(): MetricsCollector {
+    return this.metricsCollector;
+  }
+
+  // Private Helper Methods
+
+  private calculateAverageLatency(): number {
+    const timerMetrics = this.metricsCollector.getMetricsByName('timer');
+    if (timerMetrics.length === 0) return 0;
+
+    const sum = timerMetrics.reduce((acc, m) => acc + (m.value as number), 0);
+    return sum / timerMetrics.length;
+  }
+
+  private calculateErrorRate(events: AnalyticsEvent[]): number {
+    if (events.length === 0) return 0;
+    const errorCount = events.filter(e => e.severity === 'error' || e.severity === 'critical').length;
+    return errorCount / events.length;
+  }
+
+  private calculateUniqueUsers(events: AnalyticsEvent[]): number {
+    const userIds = new Set(events.map(e => e.userId).filter(Boolean));
+    return userIds.size;
+  }
+
+  private logDebug(message: string): void {
+    if (this.config.debug) {
+      console.debug(`[AnalyticsManager] ${message}`);
+    }
+  }
+}
+
+// ============================================================================
+// Factory Functions
+// ============================================================================
+
+const managerInstances: Map<string, AnalyticsManager> = new Map();
+
+/**
+ * Create or get analytics manager for an agent
+ */
+export function getOrCreateAnalyticsManager(
+  agentId: string,
+  config?: AnalyticsConfig
+): AnalyticsManager {
+  let manager = managerInstances.get(agentId);
+  if (!manager) {
+    manager = new AnalyticsManager(config);
+    managerInstances.set(agentId, manager);
+  }
+  return manager;
+}
+
+/**
+ * Get analytics manager by agent ID
+ */
+export function getAnalyticsManager(agentId: string): AnalyticsManager | undefined {
+  return managerInstances.get(agentId);
+}
+
+/**
+ * Remove analytics manager
+ */
+export function removeAnalyticsManager(agentId: string): boolean {
+  const manager = managerInstances.get(agentId);
+  if (manager) {
+    manager.stop();
+    return managerInstances.delete(agentId);
+  }
+  return false;
+}
+
+/**
+ * Create a performance monitor
+ */
+export function createPerformanceMonitor(
+  name: string,
+  analytics: AnalyticsManager
+): { start: () => void; end: (labels?: Record<string, string>) => number } {
+  let startTime = 0;
+
+  return {
+    start: () => { startTime = performance.now(); },
+    end: (labels?: Record<string, string>) => {
+      const duration = performance.now() - startTime;
+      analytics.recordTimer(name, duration, labels);
+      return duration;
+    },
+  };
+}
+
+// ============================================================================
+// Default Export
+// ============================================================================
+
+export default AnalyticsManager;

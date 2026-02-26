@@ -12,6 +12,10 @@ export { AdAuctionManager, getOrCreateAdAuctionManager, getAdAuctionManager, rem
 export { batchRelease, batchRefund } from './escrow.js';
 // Echo Survival mechanism (v1.5) - Enhanced with multi-token & predictive analytics
 export { EchoSurvivalManager, getOrCreateSurvivalManager, getSurvivalManager, removeSurvivalManager, DEFAULT_SURVIVAL_CONFIG, formatSurvivalReport, shouldAcceptTask } from './survival.js';
+// Survival Alert System (v1.0) - Real-time alerts with aggregation
+export { SurvivalAlertSystem, getOrCreateAlertSystem, getAlertSystem, DEFAULT_ALERT_CONFIG } from './survival-alerts.js';
+// Cross-Chain Survival Optimizer (v1.0) - Chain optimization & rebalancing
+export { CrossChainSurvivalOptimizer, getOrCreateSurvivalOptimizer, getSurvivalOptimizer, removeSurvivalOptimizer, DEFAULT_OPTIMIZER_CONFIG } from './survival-optimizer.js';
 // Wallet management (v1.1)
 export { generateWallet, loadOrCreateWallet, loadWallet, saveEncryptedWallet, getWalletAddress, walletExists, getWalletPath, AGORA_DIR, WALLET_FILE } from './wallet-manager.js';
 // Multi-chain wallet management (v1.2)

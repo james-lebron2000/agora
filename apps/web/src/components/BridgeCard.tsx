@@ -43,7 +43,8 @@ const CHAIN_METADATA: Record<SupportedChain, { name: string; icon: string; color
 }
 
 const SUPPORTED_CHAINS: SupportedChain[] = ['base', 'optimism', 'arbitrum', 'ethereum']
-type TokenType = 'USDC' | 'ETH'
+import type { SupportedToken } from '@agora/sdk'
+type TokenType = SupportedToken
 
 interface BridgeCardProps {
   onBridgeComplete?: (result: { success: boolean; txHash?: string; error?: string }) => void
@@ -231,32 +232,34 @@ export function BridgeCard({
         <div className="p-6 space-y-5">
           {/* Token Selection */}
           <div className="flex gap-2 p-1 bg-agora-100 rounded-xl">
-            {(['USDC', 'ETH'] as TokenType[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => {
-                  setToken(t)
-                  setQuote(null)
-                }}
-                className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-all ${
-                  token === t
-                    ? 'bg-white text-agora-900 shadow-sm'
-                    : 'text-agora-500 hover:text-agora-700'
-                }`}
-              >
-                {t === 'USDC' ? (
+            {(['USDC', 'USDT', 'DAI', 'WETH'] as TokenType[]).map((t) => {
+              const tokenConfig = {
+                USDC: { color: 'bg-usdc', symbol: '$' },
+                USDT: { color: 'bg-green-500', symbol: '₮' },
+                DAI: { color: 'bg-yellow-500', symbol: '◈' },
+                WETH: { color: 'bg-agora-400', symbol: '♦' }
+              }
+              const config = tokenConfig[t]
+              return (
+                <button
+                  key={t}
+                  onClick={() => {
+                    setToken(t)
+                    setQuote(null)
+                  }}
+                  className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-all ${
+                    token === t
+                      ? 'bg-white text-agora-900 shadow-sm'
+                      : 'text-agora-500 hover:text-agora-700'
+                  }`}
+                >
                   <span className="flex items-center justify-center gap-2">
-                    <span className="w-4 h-4 rounded-full bg-usdc flex items-center justify-center text-[8px] text-white font-bold">$</span>
-                    USDC
+                    <span className={`w-4 h-4 rounded-full ${config.color} flex items-center justify-center text-[8px] text-white font-bold`}>{config.symbol}</span>
+                    {t}
                   </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="w-4 h-4 rounded-full bg-agora-400 flex items-center justify-center text-[8px] text-white font-bold">♦</span>
-                    ETH
-                  </span>
-                )}
-              </button>
-            ))}
+                </button>
+              )
+            })}
           </div>
           
           {/* Chain Selection */}

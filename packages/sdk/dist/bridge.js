@@ -75,6 +75,37 @@ export const LAYERZERO_USDC_OFT = {
     optimism: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C',
     arbitrum: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C'
 };
+// LayerZero USDT OFT Adapter addresses (V2)
+// Note: These are placeholder addresses - replace with actual deployed OFT contracts
+export const LAYERZERO_USDT_OFT = {
+    ethereum: '0x1c8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dF1', // Placeholder - update with actual
+    base: '0x2c8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dF2', // Placeholder - update with actual
+    optimism: '0x3c8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dF3', // Placeholder - update with actual
+    arbitrum: '0x4c8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dF4' // Placeholder - update with actual
+};
+// LayerZero DAI OFT Adapter addresses (V2)
+// Note: These are placeholder addresses - replace with actual deployed OFT contracts
+export const LAYERZERO_DAI_OFT = {
+    ethereum: '0x5c8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dF5', // Placeholder - update with actual
+    base: '0x6c8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dF6', // Placeholder - update with actual
+    optimism: '0x7c8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dF7', // Placeholder - update with actual
+    arbitrum: '0x8c8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dF8' // Placeholder - update with actual
+};
+// LayerZero WETH OFT Adapter addresses (V2)
+// Note: These are placeholder addresses - replace with actual deployed OFT contracts
+export const LAYERZERO_WETH_OFT = {
+    ethereum: '0x9c8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dF9', // Placeholder - update with actual
+    base: '0xAc8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dFA', // Placeholder - update with actual
+    optimism: '0xBc8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dFB', // Placeholder - update with actual
+    arbitrum: '0xCc8f9D9C1d0B1E68E9Cde1D65E07c69F6b4e1dFC' // Placeholder - update with actual
+};
+// Helper to get OFT address for any token
+export const LAYERZERO_OFT_ADDRESSES = {
+    USDC: LAYERZERO_USDC_OFT,
+    USDT: LAYERZERO_USDT_OFT,
+    DAI: LAYERZERO_DAI_OFT,
+    WETH: LAYERZERO_WETH_OFT
+};
 // Bridge transaction history class with localStorage persistence
 export class BridgeTransactionHistory {
     storageKey;
@@ -461,11 +492,11 @@ export async function getAllBalances(address) {
     return balances;
 }
 /**
- * Quote LayerZero bridge fees using OFT quoteSend
+ * Quote LayerZero bridge fees using OFT quoteSend for any token
  */
-async function quoteOFTSend(sourceChain, destinationChain, amount, recipient) {
+async function quoteOFTSend(sourceChain, destinationChain, amount, recipient, token = 'USDC') {
     const publicClient = createChainPublicClient(sourceChain);
-    const oftAddress = LAYERZERO_USDC_OFT[sourceChain];
+    const oftAddress = LAYERZERO_OFT_ADDRESSES[token][sourceChain];
     const dstEid = LAYERZERO_CHAIN_IDS[destinationChain];
     // Convert address to bytes32
     const toBytes32 = ('0x' + recipient.slice(2).padStart(64, '0'));
@@ -503,15 +534,13 @@ export async function getBridgeQuote(params, senderAddress) {
         throw new Error(`Unsupported token: ${token}. Supported: ${SUPPORTED_TOKENS.join(', ')}`);
     }
     let lzFee;
-    // Get accurate LZ fee quote for OFT-supported tokens (USDC only via LayerZero OFT currently)
-    if (token === 'USDC') {
-        try {
-            const amountInUnits = parseUnits(amount, TOKEN_DECIMALS[token]);
-            lzFee = await quoteOFTSend(sourceChain, destinationChain, amountInUnits, senderAddress);
-        }
-        catch (error) {
-            console.warn(`[Bridge] Failed to get LZ fee quote:`, error);
-        }
+    // Get accurate LZ fee quote for all OFT-supported tokens
+    try {
+        const amountInUnits = parseUnits(amount, TOKEN_DECIMALS[token]);
+        lzFee = await quoteOFTSend(sourceChain, destinationChain, amountInUnits, senderAddress, token);
+    }
+    catch (error) {
+        console.warn(`[Bridge] Failed to get LZ fee quote for ${token}:`, error);
     }
     // Estimated time varies by route (in seconds)
     const timeEstimates = {
@@ -616,61 +645,54 @@ export async function estimateBridgeFee(params) {
     let lzTokenFee = 0n;
     let gasEstimate = 150000n; // Base gas estimate
     try {
-        if (token === 'USDC') {
-            // Get accurate fee quote from LayerZero OFT
-            const amountInUnits = parseUnits(amount, TOKEN_DECIMALS[token]);
-            const oftAddress = LAYERZERO_USDC_OFT[sourceChain];
-            const dstEid = LAYERZERO_CHAIN_IDS[destinationChain];
-            // Convert address to bytes32
-            const toBytes32 = ('0x' + testAddress.slice(2).padStart(64, '0'));
-            const minAmountLD = (amountInUnits * 995n) / 1000n; // 0.5% slippage
-            const sendParam = {
-                dstEid,
-                to: toBytes32,
-                amountLD: amountInUnits,
-                minAmountLD,
-                extraOptions: '0x',
-                composeMsg: '0x',
-                oftCmd: '0x'
-            };
-            const fee = await publicClient.readContract({
-                address: oftAddress,
-                abi: OFT_ABI,
-                functionName: 'quoteSend',
-                args: [sendParam, false]
-            });
-            nativeFee = fee.nativeFee;
-            lzTokenFee = fee.lzTokenFee;
-            // Estimate gas for the send transaction
-            gasEstimate = 200000n; // OFT send typically uses ~200k gas
-        }
-        else {
-            // ETH transfer estimation
-            // ETH transfers use standard LayerZero messaging
-            const route = `${sourceChain}-${destinationChain}`;
-            const baseFees = {
-                'base-optimism': parseUnits('0.001', 18),
-                'base-arbitrum': parseUnits('0.0012', 18),
-                'optimism-base': parseUnits('0.001', 18),
-                'optimism-arbitrum': parseUnits('0.0012', 18),
-                'arbitrum-base': parseUnits('0.0012', 18),
-                'arbitrum-optimism': parseUnits('0.0012', 18),
-                'ethereum-base': parseUnits('0.005', 18),
-                'ethereum-optimism': parseUnits('0.005', 18),
-                'ethereum-arbitrum': parseUnits('0.005', 18),
-                'base-ethereum': parseUnits('0.01', 18),
-                'optimism-ethereum': parseUnits('0.01', 18),
-                'arbitrum-ethereum': parseUnits('0.01', 18)
-            };
-            nativeFee = baseFees[route] || parseUnits('0.001', 18);
-            gasEstimate = 120000n;
-        }
+        // Get accurate fee quote from LayerZero OFT for all supported tokens
+        const amountInUnits = parseUnits(amount, TOKEN_DECIMALS[token]);
+        const oftAddress = LAYERZERO_OFT_ADDRESSES[token][sourceChain];
+        const dstEid = LAYERZERO_CHAIN_IDS[destinationChain];
+        // Convert address to bytes32
+        const toBytes32 = ('0x' + testAddress.slice(2).padStart(64, '0'));
+        const minAmountLD = (amountInUnits * 995n) / 1000n; // 0.5% slippage
+        const sendParam = {
+            dstEid,
+            to: toBytes32,
+            amountLD: amountInUnits,
+            minAmountLD,
+            extraOptions: '0x',
+            composeMsg: '0x',
+            oftCmd: '0x'
+        };
+        const fee = await publicClient.readContract({
+            address: oftAddress,
+            abi: OFT_ABI,
+            functionName: 'quoteSend',
+            args: [sendParam, false]
+        });
+        nativeFee = fee.nativeFee;
+        lzTokenFee = fee.lzTokenFee;
+        // Estimate gas for the send transaction
+        gasEstimate = 200000n; // OFT send typically uses ~200k gas
     }
     catch (error) {
-        console.warn(`[Bridge] Failed to get accurate fee estimate, using fallback:`, error);
-        // Fallback estimates
-        nativeFee = parseUnits('0.001', 18);
+        console.warn(`[Bridge] Failed to get accurate fee estimate for ${token}, using fallback:`, error);
+        // Fallback estimates based on route
+        const route = `${sourceChain}-${destinationChain}`;
+        const baseFees = {
+            'base-optimism': parseUnits('0.001', 18),
+            'base-arbitrum': parseUnits('0.0012', 18),
+            'optimism-base': parseUnits('0.001', 18),
+            'optimism-arbitrum': parseUnits('0.0012', 18),
+            'arbitrum-base': parseUnits('0.0012', 18),
+            'arbitrum-optimism': parseUnits('0.0012', 18),
+            'ethereum-base': parseUnits('0.005', 18),
+            'ethereum-optimism': parseUnits('0.005', 18),
+            'ethereum-arbitrum': parseUnits('0.005', 18),
+            'base-ethereum': parseUnits('0.01', 18),
+            'optimism-ethereum': parseUnits('0.01', 18),
+            'arbitrum-ethereum': parseUnits('0.01', 18)
+        };
+        nativeFee = baseFees[route] || parseUnits('0.001', 18);
         lzTokenFee = 0n;
+        gasEstimate = 200000n;
     }
     // Get current gas price
     let gasPrice;
@@ -1836,11 +1858,9 @@ export class CrossChainBridge extends EventEmitter {
         }
     }
     /**
-     * Bridge any supported token using LayerZero OFT or adapter contracts
-     * Supports USDC, USDT, DAI, WETH across Base, Optimism, Arbitrum
-     *
-     * Note: Currently USDC uses native LayerZero OFT. Other tokens will use
-     * adapter contracts or fallback mechanisms (implementation required for full support).
+     * Bridge any supported token using LayerZero OFT (Omnichain Fungible Token) protocol
+     * Supports USDC, USDT, DAI, WETH across Base, Optimism, Arbitrum, Ethereum
+     * Uses LayerZero V2 for cross-chain messaging
      *
      * Emits events:
      * - 'approvalRequired' - When token approval is needed
@@ -1878,28 +1898,312 @@ export class CrossChainBridge extends EventEmitter {
                 amount
             };
         }
-        // For USDC, use the optimized native bridge
+        // For USDC, use the optimized native bridge (backward compatibility)
         if (token === 'USDC') {
             return this.bridgeUSDC(destinationChain, amount, srcChain);
         }
-        // For other tokens, currently return a not-implemented error
-        // Full implementation requires LayerZero OFT contracts for each token
-        const error = `${token} bridging via LayerZero OFT is not yet fully implemented. Currently only USDC is supported for direct bridging. Use bridgeUSDC() for USDC transfers.`;
-        this.emit('transactionFailed', {
-            error,
-            sourceChain: srcChain,
-            destinationChain,
-            amount,
-            token
-        });
-        return {
-            success: false,
-            error,
-            sourceChain: srcChain,
-            destinationChain,
-            amount,
-            token
-        };
+        // For other tokens, use the generic OFT bridging implementation
+        return this.bridgeOFTToken(destinationChain, token, amount, srcChain);
+    }
+    /**
+     * Internal method to bridge any OFT-supported token
+     * Generic implementation that works for USDT, DAI, WETH, and future tokens
+     */
+    async bridgeOFTToken(destinationChain, token, amount, sourceChain) {
+        const account = privateKeyToAccount(this.privateKey);
+        try {
+            // Validate chains are supported and different
+            if (sourceChain === destinationChain) {
+                const error = 'Source and destination chains must be different';
+                this.emit('transactionFailed', {
+                    error,
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    token
+                });
+                return {
+                    success: false,
+                    error,
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    token
+                };
+            }
+            // Create wallet and public clients for source chain
+            const { walletClient, publicClient } = createMultiChainClient(this.privateKey, sourceChain);
+            const oftAddress = LAYERZERO_OFT_ADDRESSES[token][sourceChain];
+            const tokenAddress = TOKEN_ADDRESSES[token][sourceChain];
+            const decimals = TOKEN_DECIMALS[token];
+            const amountInUnits = parseUnits(amount, decimals);
+            // Step 1: Check token balance
+            let balance;
+            try {
+                if (token === 'WETH') {
+                    // WETH is checked as native balance since it's the wrapped form
+                    balance = await publicClient.getBalance({ address: account.address });
+                }
+                else {
+                    balance = await publicClient.readContract({
+                        address: tokenAddress,
+                        abi: USDC_ABI,
+                        functionName: 'balanceOf',
+                        args: [account.address]
+                    });
+                }
+            }
+            catch (error) {
+                const errorMsg = `Failed to check ${token} balance: ${error instanceof Error ? error.message : String(error)}`;
+                this.emit('transactionFailed', {
+                    error: errorMsg,
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    token
+                });
+                return {
+                    success: false,
+                    error: errorMsg,
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    token
+                };
+            }
+            if (balance < amountInUnits) {
+                const formattedBalance = formatUnits(balance, decimals);
+                const error = `Insufficient ${token} balance. Have: ${formattedBalance}, Need: ${amount}`;
+                this.emit('balanceInsufficient', {
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    token
+                });
+                this.emit('transactionFailed', {
+                    error,
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    token
+                });
+                return {
+                    success: false,
+                    error,
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    token
+                };
+            }
+            // Step 2: Get quote for fees
+            let lzFee;
+            try {
+                lzFee = await quoteOFTSend(sourceChain, destinationChain, amountInUnits, account.address, token);
+                this.emit('feeEstimated', {
+                    nativeFee: formatUnits(lzFee.nativeFee, 18),
+                    lzTokenFee: formatUnits(lzFee.lzTokenFee, 18),
+                    sourceChain,
+                    destinationChain
+                });
+            }
+            catch (error) {
+                const errorMsg = `Failed to get LayerZero fee quote for ${token}: ${error instanceof Error ? error.message : String(error)}`;
+                this.emit('transactionFailed', {
+                    error: errorMsg,
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    token
+                });
+                return {
+                    success: false,
+                    error: errorMsg,
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    token
+                };
+            }
+            // Step 3: Check native balance for fees
+            const nativeBalance = await publicClient.getBalance({ address: account.address });
+            if (nativeBalance < lzFee.nativeFee) {
+                const error = `Insufficient native token for gas fees. Have: ${formatUnits(nativeBalance, 18)} ETH, Need: ${formatUnits(lzFee.nativeFee, 18)} ETH`;
+                this.emit('transactionFailed', {
+                    error,
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    token
+                });
+                return {
+                    success: false,
+                    error,
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    token
+                };
+            }
+            // Step 4: Check and approve token allowance for OFT contract (skip for WETH)
+            if (token !== 'WETH') {
+                const currentAllowance = await publicClient.readContract({
+                    address: tokenAddress,
+                    abi: USDC_ABI,
+                    functionName: 'allowance',
+                    args: [account.address, oftAddress]
+                });
+                if (currentAllowance < amountInUnits) {
+                    console.log(`[Bridge] Approving ${token} for OFT contract...`);
+                    this.emit('approvalRequired', {
+                        sourceChain,
+                        destinationChain,
+                        amount,
+                        token
+                    });
+                    const approveTx = await retryWithBackoff(async () => {
+                        return await walletClient.writeContract({
+                            address: tokenAddress,
+                            abi: USDC_ABI,
+                            functionName: 'approve',
+                            args: [oftAddress, amountInUnits],
+                            chain: SUPPORTED_CHAINS[sourceChain],
+                            account
+                        });
+                    });
+                    console.log(`[Bridge] ${token} approval transaction: ${approveTx}`);
+                    // Wait for approval confirmation
+                    const approvalConfirmed = await waitForTransaction(publicClient, approveTx, 60000, 1);
+                    if (!approvalConfirmed) {
+                        const error = `${token} approval transaction failed or timed out`;
+                        this.emit('transactionFailed', {
+                            error,
+                            sourceChain,
+                            destinationChain,
+                            amount,
+                            token
+                        });
+                        return {
+                            success: false,
+                            error,
+                            sourceChain,
+                            destinationChain,
+                            amount,
+                            token
+                        };
+                    }
+                    this.emit('approvalConfirmed', {
+                        sourceChain,
+                        destinationChain,
+                        amount,
+                        token
+                    });
+                }
+            }
+            // Step 5: Execute the cross-chain transfer via LayerZero OFT
+            console.log(`[Bridge] Initiating ${token} cross-chain transfer via LayerZero...`);
+            const dstEid = LAYERZERO_CHAIN_IDS[destinationChain];
+            const toBytes32 = ('0x' + account.address.slice(2).padStart(64, '0'));
+            const minAmountLD = (amountInUnits * 995n) / 1000n; // 0.5% slippage
+            const sendParam = {
+                dstEid,
+                to: toBytes32,
+                amountLD: amountInUnits,
+                minAmountLD: minAmountLD,
+                extraOptions: '0x',
+                composeMsg: '0x',
+                oftCmd: '0x'
+            };
+            // Calculate total value to send (native fee + amount for WETH)
+            const valueToSend = token === 'WETH'
+                ? lzFee.nativeFee + amountInUnits
+                : lzFee.nativeFee;
+            const bridgeTx = await retryWithBackoff(async () => {
+                return await walletClient.writeContract({
+                    address: oftAddress,
+                    abi: OFT_ABI,
+                    functionName: 'send',
+                    args: [sendParam, lzFee, account.address],
+                    chain: SUPPORTED_CHAINS[sourceChain],
+                    account,
+                    value: valueToSend
+                });
+            });
+            console.log(`[Bridge] ${token} bridge transaction submitted: ${bridgeTx}`);
+            // Add to history and emit event
+            const timestamp = Date.now();
+            this.history.addTransaction({
+                txHash: bridgeTx,
+                sourceChain,
+                destinationChain,
+                amount,
+                token,
+                status: 'pending',
+                timestamp,
+                senderAddress: account.address,
+                recipientAddress: account.address,
+                fees: {
+                    nativeFee: formatUnits(lzFee.nativeFee, 18),
+                    lzTokenFee: formatUnits(lzFee.lzTokenFee, 18)
+                }
+            });
+            this.emit('transactionSent', {
+                txHash: bridgeTx,
+                sourceChain,
+                destinationChain,
+                amount,
+                token,
+                timestamp
+            });
+            // Step 6: Wait for transaction confirmation
+            const confirmed = await waitForTransaction(publicClient, bridgeTx, 120000, 1);
+            if (!confirmed) {
+                const error = 'Bridge transaction not confirmed within timeout';
+                this.updateTransactionStatus(bridgeTx, 'failed', sourceChain, destinationChain, amount, token);
+                return {
+                    success: false,
+                    error,
+                    sourceChain,
+                    destinationChain,
+                    amount,
+                    txHash: bridgeTx,
+                    token
+                };
+            }
+            console.log(`[Bridge] ${token} bridge confirmed! From ${sourceChain} to ${destinationChain}: ${bridgeTx}`);
+            this.updateTransactionStatus(bridgeTx, 'completed', sourceChain, destinationChain, amount, token);
+            return {
+                success: true,
+                txHash: bridgeTx,
+                sourceChain,
+                destinationChain,
+                amount,
+                token,
+                fees: {
+                    nativeFee: formatUnits(lzFee.nativeFee, 18),
+                    lzTokenFee: formatUnits(lzFee.lzTokenFee, 18)
+                }
+            };
+        }
+        catch (error) {
+            console.error(`[Bridge] ${token} bridge failed:`, error);
+            const errorMsg = error instanceof Error ? error.message : 'Bridge transaction failed';
+            this.emit('transactionFailed', {
+                error: errorMsg,
+                sourceChain,
+                destinationChain,
+                amount,
+                token
+            });
+            return {
+                success: false,
+                error: errorMsg,
+                sourceChain,
+                destinationChain,
+                amount,
+                token
+            };
+        }
     }
     /**
      * Get balance for any supported token

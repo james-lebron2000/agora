@@ -33,3 +33,15 @@ export {
   type UsePerformanceOptions,
   type FPSData,
 } from './usePerformance';
+
+// ============================================================================
+// Survival Hooks
+// ============================================================================
+
+export {
+  useSurvival,
+  type SurvivalData,
+  type EnhancedSurvivalData,
+  type UseSurvivalOptions,
+  type UseSurvivalReturn,
+} from './useSurvival';

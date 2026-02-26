@@ -70,6 +70,35 @@ export {
   type ChainOptimizationResult
 } from './survival.js';
 
+// Survival Alert System (v1.0) - Real-time alerts with aggregation
+export {
+  SurvivalAlertSystem,
+  getOrCreateAlertSystem,
+  getAlertSystem,
+  DEFAULT_ALERT_CONFIG,
+  type AlertSeverity,
+  type AlertChannel,
+  type AlertConfig,
+  type Alert,
+  type AggregatedAlert,
+  type AlertDeliveryResult,
+  type WebhookPayload
+} from './survival-alerts.js';
+
+// Cross-Chain Survival Optimizer (v1.0) - Chain optimization & rebalancing
+export {
+  CrossChainSurvivalOptimizer,
+  getOrCreateSurvivalOptimizer,
+  getSurvivalOptimizer,
+  removeSurvivalOptimizer,
+  DEFAULT_OPTIMIZER_CONFIG,
+  type ChainMetrics,
+  type ChainRecommendation,
+  type RebalancingPlan,
+  type OptimizerConfig,
+  type FailoverState
+} from './survival-optimizer.js';
+
 // Wallet management (v1.1)
 export {
   generateWallet,

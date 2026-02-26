@@ -64,7 +64,7 @@ let webPSupportCache: boolean | null = null;
 /**
  * Detect WebP support once and cache the result
  */
-function detectWebPSupport(): Promise<boolean> {
+export function detectWebP(): Promise<boolean> {
   if (webPSupportCache !== null) {
     return Promise.resolve(webPSupportCache);
   }
@@ -151,7 +151,7 @@ export const LazyImage: React.FC<LazyImageProps> = ({
   useEffect(() => {
     if (!webpSrc && !webpSrcSet) return;
 
-    detectWebPSupport().then((supported) => {
+    detectWebP().then((supported) => {
       setState((prev) => ({ ...prev, supportsWebP: supported }));
     });
   }, [webpSrc, webpSrcSet]);
@@ -398,7 +398,7 @@ export const LazyBackgroundImage: React.FC<LazyBackgroundImageProps> = ({
   // Detect WebP support
   useEffect(() => {
     if (!webpSrc) return;
-    detectWebPSupport().then(setSupportsWebP);
+    detectWebP().then(setSupportsWebP);
   }, [webpSrc]);
 
   // Intersection Observer

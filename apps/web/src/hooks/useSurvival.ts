@@ -22,7 +22,7 @@ import {
 import { useWallet } from './useWallet'
 import { CrossChainBridge } from '@agora/sdk'
 
-interface SurvivalData {
+export interface SurvivalData {
   score: number
   healthScore: number
   economicsScore: number
@@ -35,14 +35,14 @@ interface SurvivalData {
   needsEmergencyFunding: boolean
 }
 
-interface EnhancedSurvivalData extends SurvivalData {
+export interface EnhancedSurvivalData extends SurvivalData {
   multiToken: MultiTokenEconomics | null
   prediction: SurvivalPrediction | null
   pendingActions: AutomatedSurvivalAction[]
   chainOptimization: ChainOptimizationResult | null
 }
 
-interface UseSurvivalOptions {
+export interface UseSurvivalOptions {
   autoRefresh?: boolean
   refreshInterval?: number // in milliseconds
   enableAlerts?: boolean
@@ -52,7 +52,7 @@ interface UseSurvivalOptions {
   }
 }
 
-interface UseSurvivalReturn {
+export interface UseSurvivalReturn {
   // Basic data
   survivalData: SurvivalData | null
   enhancedData: EnhancedSurvivalData | null

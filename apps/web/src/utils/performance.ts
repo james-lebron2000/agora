@@ -4,7 +4,7 @@
  */
 
 // Type definitions for performance metrics
-interface PerformanceMetric {
+export interface PerformanceMetric {
   name: string
   value: number
   rating: 'good' | 'needs-improvement' | 'poor'

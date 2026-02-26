@@ -792,6 +792,10 @@ export declare const TOKEN_DECIMALS: Record<SupportedToken, number>;
 export declare const LAYERZERO_ENDPOINTS: Record<SupportedChain, Address>;
 export declare const LAYERZERO_CHAIN_IDS: Record<SupportedChain, number>;
 export declare const LAYERZERO_USDC_OFT: Record<SupportedChain, Address>;
+export declare const LAYERZERO_USDT_OFT: Record<SupportedChain, Address>;
+export declare const LAYERZERO_DAI_OFT: Record<SupportedChain, Address>;
+export declare const LAYERZERO_WETH_OFT: Record<SupportedChain, Address>;
+export declare const LAYERZERO_OFT_ADDRESSES: Record<SupportedToken, Record<SupportedChain, Address>>;
 export interface BridgeQuote {
     sourceChain: SupportedChain;
     destinationChain: SupportedChain;
@@ -22296,11 +22300,9 @@ export declare class CrossChainBridge extends EventEmitter {
      */
     bridgeUSDC(destinationChain: SupportedChain, amount: string, sourceChain?: SupportedChain): Promise<BridgeResult>;
     /**
-     * Bridge any supported token using LayerZero OFT or adapter contracts
-     * Supports USDC, USDT, DAI, WETH across Base, Optimism, Arbitrum
-     *
-     * Note: Currently USDC uses native LayerZero OFT. Other tokens will use
-     * adapter contracts or fallback mechanisms (implementation required for full support).
+     * Bridge any supported token using LayerZero OFT (Omnichain Fungible Token) protocol
+     * Supports USDC, USDT, DAI, WETH across Base, Optimism, Arbitrum, Ethereum
+     * Uses LayerZero V2 for cross-chain messaging
      *
      * Emits events:
      * - 'approvalRequired' - When token approval is needed
@@ -22318,6 +22320,11 @@ export declare class CrossChainBridge extends EventEmitter {
      * @returns BridgeResult with transaction details
      */
     bridgeToken(destinationChain: SupportedChain, token: SupportedToken, amount: string, sourceChain?: SupportedChain): Promise<BridgeResult>;
+    /**
+     * Internal method to bridge any OFT-supported token
+     * Generic implementation that works for USDT, DAI, WETH, and future tokens
+     */
+    private bridgeOFTToken;
     /**
      * Get balance for any supported token
      * @param token - Token to check balance for
