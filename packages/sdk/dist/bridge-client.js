@@ -7,7 +7,7 @@ import { parseUnits, formatUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { EventEmitter } from 'events';
 // Import from bridge module
-import { CrossChainBridge, BridgeTransactionHistory, BridgeAnalytics, BridgeTransactionMonitor, BridgeError, SUPPORTED_CHAINS, SUPPORTED_TOKENS, TOKEN_DECIMALS, TOKEN_ADDRESSES, RPC_URLS, getBridgeQuote, getTokenBalance, getAllTokenBalances, createChainPublicClient, waitForBridgeCompletion } from './bridge.js';
+import { CrossChainBridge, BridgeTransactionHistory, BridgeAnalytics, BridgeTransactionMonitor, BridgeError, SUPPORTED_CHAINS, SUPPORTED_TOKENS, TOKEN_DECIMALS, TOKEN_ADDRESSES, RPC_URLS, getBridgeQuote, getTokenBalance, getAllTokenBalances, createChainPublicClient } from './bridge.js';
 // Export constants
 export { SUPPORTED_CHAINS, SUPPORTED_TOKENS, TOKEN_DECIMALS, TOKEN_ADDRESSES, RPC_URLS };
 /**
@@ -35,7 +35,7 @@ export { SUPPORTED_CHAINS, SUPPORTED_TOKENS, TOKEN_DECIMALS, TOKEN_ADDRESSES, RP
  * ```
  */
 export class BridgeClient extends EventEmitter {
-    bridge;
+    bridgeInstance;
     history;
     analytics;
     monitor;
@@ -59,7 +59,7 @@ export class BridgeClient extends EventEmitter {
         const account = privateKeyToAccount(config.privateKey);
         this.address = account.address;
         // Initialize bridge with default chain and logger
-        this.bridge = new CrossChainBridge(config.privateKey, this.config.defaultSourceChain, this.createLogger());
+        this.bridgeInstance = new CrossChainBridge(config.privateKey, this.config.defaultSourceChain, this.createLogger());
         // Initialize history
         this.history = new BridgeTransactionHistory(this.address);
         // Initialize analytics
@@ -69,7 +69,7 @@ export class BridgeClient extends EventEmitter {
             maxHistoryDays: this.config.analytics?.maxHistoryDays ?? 30
         });
         // Initialize monitor
-        this.monitor = new BridgeTransactionMonitor(config.privateKey);
+        this.monitor = new BridgeTransactionMonitor(this.config.defaultSourceChain);
         // Forward events from bridge
         this.setupEventForwarding();
         if (this.config.debug) {
@@ -116,7 +116,7 @@ export class BridgeClient extends EventEmitter {
             'monitorFailed'
         ];
         for (const event of events) {
-            this.bridge.on(event, (data) => {
+            this.bridgeInstance.on(event, (data) => {
                 this.emit(event, data);
             });
         }
@@ -139,7 +139,7 @@ export class BridgeClient extends EventEmitter {
         if (!sourceChain || !destinationChain || !token) {
             throw new BridgeError('Source chain, destination chain, and token must be specified', 'INVALID_PARAMS');
         }
-        return this.bridge.getQuote(destinationChain, token, options.amount, sourceChain);
+        return this.bridgeInstance.getQuote(destinationChain, token, options.amount, sourceChain);
     }
     /**
      * Get quotes for all possible routes
@@ -186,14 +186,14 @@ export class BridgeClient extends EventEmitter {
      * @returns Detailed fee estimate
      */
     async estimateFee(destinationChain, token, amount, sourceChain) {
-        return this.bridge.estimateFee(destinationChain, token, amount, sourceChain ?? this.config.defaultSourceChain);
+        return this.bridgeInstance.estimateFee(destinationChain, token, amount, sourceChain ?? this.config.defaultSourceChain);
     }
     /**
      * Execute a bridge transaction
      * @param options - Bridge options
      * @returns Bridge result with transaction hash
      */
-    async bridge(options) {
+    async executeBridge(options) {
         const sourceChain = options.sourceChain ?? this.config.defaultSourceChain;
         const destinationChain = options.destinationChain ?? this.config.defaultDestinationChain;
         const token = options.token ?? this.config.defaultToken;
@@ -211,9 +211,9 @@ export class BridgeClient extends EventEmitter {
             throw error;
         }
         // Execute the bridge using the bridgeToken method
-        const result = await this.bridge.bridgeToken(sourceChain, destinationChain, token, options.amount);
+        const result = await this.bridgeInstance.bridgeToken(destinationChain, token, options.amount, sourceChain);
         if (!result.success) {
-            const error = new BridgeError(result.error || 'Bridge transaction failed', 'BRIDGE_FAILED');
+            const error = new BridgeError(result.error || 'Bridge transaction failed', 'TRANSACTION_FAILED');
             if (options.onError) {
                 options.onError(error);
             }
@@ -255,7 +255,7 @@ export class BridgeClient extends EventEmitter {
         const route = await this.findOptimalRoute(destinationChain, token, amount, criteria);
         console.log(`[BridgeClient] Using optimal route: ${route.sourceChain} -> ${destinationChain}`);
         console.log(`[BridgeClient] Reason: ${route.reason}`);
-        return this.bridge({
+        return this.executeBridge({
             sourceChain: route.sourceChain,
             destinationChain,
             token,
@@ -271,7 +271,7 @@ export class BridgeClient extends EventEmitter {
      * @returns Optimal route information
      */
     async findOptimalRoute(destinationChain, token, amount, criteria = 'cheapest') {
-        return this.bridge.findOptimalRoute(destinationChain, token, amount, criteria);
+        return this.bridgeInstance.findOptimalRoute(destinationChain, token, amount, criteria);
     }
     /**
      * Compare all available routes
@@ -281,14 +281,14 @@ export class BridgeClient extends EventEmitter {
      * @returns Array of route comparisons
      */
     async compareRoutes(destinationChain, token, amount) {
-        return this.bridge.compareRoutes(destinationChain, token, amount);
+        return this.bridgeInstance.compareRoutes(destinationChain, token, amount);
     }
     /**
      * Monitor a bridge transaction
      */
     monitorTransaction(txHash, sourceChain, destinationChain, amount, onStatusUpdate, onComplete, onError) {
         // Monitor using the bridge's monitorTransaction method
-        this.bridge.monitorTransaction(txHash, sourceChain, destinationChain, amount)
+        this.bridgeInstance.monitorTransaction(txHash, sourceChain, destinationChain, amount)
             .then((status) => {
             // Update history
             this.history.updateTransactionStatus(txHash, status.status);
@@ -331,7 +331,7 @@ export class BridgeClient extends EventEmitter {
                 });
             }
             if (onError) {
-                onError(error instanceof BridgeError ? error : new BridgeError(error instanceof Error ? error.message : String(error), 'MONITOR_FAILED'));
+                onError(error instanceof BridgeError ? error : new BridgeError(error instanceof Error ? error.message : String(error), 'UNKNOWN_ERROR'));
             }
         });
     }
@@ -344,7 +344,10 @@ export class BridgeClient extends EventEmitter {
      * @returns Final transaction status
      */
     async waitForCompletion(txHash, sourceChain, destinationChain, timeoutMs = 300000) {
-        return waitForBridgeCompletion(txHash, sourceChain, destinationChain, timeoutMs);
+        return this.monitor.monitorTransaction(txHash, sourceChain, destinationChain, '', {
+            timeout: timeoutMs,
+            onStatusUpdate: undefined
+        });
     }
     /**
      * Get token balance on a specific chain
@@ -505,14 +508,14 @@ export class BridgeClient extends EventEmitter {
      * Get the cheapest chain for operations
      */
     async findCheapestChain(operation = 'send') {
-        return this.bridge.findCheapestChain(operation);
+        return this.bridgeInstance.findCheapestChain(operation);
     }
     /**
      * Disconnect and cleanup resources
      */
     disconnect() {
         this.monitor.removeAllListeners();
-        this.bridge.removeAllListeners();
+        this.bridgeInstance.removeAllListeners();
         this.removeAllListeners();
         if (this.config.debug) {
             console.log('[BridgeClient] Disconnected');
@@ -565,7 +568,7 @@ export function createBridgeClient(config) {
 export async function quickBridge(privateKey, sourceChain, destinationChain, token, amount) {
     const client = new BridgeClient({ privateKey });
     try {
-        const result = await client.bridge({
+        const result = await client.executeBridge({
             sourceChain,
             destinationChain,
             token,
@@ -592,7 +595,7 @@ export async function quickQuote(sourceChain, destinationChain, token, amount, a
         destinationChain,
         token,
         amount
-    }, address);
+    }, address || '0x0000000000000000000000000000000000000000');
 }
 /**
  * Check balances across all chains

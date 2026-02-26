@@ -1226,6 +1226,14 @@ export interface LayerZeroMessageStatus {
     retryCount: number;
 }
 /**
+ * Create public client for chain
+ */
+export declare function createChainPublicClient(chain: SupportedChain): any;
+/**
+ * Get USDC balance
+ */
+export declare function getUSDCBalance(address: Address, chain: SupportedChain): Promise<string>;
+/**
  * Get native token balance
  */
 export declare function getNativeBalance(address: Address, chain: SupportedChain): Promise<string>;

@@ -5,8 +5,8 @@
  */
 import { type Hex, type Address } from 'viem';
 import { EventEmitter } from 'events';
-import { BridgeAnalytics, BridgeError, type SupportedChain, type SupportedToken, type BridgeQuote, type BridgeTransaction, type BridgeTransactionStatus, type BridgeTransactionStatusDetails, type BridgeResult, type BridgeStatistics, type BridgeEventType, type BridgeEventData, type BridgeFeeEstimate, type BridgeTransactionFilter, SUPPORTED_CHAINS, SUPPORTED_TOKENS, TOKEN_DECIMALS, TOKEN_ADDRESSES, RPC_URLS } from './bridge.js';
-export type { SupportedChain, SupportedToken, BridgeQuote, BridgeTransaction, BridgeTransactionStatus, BridgeTransactionStatusDetails, BridgeResult, BridgeStatistics, BridgeEventType, BridgeEventData, BridgeFeeEstimate, BridgeTransactionFilter };
+import { BridgeAnalytics, BridgeError, type SupportedChain, type SupportedToken, type BridgeQuote, type BridgeTransaction, type BridgeTransactionStatusDetails, type BridgeResult, type BridgeStatistics, type BridgeEventType, type BridgeEventData, type BridgeFeeEstimate, type BridgeTransactionFilter, SUPPORTED_CHAINS, SUPPORTED_TOKENS, TOKEN_DECIMALS, TOKEN_ADDRESSES, RPC_URLS } from './bridge.js';
+export type { SupportedChain, SupportedToken, BridgeQuote, BridgeTransaction, BridgeTransactionStatusDetails, BridgeResult, BridgeStatistics, BridgeEventType, BridgeEventData, BridgeFeeEstimate, BridgeTransactionFilter };
 export { SUPPORTED_CHAINS, SUPPORTED_TOKENS, TOKEN_DECIMALS, TOKEN_ADDRESSES, RPC_URLS };
 /**
  * Configuration options for BridgeClient
@@ -99,7 +99,7 @@ export interface BalanceInfo {
  * ```
  */
 export declare class BridgeClient extends EventEmitter {
-    private bridge;
+    private bridgeInstance;
     private history;
     private analytics;
     private monitor;
@@ -152,7 +152,7 @@ export declare class BridgeClient extends EventEmitter {
      * @param options - Bridge options
      * @returns Bridge result with transaction hash
      */
-    bridge(options: BridgeOptions): Promise<BridgeResult>;
+    executeBridge(options: BridgeOptions): Promise<BridgeResult>;
     /**
      * Bridge with automatic route optimization
      * @param destinationChain - Target chain

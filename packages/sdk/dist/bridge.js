@@ -969,34 +969,6 @@ export async function getUSDCBalance(address, chain) {
     }
 }
 /**
- * Create public client for chain
- */
-export function createChainPublicClient(chain) {
-    return createPublicClient({
-        chain: SUPPORTED_CHAINS[chain],
-        transport: http(RPC_URLS[chain][0])
-    });
-}
-/**
- * Get USDC balance
- */
-export async function getUSDCBalance(address, chain) {
-    const client = createChainPublicClient(chain);
-    try {
-        const balance = await client.readContract({
-            address: USDC_ADDRESSES[chain],
-            abi: USDC_ABI,
-            functionName: 'balanceOf',
-            args: [address]
-        });
-        return formatUnits(balance, 6);
-    }
-    catch (error) {
-        console.error(`[Bridge] Failed to get USDC balance on ${chain}:`, error);
-        return '0';
-    }
-}
-/**
  * Get native token balance
  */
 export async function getNativeBalance(address, chain) {

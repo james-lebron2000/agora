@@ -183,6 +183,19 @@ export {
   type LayerZeroMessageStatus
 } from './bridge.js';
 
+// Bridge Client (v1.0) - High-level client for cross-chain bridging
+export {
+  BridgeClient,
+  createBridgeClient,
+  quickBridge,
+  quickQuote,
+  checkBalances,
+  type BridgeClientConfig,
+  type BridgeOptions,
+  type QuoteOptions,
+  type BalanceInfo,
+} from './bridge-client.js';
+
 // Performance Optimization module (v2.0) - Enhanced with analytics & monitoring
 export {
   PerformanceMonitor,

@@ -25,7 +25,6 @@ import {
   type SupportedToken,
   type BridgeQuote,
   type BridgeTransaction,
-  type BridgeTransactionStatus,
   type BridgeTransactionStatusDetails,
   type BridgeResult,
   type BridgeStatistics,
@@ -43,8 +42,7 @@ import {
   estimateBridgeFee,
   getTokenBalance,
   getAllTokenBalances,
-  createChainPublicClient,
-  waitForBridgeCompletion
+  createChainPublicClient
 } from './bridge.js';
 
 // Re-export types for convenience
@@ -53,7 +51,6 @@ export type {
   SupportedToken,
   BridgeQuote,
   BridgeTransaction,
-  BridgeTransactionStatus,
   BridgeTransactionStatusDetails,
   BridgeResult,
   BridgeStatistics,
@@ -161,7 +158,7 @@ export interface BalanceInfo {
  * ```
  */
 export class BridgeClient extends EventEmitter {
-  private bridge: CrossChainBridge;
+  private bridgeInstance: CrossChainBridge;
   private history: BridgeTransactionHistory;
   private analytics: BridgeAnalytics;
   private monitor: BridgeTransactionMonitor;
@@ -189,7 +186,7 @@ export class BridgeClient extends EventEmitter {
     this.address = account.address;
 
     // Initialize bridge with default chain and logger
-    this.bridge = new CrossChainBridge(
+    this.bridgeInstance = new CrossChainBridge(
       config.privateKey,
       this.config.defaultSourceChain,
       this.createLogger()
@@ -206,7 +203,7 @@ export class BridgeClient extends EventEmitter {
     });
 
     // Initialize monitor
-    this.monitor = new BridgeTransactionMonitor(config.privateKey);
+    this.monitor = new BridgeTransactionMonitor(this.config.defaultSourceChain!);
 
     // Forward events from bridge
     this.setupEventForwarding();
@@ -258,7 +255,7 @@ export class BridgeClient extends EventEmitter {
     ];
 
     for (const event of events) {
-      this.bridge.on(event, (data: BridgeEventData) => {
+      this.bridgeInstance.on(event, (data: BridgeEventData) => {
         this.emit(event, data);
       });
     }
@@ -288,7 +285,7 @@ export class BridgeClient extends EventEmitter {
       );
     }
 
-    return this.bridge.getQuote(destinationChain, token, options.amount, sourceChain);
+    return this.bridgeInstance.getQuote(destinationChain, token, options.amount, sourceChain);
   }
 
   /**
@@ -350,7 +347,7 @@ export class BridgeClient extends EventEmitter {
     amount: string,
     sourceChain?: SupportedChain
   ): Promise<BridgeFeeEstimate> {
-    return this.bridge.estimateFee(
+    return this.bridgeInstance.estimateFee(
       destinationChain,
       token,
       amount,
@@ -363,7 +360,7 @@ export class BridgeClient extends EventEmitter {
    * @param options - Bridge options
    * @returns Bridge result with transaction hash
    */
-  async bridge(options: BridgeOptions): Promise<BridgeResult> {
+  async executeBridge(options: BridgeOptions): Promise<BridgeResult> {
     const sourceChain = options.sourceChain ?? this.config.defaultSourceChain!;
     const destinationChain = options.destinationChain ?? this.config.defaultDestinationChain!;
     const token = options.token ?? this.config.defaultToken!;
@@ -393,17 +390,17 @@ export class BridgeClient extends EventEmitter {
     }
 
     // Execute the bridge using the bridgeToken method
-    const result = await this.bridge.bridgeToken(
-      sourceChain,
+    const result = await this.bridgeInstance.bridgeToken(
       destinationChain,
       token,
-      options.amount
+      options.amount,
+      sourceChain
     );
 
     if (!result.success) {
       const error = new BridgeError(
         result.error || 'Bridge transaction failed',
-        'BRIDGE_FAILED'
+        'TRANSACTION_FAILED'
       );
       
       if (options.onError) {
@@ -466,7 +463,7 @@ export class BridgeClient extends EventEmitter {
     console.log(`[BridgeClient] Using optimal route: ${route.sourceChain} -> ${destinationChain}`);
     console.log(`[BridgeClient] Reason: ${route.reason}`);
     
-    return this.bridge({
+    return this.executeBridge({
       sourceChain: route.sourceChain,
       destinationChain,
       token,
@@ -495,7 +492,7 @@ export class BridgeClient extends EventEmitter {
     score: number;
     reason: string;
   }> {
-    return this.bridge.findOptimalRoute(destinationChain, token, amount, criteria);
+    return this.bridgeInstance.findOptimalRoute(destinationChain, token, amount, criteria);
   }
 
   /**
@@ -515,7 +512,7 @@ export class BridgeClient extends EventEmitter {
     estimatedTime: number;
     ranking: number;
   }>> {
-    return this.bridge.compareRoutes(destinationChain, token, amount);
+    return this.bridgeInstance.compareRoutes(destinationChain, token, amount);
   }
 
   /**
@@ -531,7 +528,7 @@ export class BridgeClient extends EventEmitter {
     onError?: (error: BridgeError) => void
   ): void {
     // Monitor using the bridge's monitorTransaction method
-    this.bridge.monitorTransaction(txHash, sourceChain, destinationChain, amount)
+    this.bridgeInstance.monitorTransaction(txHash, sourceChain, destinationChain, amount)
       .then((status) => {
         // Update history
         this.history.updateTransactionStatus(txHash, status.status);
@@ -581,7 +578,7 @@ export class BridgeClient extends EventEmitter {
         if (onError) {
           onError(error instanceof BridgeError ? error : new BridgeError(
             error instanceof Error ? error.message : String(error),
-            'MONITOR_FAILED'
+            'UNKNOWN_ERROR'
           ));
         }
       });
@@ -601,7 +598,10 @@ export class BridgeClient extends EventEmitter {
     destinationChain: SupportedChain,
     timeoutMs: number = 300000
   ): Promise<BridgeTransactionStatusDetails> {
-    return waitForBridgeCompletion(txHash, sourceChain, destinationChain, timeoutMs);
+    return this.monitor.monitorTransaction(txHash, sourceChain, destinationChain, '', {
+      timeout: timeoutMs,
+      onStatusUpdate: undefined
+    });
   }
 
   /**
@@ -799,7 +799,7 @@ export class BridgeClient extends EventEmitter {
     chain: SupportedChain;
     estimatedCost: string;
   }> {
-    return this.bridge.findCheapestChain(operation);
+    return this.bridgeInstance.findCheapestChain(operation);
   }
 
   /**
@@ -807,7 +807,7 @@ export class BridgeClient extends EventEmitter {
    */
   disconnect(): void {
     this.monitor.removeAllListeners();
-    this.bridge.removeAllListeners();
+    this.bridgeInstance.removeAllListeners();
     this.removeAllListeners();
     
     if (this.config.debug) {
@@ -870,7 +870,7 @@ export async function quickBridge(
   const client = new BridgeClient({ privateKey });
   
   try {
-    const result = await client.bridge({
+    const result = await client.executeBridge({
       sourceChain,
       destinationChain,
       token,
@@ -904,7 +904,7 @@ export async function quickQuote(
     destinationChain,
     token,
     amount
-  }, address);
+  }, address || '0x0000000000000000000000000000000000000000');
 }
 
 /**

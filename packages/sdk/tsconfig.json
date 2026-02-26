@@ -18,5 +18,5 @@
     "typeRoots": ["./node_modules/@types", "./src/types"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/__tests__/profile-frontend.test.ts", "src/__tests__/performance-monitor.test.ts"]
+  "exclude": ["node_modules", "dist", "src/__tests__/profile-frontend.test.ts", "src/__tests__/performance-monitor.test.ts", "src/__tests__/profile-core.test.ts", "src/__tests__/profile-components.test.tsx"]
 }

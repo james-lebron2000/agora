@@ -1382,7 +1382,7 @@ const USDC_ABI = [
 /**
  * Create public client for chain
  */
-export function createChainPublicClient(chain: SupportedChain) {
+export function createChainPublicClient(chain: SupportedChain): any {
   return createPublicClient({
     chain: SUPPORTED_CHAINS[chain],
     transport: http(RPC_URLS[chain][0])
@@ -3242,7 +3242,7 @@ export function listenLayerZeroMessages(
       }
     ],
     eventName: 'OFTReceived',
-    onLogs: (logs) => {
+    onLogs: (logs: any[]) => {
       for (const log of logs) {
         try {
           const event = log as unknown as {
@@ -3273,7 +3273,7 @@ export function listenLayerZeroMessages(
         }
       }
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       logger.error(`LayerZero listener error`, {
         error: error instanceof Error ? error.message : String(error)
       });
