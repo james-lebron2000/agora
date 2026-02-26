@@ -7,6 +7,24 @@ export { AgentProfile } from './AgentProfile';
 export type { AgentProfileData, ProfileStatsData, ProfileTab, AgentProfileProps } from './AgentProfile';
 export { generateSampleProfile, generateSampleStats, generateSampleAchievements } from './AgentProfile';
 
+// Survival Components
+export { SurvivalMonitor, generateSampleSurvivalData } from './SurvivalMonitor';
+export type { 
+  SurvivalMonitorProps, 
+  SurvivalData, 
+  HealthMetrics, 
+  EconomicData, 
+  HealthTrend,
+  SurvivalAction,
+  HealthStatus,
+  ActionType,
+  Priority,
+  TrendDirection
+} from './SurvivalMonitor';
+
+export { SurvivalPanel, SurvivalPanelEmbed } from './SurvivalPanel';
+export type { SurvivalPanelProps, SurvivalPanelEmbedProps } from './SurvivalPanel';
+
 export { AgentAvatar, AgentAvatarSkeleton } from './AgentAvatar';
 
 export { AgentLevelProgress, calculateLevel, CompareAgents, generateSampleLevel } from './AgentLevelProgress';
