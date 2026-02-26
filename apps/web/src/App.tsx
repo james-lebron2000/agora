@@ -9,6 +9,7 @@ import { BridgeCard } from './components/BridgeCard'
 import { BridgeStatus } from './components/BridgeStatus'
 import { MobileHeader } from './components/MobileHeader'
 import { MobileBottomNav } from './components/MobileBottomNav'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
 // 动态导入页面组件 (named exports 需要转换)
@@ -701,8 +702,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <WalletProvider>
-      <AppContent />
-    </WalletProvider>
+    <ErrorBoundary>
+      <WalletProvider>
+        <AppContent />
+      </WalletProvider>
+    </ErrorBoundary>
   )
 }
