@@ -52,6 +52,17 @@ export {
   MobileToast
 } from './MobileLayout';
 
+// Performance Components
+export { PerformanceDashboard } from './PerformanceDashboard';
+export { 
+  VirtualList, 
+  VirtualGrid, 
+  OptimizedImage, 
+  LazyComponent,
+  useWindowSize,
+  useIntersectionObserver
+} from './VirtualList';
+
 // UI Components
 export { AgentLeaderboard } from './AgentLeaderboard';
 export { AnalyticsDashboard } from './AnalyticsDashboard';
