@@ -18,8 +18,8 @@ export { generateWallet, loadOrCreateWallet, loadWallet, saveEncryptedWallet, ge
 export { createMultiChainClient, createMultiChainWallet, loadOrCreateMultiChainWallet, refreshBalances, getTotalUSDCBalance, getChainWithHighestBalance, getCheapestChainForOperations, hasSufficientBalance, selectOptimalChain, MultiChainWalletManager } from './wallet-manager.js';
 // Cross-chain bridge (v1.3) - Multi-token support
 export { CrossChainBridge, createChainPublicClient, getUSDCBalance, getNativeBalance, getAllBalances, getTokenBalance, getAllTokenBalances, getBridgeQuote, findCheapestChain, estimateBridgeFee, SUPPORTED_CHAINS, SUPPORTED_TOKENS, USDC_ADDRESSES, USDT_ADDRESSES, DAI_ADDRESSES, WETH_ADDRESSES, TOKEN_ADDRESSES, TOKEN_DECIMALS, LAYERZERO_ENDPOINTS, LAYERZERO_CHAIN_IDS, LAYERZERO_USDC_OFT, RPC_URLS, BridgeTransactionHistory, BridgeTransactionMonitor, BridgeError, defaultLogger, listenLayerZeroMessages, getBridgeHistory } from './bridge.js';
-// Performance Optimization module (v1.0)
-export { PerformanceMonitor, createPerformanceMonitor, benchmark, measureLatency, measureLatencyAsync, withLatencyTracking, withLatencyTrackingAsync, trackMemory, generateOptimizationReport, } from './performance.js';
+// Performance Optimization module (v2.0) - Enhanced with analytics & monitoring
+export { PerformanceMonitor, createPerformanceMonitor, createEnhancedPerformanceMonitor, benchmark, measureLatency, measureLatencyAsync, withLatencyTracking, withLatencyTrackingAsync, trackMemory, generateOptimizationReport, } from './performance.js';
 // API Cache Layer (v1.0)
 export { ApiCache, getGlobalCache, setGlobalCache, cachedFetch, withCache, } from './cache.js';
 // Agent Profile module (v1.1) - with frontend optimizations

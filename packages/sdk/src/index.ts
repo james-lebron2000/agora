@@ -154,10 +154,11 @@ export {
   type LayerZeroMessageStatus
 } from './bridge.js';
 
-// Performance Optimization module (v1.0)
+// Performance Optimization module (v2.0) - Enhanced with analytics & monitoring
 export {
   PerformanceMonitor,
   createPerformanceMonitor,
+  createEnhancedPerformanceMonitor,
   benchmark,
   measureLatency,
   measureLatencyAsync,
@@ -176,6 +177,16 @@ export {
   type AlertThresholds,
   type PerformanceMonitorConfig,
   type PerformanceAlert,
+  // New enhanced types
+  type DashboardData,
+  type RegressionResult,
+  type PerformanceBudget,
+  type PerformanceBudgetReport,
+  type ApiEndpointMetrics,
+  type BundleSizeMetrics,
+  type AdaptiveThresholds,
+  type TrendAnalysis,
+  type EnhancedPerformanceConfig,
 } from './performance.js';
 
 // API Cache Layer (v1.0)

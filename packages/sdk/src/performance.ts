@@ -139,12 +139,187 @@ export interface PerformanceMonitorConfig {
 export interface PerformanceAlert {
   id: string;
   timestamp: number;
-  type: 'latency' | 'error_rate' | 'memory' | 'throughput' | 'leak_detected';
+  type: 'latency' | 'error_rate' | 'memory' | 'throughput' | 'leak_detected' | 'regression' | 'budget_exceeded';
   severity: SeverityLevel;
   message: string;
   value: number;
   threshold: number;
   context?: Record<string, unknown>;
+}
+
+// ============================================================================
+// NEW ENHANCED TYPES - Performance Analytics v2.0
+// ============================================================================
+
+/**
+ * Real-time dashboard data for frontend visualization
+ */
+export interface DashboardData {
+  /** Current metrics snapshot */
+  current: PerformanceMetrics;
+  /** Historical data for charts */
+  history: PerformanceMetrics[];
+  /** Window-based metrics */
+  windows: {
+    '1m': PerformanceMetrics;
+    '5m': PerformanceMetrics;
+    '15m': PerformanceMetrics;
+  };
+  /** Latency histogram for distribution chart */
+  latencyHistogram: LatencyHistogram;
+  /** Memory trend data */
+  memoryTrend: MemorySnapshot[];
+  /** Health score (0-100) */
+  healthScore: number;
+  /** Current status */
+  status: 'healthy' | 'degraded' | 'critical';
+  /** Last update timestamp */
+  lastUpdated: number;
+}
+
+/**
+ * Performance regression detection result
+ */
+export interface RegressionResult {
+  /** Whether a regression was detected */
+  hasRegression: boolean;
+  /** Type of regression */
+  type: 'latency' | 'error_rate' | 'memory' | 'throughput';
+  /** Severity of regression */
+  severity: SeverityLevel;
+  /** Percentage change from baseline */
+  changePercent: number;
+  /** Baseline value */
+  baselineValue: number;
+  /** Current value */
+  currentValue: number;
+  /** Time when regression started */
+  detectedAt: number;
+  /** Confidence level (0-1) */
+  confidence: number;
+}
+
+/**
+ * Performance budget configuration
+ */
+export interface PerformanceBudget {
+  /** Budget name */
+  name: string;
+  /** Metric type */
+  metric: 'latency' | 'error_rate' | 'memory' | 'bundle_size' | 'tti' | 'fcp' | 'lcp';
+  /** Maximum allowed value */
+  max: number;
+  /** Warning threshold (typically 80% of max) */
+  warning: number;
+  /** Current value */
+  current?: number;
+  /** Budget status */
+  status?: 'pass' | 'warning' | 'fail';
+}
+
+/**
+ * Performance budget report
+ */
+export interface PerformanceBudgetReport {
+  /** Overall budget status */
+  overallStatus: 'pass' | 'warning' | 'fail';
+  /** Percentage of budgets passing */
+  passRate: number;
+  /** Individual budget results */
+  budgets: PerformanceBudget[];
+  /** Timestamp */
+  timestamp: number;
+}
+
+/**
+ * API endpoint performance tracking
+ */
+export interface ApiEndpointMetrics {
+  /** Endpoint path */
+  path: string;
+  /** HTTP method */
+  method: string;
+  /** Request count */
+  requestCount: number;
+  /** Latency metrics */
+  latency: {
+    avg: number;
+    p50: number;
+    p95: number;
+    p99: number;
+    min: number;
+    max: number;
+  };
+  /** Error metrics */
+  errors: {
+    count: number;
+    rate: number;
+    byStatusCode: Record<number, number>;
+  };
+  /** Throughput */
+  rps: number;
+  /** Last called timestamp */
+  lastCalled: number;
+}
+
+/**
+ * Bundle size tracking for frontend optimization
+ */
+export interface BundleSizeMetrics {
+  /** Bundle name */
+  name: string;
+  /** Size in bytes */
+  size: number;
+  /** Gzipped size */
+  gzipSize: number;
+  /** Budget limit */
+  budget?: number;
+  /** Status */
+  status: 'pass' | 'warning' | 'fail';
+  /** Chunks */
+  chunks: Array<{
+    name: string;
+    size: number;
+  }>;
+}
+
+/**
+ * Adaptive threshold configuration
+ */
+export interface AdaptiveThresholds {
+  /** Whether adaptive thresholds are enabled */
+  enabled: boolean;
+  /** Baseline window in minutes */
+  baselineWindow: number;
+  /** Sensitivity (0-1, higher = more sensitive) */
+  sensitivity: number;
+  /** Minimum sample size for adaptation */
+  minSamples: number;
+  /** Current calculated thresholds */
+  calculated: {
+    maxLatencyMs: number;
+    maxErrorRate: number;
+    maxMemoryPercent: number;
+    minThroughput: number;
+  };
+}
+
+/**
+ * Performance trend analysis
+ */
+export interface TrendAnalysis {
+  /** Metric being analyzed */
+  metric: string;
+  /** Time window */
+  window: string;
+  /** Current trend direction */
+  direction: 'improving' | 'stable' | 'degrading';
+  /** Rate of change per hour */
+  changeRate: number;
+  /** Statistical significance (p-value) */
+  significance: number;
+  /** Forecast for next hour */
+  forecast: number;
 }
 
 interface WindowMetrics {
@@ -174,6 +349,42 @@ const DEFAULT_CONFIG: PerformanceMonitorConfig = {
   },
 };
 
+// ============================================================================
+// NEW ENHANCED CONFIGURATION
+// ============================================================================
+
+/**
+ * Extended configuration for enhanced performance monitoring
+ */
+export interface EnhancedPerformanceConfig extends PerformanceMonitorConfig {
+  /** Enable adaptive thresholds */
+  enableAdaptiveThresholds: boolean;
+  /** Adaptive threshold settings */
+  adaptiveThresholds: AdaptiveThresholds;
+  /** Enable regression detection */
+  enableRegressionDetection: boolean;
+  /** Regression detection sensitivity */
+  regressionSensitivity: number;
+  /** Performance budgets */
+  budgets: PerformanceBudget[];
+  /** API tracking configuration */
+  apiTracking: {
+    enabled: boolean;
+    /** Patterns to track (e.g., ['/api/*']) */
+    patterns: string[];
+    /** Maximum endpoints to track */
+    maxEndpoints: number;
+  };
+  /** Bundle size tracking */
+  bundleTracking: {
+    enabled: boolean;
+    /** Bundle size budget in KB */
+    budget: number;
+    /** Entry points to track */
+    entryPoints: string[];
+  };
+}
+
 export class PerformanceMonitor {
   private config: PerformanceMonitorConfig;
   private isRunning: boolean = false;
@@ -193,6 +404,21 @@ export class PerformanceMonitor {
 
   private lastAlerts: Map<string, number> = new Map();
   private readonly ALERT_COOLDOWN_MS = 60000;
+
+  // ============================================================================
+  // NEW ENHANCED STORAGE
+  // ============================================================================
+
+  /** Historical metrics for trend analysis */
+  private historicalMetrics: PerformanceMetrics[] = [];
+  /** API endpoint metrics storage */
+  private apiMetrics: Map<string, ApiEndpointMetrics> = new Map();
+  /** Baseline metrics for regression detection */
+  private baselineMetrics: PerformanceMetrics | null = null;
+  /** Active regressions */
+  private activeRegressions: RegressionResult[] = [];
+  /** Bundle size metrics */
+  private bundleMetrics: BundleSizeMetrics[] = [];
 
   constructor(config: Partial<PerformanceMonitorConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -451,13 +677,432 @@ export class PerformanceMonitor {
     this.errorCount = 0;
     this.totalOperations = 0;
     this.memorySnapshots = [];
-    
+    this.historicalMetrics = [];
+    this.apiMetrics.clear();
+    this.activeRegressions = [];
+
     const now = Date.now();
     this.windows = {
       '1m': { latencies: [], errors: 0, total: 0, startTime: now },
       '5m': { latencies: [], errors: 0, total: 0, startTime: now },
       '15m': { latencies: [], errors: 0, total: 0, startTime: now },
     };
+  }
+
+  // ============================================================================
+  // NEW ENHANCED METHODS - Performance Analytics v2.0
+  // ============================================================================
+
+  /**
+   * Get real-time dashboard data for frontend visualization
+   */
+  getDashboardData(): DashboardData {
+    const current = this.getMetrics();
+    const histogram = this.getLatencyHistogram();
+
+    // Calculate health score
+    let healthScore = 100;
+    if (current.latency.p99 > 1000) healthScore -= 30;
+    else if (current.latency.p95 > 500) healthScore -= 15;
+    if (current.errorRate > 0.05) healthScore -= 40;
+    else if (current.errorRate > 0.01) healthScore -= 10;
+    if ((current.memory.usagePercent ?? 0) > 0.85) healthScore -= 25;
+    else if ((current.memory.usagePercent ?? 0) > 0.7) healthScore -= 10;
+
+    // Determine status
+    let status: 'healthy' | 'degraded' | 'critical' = 'healthy';
+    if (healthScore < 50) status = 'critical';
+    else if (healthScore < 75) status = 'degraded';
+
+    return {
+      current,
+      history: this.historicalMetrics.slice(-100),
+      windows: {
+        '1m': this.getWindowMetrics('1m'),
+        '5m': this.getWindowMetrics('5m'),
+        '15m': this.getWindowMetrics('15m'),
+      },
+      latencyHistogram: histogram,
+      memoryTrend: this.memorySnapshots.slice(-50),
+      healthScore: Math.max(0, healthScore),
+      status,
+      lastUpdated: Date.now(),
+    };
+  }
+
+  /**
+   * Record API endpoint metrics
+   */
+  recordApiMetrics(
+    path: string,
+    method: string,
+    latencyMs: number,
+    statusCode: number
+  ): void {
+    const key = `${method}:${path}`;
+    const now = Date.now();
+
+    let metrics = this.apiMetrics.get(key);
+    if (!metrics) {
+      metrics = {
+        path,
+        method,
+        requestCount: 0,
+        latency: { avg: 0, p50: 0, p95: 0, p99: 0, min: latencyMs, max: latencyMs },
+        errors: { count: 0, rate: 0, byStatusCode: {} },
+        rps: 0,
+        lastCalled: now,
+      };
+    }
+
+    // Update request count
+    metrics.requestCount++;
+
+    // Update latency
+    const latencies = this.getLatenciesForEndpoint(key);
+    latencies.push(latencyMs);
+    const sorted = [...latencies].sort((a, b) => a - b);
+    metrics.latency = {
+      avg: sorted.reduce((a, b) => a + b, 0) / sorted.length,
+      p50: this.percentile(sorted, 0.5),
+      p95: this.percentile(sorted, 0.95),
+      p99: this.percentile(sorted, 0.99),
+      min: Math.min(metrics.latency.min, latencyMs),
+      max: Math.max(metrics.latency.max, latencyMs),
+    };
+
+    // Update errors
+    if (statusCode >= 400) {
+      metrics.errors.count++;
+      metrics.errors.byStatusCode[statusCode] = (metrics.errors.byStatusCode[statusCode] || 0) + 1;
+    }
+    metrics.errors.rate = metrics.errors.count / metrics.requestCount;
+
+    // Update RPS (requests in last minute)
+    const timeWindow = (now - metrics.lastCalled) / 1000;
+    metrics.rps = timeWindow > 0 ? 1 / timeWindow : 0;
+    metrics.lastCalled = now;
+
+    this.apiMetrics.set(key, metrics);
+  }
+
+  /** Storage for endpoint latencies */
+  private endpointLatencies: Map<string, number[]> = new Map();
+
+  private getLatenciesForEndpoint(key: string): number[] {
+    if (!this.endpointLatencies.has(key)) {
+      this.endpointLatencies.set(key, []);
+    }
+    const latencies = this.endpointLatencies.get(key)!;
+    // Keep only last 1000 samples
+    if (latencies.length > 1000) {
+      latencies.shift();
+    }
+    return latencies;
+  }
+
+  /**
+   * Get all API endpoint metrics
+   */
+  getApiMetrics(): ApiEndpointMetrics[] {
+    return Array.from(this.apiMetrics.values()).sort((a, b) => b.requestCount - a.requestCount);
+  }
+
+  /**
+   * Get top slowest API endpoints
+   */
+  getSlowestEndpoints(limit: number = 5): ApiEndpointMetrics[] {
+    return this.getApiMetrics()
+      .sort((a, b) => b.latency.p95 - a.latency.p95)
+      .slice(0, limit);
+  }
+
+  /**
+   * Get top error-prone API endpoints
+   */
+  getErrorProneEndpoints(limit: number = 5): ApiEndpointMetrics[] {
+    return this.getApiMetrics()
+      .filter(m => m.errors.rate > 0)
+      .sort((a, b) => b.errors.rate - a.errors.rate)
+      .slice(0, limit);
+  }
+
+  /**
+   * Set baseline metrics for regression detection
+   */
+  setBaseline(): void {
+    this.baselineMetrics = this.getMetrics();
+  }
+
+  /**
+   * Detect performance regressions
+   */
+  detectRegression(): RegressionResult[] {
+    if (!this.baselineMetrics) {
+      return [];
+    }
+
+    const current = this.getMetrics();
+    const regressions: RegressionResult[] = [];
+    const now = Date.now();
+
+    // Check latency regression
+    const latencyChange = (current.latency.p95 - this.baselineMetrics.latency.p95) / this.baselineMetrics.latency.p95;
+    if (latencyChange > 0.2) {
+      regressions.push({
+        hasRegression: true,
+        type: 'latency',
+        severity: latencyChange > 0.5 ? 'critical' : 'warning',
+        changePercent: latencyChange * 100,
+        baselineValue: this.baselineMetrics.latency.p95,
+        currentValue: current.latency.p95,
+        detectedAt: now,
+        confidence: Math.min(latencyChange * 2, 0.95),
+      });
+    }
+
+    // Check error rate regression
+    const errorChange = current.errorRate - this.baselineMetrics.errorRate;
+    if (errorChange > 0.01) {
+      regressions.push({
+        hasRegression: true,
+        type: 'error_rate',
+        severity: errorChange > 0.05 ? 'critical' : 'warning',
+        changePercent: errorChange * 100,
+        baselineValue: this.baselineMetrics.errorRate,
+        currentValue: current.errorRate,
+        detectedAt: now,
+        confidence: Math.min(errorChange * 20, 0.95),
+      });
+    }
+
+    // Check memory regression
+    const currentMemory = current.memory.usagePercent ?? 0;
+    const baselineMemory = this.baselineMetrics.memory.usagePercent ?? 0;
+    const memoryChange = currentMemory - baselineMemory;
+    if (memoryChange > 0.1) {
+      regressions.push({
+        hasRegression: true,
+        type: 'memory',
+        severity: memoryChange > 0.2 ? 'critical' : 'warning',
+        changePercent: memoryChange * 100,
+        baselineValue: baselineMemory,
+        currentValue: currentMemory,
+        detectedAt: now,
+        confidence: Math.min(memoryChange * 5, 0.95),
+      });
+    }
+
+    // Check throughput regression
+    const throughputChange = (this.baselineMetrics.throughput.rps - current.throughput.rps) / this.baselineMetrics.throughput.rps;
+    if (throughputChange > 0.2) {
+      regressions.push({
+        hasRegression: true,
+        type: 'throughput',
+        severity: throughputChange > 0.5 ? 'critical' : 'warning',
+        changePercent: throughputChange * 100,
+        baselineValue: this.baselineMetrics.throughput.rps,
+        currentValue: current.throughput.rps,
+        detectedAt: now,
+        confidence: Math.min(throughputChange * 2, 0.95),
+      });
+    }
+
+    this.activeRegressions = regressions;
+
+    // Trigger alerts for new regressions
+    regressions.forEach(regression => {
+      this.triggerAlert({
+        type: 'regression',
+        severity: regression.severity,
+        message: `Performance regression detected: ${regression.type} increased by ${regression.changePercent.toFixed(1)}%`,
+        value: regression.currentValue,
+        threshold: regression.baselineValue,
+        context: { regression },
+      });
+    });
+
+    return regressions;
+  }
+
+  /**
+   * Calculate adaptive thresholds based on historical performance
+   */
+  calculateAdaptiveThresholds(): AdaptiveThresholds {
+    if (this.historicalMetrics.length < 10) {
+      return {
+        enabled: true,
+        baselineWindow: 60,
+        sensitivity: 0.8,
+        minSamples: 10,
+        calculated: { ...DEFAULT_THRESHOLDS },
+      };
+    }
+
+    // Use last hour of data
+    const recent = this.historicalMetrics.slice(-60);
+
+    // Calculate p95 of latencies as threshold
+    const latencies = recent.flatMap(m => [m.latency.p50, m.latency.p95]);
+    const sortedLatencies = [...latencies].sort((a, b) => a - b);
+    const p95Latency = this.percentile(sortedLatencies, 0.95);
+
+    // Calculate average error rate + 2 std dev
+    const errorRates = recent.map(m => m.errorRate);
+    const avgError = errorRates.reduce((a, b) => a + b, 0) / errorRates.length;
+    const variance = errorRates.reduce((sum, r) => sum + Math.pow(r - avgError, 2), 0) / errorRates.length;
+    const stdDev = Math.sqrt(variance);
+    const errorThreshold = Math.min(avgError + 2 * stdDev, 0.1);
+
+    // Calculate average memory + 10%
+    const memoryUsages = recent.map(m => m.memory.usagePercent ?? 0);
+    const avgMemory = memoryUsages.reduce((a, b) => a + b, 0) / memoryUsages.length;
+
+    return {
+      enabled: true,
+      baselineWindow: 60,
+      sensitivity: 0.8,
+      minSamples: 10,
+      calculated: {
+        maxLatencyMs: Math.max(1000, p95Latency * 1.5),
+        maxErrorRate: Math.max(0.01, errorThreshold),
+        maxMemoryPercent: Math.min(0.95, avgMemory * 1.2),
+        minThroughput: 1,
+      },
+    };
+  }
+
+  /**
+   * Check performance budgets
+   */
+  checkPerformanceBudgets(budgets: PerformanceBudget[]): PerformanceBudgetReport {
+    const current = this.getMetrics();
+    const results: PerformanceBudget[] = [];
+    let passCount = 0;
+
+    budgets.forEach(budget => {
+      let currentValue = 0;
+
+      switch (budget.metric) {
+        case 'latency':
+          currentValue = current.latency.p95;
+          break;
+        case 'error_rate':
+          currentValue = current.errorRate;
+          break;
+        case 'memory':
+          currentValue = current.memory.usagePercent ?? 0;
+          break;
+        default:
+          currentValue = 0;
+      }
+
+      let status: 'pass' | 'warning' | 'fail' = 'pass';
+      if (currentValue > budget.max) status = 'fail';
+      else if (currentValue > budget.warning) status = 'warning';
+      else passCount++;
+
+      results.push({
+        ...budget,
+        current: currentValue,
+        status,
+      });
+    });
+
+    // Check for budget failures and trigger alerts
+    results.filter(r => r.status === 'fail').forEach(budget => {
+      this.triggerAlert({
+        type: 'budget_exceeded',
+        severity: 'critical',
+        message: `Performance budget exceeded: ${budget.name} (${budget.current?.toFixed(2)} > ${budget.max})`,
+        value: budget.current ?? 0,
+        threshold: budget.max,
+      });
+    });
+
+    return {
+      overallStatus: passCount === budgets.length ? 'pass' : (passCount / budgets.length > 0.5 ? 'warning' : 'fail'),
+      passRate: passCount / budgets.length,
+      budgets: results,
+      timestamp: Date.now(),
+    };
+  }
+
+  /**
+   * Record bundle size metrics
+   */
+  recordBundleSize(metrics: BundleSizeMetrics): void {
+    const existingIndex = this.bundleMetrics.findIndex(b => b.name === metrics.name);
+    if (existingIndex >= 0) {
+      this.bundleMetrics[existingIndex] = metrics;
+    } else {
+      this.bundleMetrics.push(metrics);
+    }
+  }
+
+  /**
+   * Get bundle size metrics
+   */
+  getBundleMetrics(): BundleSizeMetrics[] {
+    return this.bundleMetrics;
+  }
+
+  /**
+   * Analyze performance trends
+   */
+  analyzeTrends(metric: keyof PerformanceMetrics, windowMinutes: number = 60): TrendAnalysis {
+    const samples = this.historicalMetrics.slice(-windowMinutes);
+    if (samples.length < 2) {
+      return {
+        metric,
+        window: `${windowMinutes}m`,
+        direction: 'stable',
+        changeRate: 0,
+        significance: 1,
+        forecast: 0,
+      };
+    }
+
+    const values = samples.map(s => {
+      const val = s[metric];
+      if (typeof val === 'number') return val;
+      if (typeof val === 'object' && 'p95' in val) return (val as any).p95;
+      return 0;
+    });
+
+    const first = values[0];
+    const last = values[values.length - 1];
+    const changeRate = (last - first) / windowMinutes;
+
+    let direction: 'improving' | 'stable' | 'degrading' = 'stable';
+    const changePercent = Math.abs((last - first) / first);
+    if (changePercent > 0.1) {
+      // For latency, lower is better. For throughput, higher is better
+      const isBetter = metric === 'throughput' ? last > first : last < first;
+      direction = isBetter ? 'improving' : 'degrading';
+    }
+
+    return {
+      metric,
+      window: `${windowMinutes}m`,
+      direction,
+      changeRate,
+      significance: 0.05, // Simplified
+      forecast: last + changeRate * 60, // Forecast next hour
+    };
+  }
+
+  /**
+   * Store historical metric
+   */
+  private storeHistoricalMetric(): void {
+    const metrics = this.getMetrics();
+    this.historicalMetrics.push(metrics);
+
+    // Keep only last 24 hours of data (assuming 1 sample per minute)
+    if (this.historicalMetrics.length > 1440) {
+      this.historicalMetrics.shift();
+    }
   }
 
   getPrometheusMetrics(): string {
@@ -512,6 +1157,7 @@ export class PerformanceMonitor {
 
   private sampleMetrics(): void {
     this.recordMemory();
+    this.storeHistoricalMetric();
   }
 
   private checkLatencyThreshold(latencyMs: number): void {
@@ -898,3 +1544,16 @@ export default {
   trackMemory,
   generateOptimizationReport,
 };
+
+// ============================================================================
+// NEW ENHANCED EXPORTS
+// ============================================================================
+
+/**
+ * Create an enhanced performance monitor with advanced analytics
+ */
+export function createEnhancedPerformanceMonitor(
+  config?: Partial<EnhancedPerformanceConfig>
+): PerformanceMonitor {
+  return new PerformanceMonitor(config);
+}
