@@ -414,7 +414,10 @@ export function getCheapestChainForOperations(): SupportedChain {
     ethereum: 100,  // Baseline (expensive)
     base: 1,        // Cheapest
     optimism: 2,    // Moderate
-    arbitrum: 3     // Higher but still cheap
+    arbitrum: 3,    // Higher but still cheap
+    polygon: 2,     // Similar to Optimism
+    avalanche: 4,   // Moderate
+    bsc: 1          // Very cheap
   };
   
   const chains: SupportedChain[] = ['base', 'optimism', 'arbitrum'];

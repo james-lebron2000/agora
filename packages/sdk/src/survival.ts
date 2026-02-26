@@ -1018,7 +1018,10 @@ export class EchoSurvivalManager {
       ethereum: 0,
       base: 0,
       optimism: 0,
-      arbitrum: 0
+      arbitrum: 0,
+      polygon: 0,
+      avalanche: 0,
+      bsc: 0
     };
 
     // Aggregate values by token and chain
@@ -1094,7 +1097,10 @@ export class EchoSurvivalManager {
       ethereum: { read: 0.5, write: 2.0, bridge: 5.0, swap: 3.0 },
       base: { read: 0.001, write: 0.01, bridge: 0.02, swap: 0.015 },
       optimism: { read: 0.002, write: 0.015, bridge: 0.025, swap: 0.02 },
-      arbitrum: { read: 0.003, write: 0.02, bridge: 0.03, swap: 0.025 }
+      arbitrum: { read: 0.003, write: 0.02, bridge: 0.03, swap: 0.025 },
+      polygon: { read: 0.001, write: 0.01, bridge: 0.02, swap: 0.015 },
+      avalanche: { read: 0.002, write: 0.015, bridge: 0.025, swap: 0.02 },
+      bsc: { read: 0.001, write: 0.005, bridge: 0.01, swap: 0.008 }
     };
 
     let bestChain: SupportedChain = this.config.preferredChain;

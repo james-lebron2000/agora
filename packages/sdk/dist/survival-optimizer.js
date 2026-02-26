@@ -254,7 +254,10 @@ export class CrossChainSurvivalOptimizer {
             ethereum: 0,
             base: 0,
             optimism: 0,
-            arbitrum: 0
+            arbitrum: 0,
+            polygon: 0,
+            avalanche: 0,
+            bsc: 0
         };
         for (const m of metrics) {
             currentDistribution[m.chain] = (m.totalBalanceUSD / totalBalance) * 100;
@@ -265,7 +268,10 @@ export class CrossChainSurvivalOptimizer {
             ethereum: 0,
             base: 0,
             optimism: 0,
-            arbitrum: 0
+            arbitrum: 0,
+            polygon: 0,
+            avalanche: 0,
+            bsc: 0
         };
         for (const m of metrics) {
             targetDistribution[m.chain] = totalScore > 0 ? (m.score / totalScore) * 100 : 25;
