@@ -430,6 +430,31 @@ export {
   type GenericEvent,
 } from './analytics-charts.js';
 
+// Survival Prediction module (v1.0) - Predictive analytics for agent survival
+export {
+  SurvivalPredictor,
+  createPredictorFromSnapshots,
+  getGlobalPredictor,
+  type HistoricalDataPoint,
+  type PredictionResult,
+  type SurvivalTrendPrediction,
+  type EconomicForecast,
+} from './survival-prediction.js';
+
+// Survival Simulation module (v1.0) - "What-if" scenario analysis
+export {
+  SurvivalSimulator,
+  createSimulatorFromSnapshot,
+  simulateFromSnapshot,
+  getGlobalSimulator,
+  type ScenarioType,
+  type SimulationParams,
+  type DailyResult,
+  type SimulationEvent,
+  type SimulationResult,
+  type ScenarioComparison,
+} from './survival-simulation.js';
+
 // Portfolio module (v1.0) - Agent storefront and portfolio management
 export {
   calculateAgentScore,
