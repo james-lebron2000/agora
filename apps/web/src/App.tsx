@@ -43,6 +43,7 @@ const Tokenomics = createLazyComponent(() => import('./pages/Analytics').then(m 
 const ARHud = createLazyComponent(() => import('./pages/ARHud').then(m => ({ default: m.ARHud })))
 const AgentProfile = createLazyComponent(() => import('./pages/AgentProfile').then(m => ({ default: m.AgentProfile })))
 const AdAuction = createLazyComponent(() => import('./pages/AdAuction').then(m => ({ default: m.AdAuction })))
+const SurvivalDashboard = createLazyComponent(() => import('./pages/dashboard/survival').then(m => ({ default: m.default })))
 
 // Route prefetch map for navigation preloading
 const routePrefetchMap: Record<Route, () => Promise<void>> = {
@@ -54,6 +55,7 @@ const routePrefetchMap: Record<Route, () => Promise<void>> = {
   bridge: () => Promise.resolve(), // Bridge uses WalletProvider, no lazy load needed for the card
   profile: AgentProfile.prefetch,
   'ad-auction': AdAuction.prefetch,
+  survival: SurvivalDashboard.prefetch,
 };
 
 // ============================================================================
@@ -143,7 +145,7 @@ const MOCK_METRICS: NetworkMetrics = {
   volume24h: 12450,
 }
 
-type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge' | 'profile' | 'ad-auction'
+type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge' | 'profile' | 'ad-auction' | 'survival'
 
 const FALLBACK_AGENTS: AgentSummary[] = [
   {
@@ -232,6 +234,7 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
     if (window.location.pathname === '/profile') return 'profile'
     if (window.location.pathname === '/ad-auction') return 'ad-auction'
     if (window.location.pathname.startsWith('/analytics')) return 'analytics'
+    if (window.location.pathname === '/survival') return 'survival'
     return 'home'
   }
   const [route, setRoute] = useState<Route>(() => getRoute())
@@ -258,7 +261,9 @@ function useRoute(): { route: Route; navigate: (route: Route) => void } {
                   ? '/profile'
                   : next === 'ad-auction'
                     ? '/ad-auction'
-                    : '/'
+                    : next === 'survival'
+                      ? '/survival'
+                      : '/'
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path)
       setRoute(next)
@@ -742,6 +747,13 @@ function AppContent() {
         onClick={() => navigate('ad-auction')}
         onHover={() => prefetchRoute('ad-auction')}
       />
+      <NavLink
+        label="Survival"
+        href="/survival"
+        active={route === 'survival'}
+        onClick={() => navigate('survival')}
+        onHover={() => prefetchRoute('survival')}
+      />
     </>
   )
 
@@ -820,6 +832,16 @@ function AppContent() {
         <AdAuction />
         <MobileBottomNav currentRoute={route} onNavigate={navigate} />
       </Suspense>
+    )
+  }
+
+  if (route === 'survival') {
+    return (
+      <WalletProvider>
+        <Suspense fallback={<PageLoader />}>
+          <SurvivalDashboard />
+        </Suspense>
+      </WalletProvider>
     )
   }
 
