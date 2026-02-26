@@ -24,7 +24,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   onSave,
   onCancel,
 }) => {
-  const { theme } = useProfileTheme();
+  const { themeConfig } = useProfileTheme();
   const [formData, setFormData] = useState<ProfileData>({
     name: initialData?.name || '',
     bio: initialData?.bio || '',
@@ -73,55 +73,55 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   }, [formData, onSave]);
 
   return (
-    <div className={`rounded-xl p-6 ${theme.surface} ${theme.border} border`}>
-      <h2 className={`text-xl font-bold mb-4 ${theme.text}`}>编辑资料</h2>
+    <div className={`rounded-xl p-6 ${themeConfig.surface} ${themeConfig.border} border`}>
+      <h2 className={`text-xl font-bold mb-4 ${themeConfig.text}`}>Edit Profile</h2>
       
       {/* Avatar */}
       <div className="mb-4">
-        <label className={`block text-sm font-medium mb-2 ${theme.textMuted}`}>
-          头像 URL
+        <label className={`block text-sm font-medium mb-2 ${themeConfig.textMuted}`}>
+          Avatar URL
         </label>
         <input
           type="url"
           value={formData.avatar}
           onChange={(e) => handleChange('avatar', e.target.value)}
           placeholder="https://..."
-          className={`w-full px-3 py-2 rounded-lg border ${theme.border} ${theme.background} ${theme.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+          className={`w-full px-3 py-2 rounded-lg border ${themeConfig.border} ${themeConfig.background} ${themeConfig.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
         />
       </div>
 
       {/* Name */}
       <div className="mb-4">
-        <label className={`block text-sm font-medium mb-2 ${theme.textMuted}`}>
-          名称 *
+        <label className={`block text-sm font-medium mb-2 ${themeConfig.textMuted}`}>
+          Name *
         </label>
         <input
           type="text"
           value={formData.name}
           onChange={(e) => handleChange('name', e.target.value)}
-          placeholder="你的 Agent 名称"
-          className={`w-full px-3 py-2 rounded-lg border ${theme.border} ${theme.background} ${theme.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+          placeholder="Your Agent name"
+          className={`w-full px-3 py-2 rounded-lg border ${themeConfig.border} ${themeConfig.background} ${themeConfig.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
         />
       </div>
 
       {/* Bio */}
       <div className="mb-4">
-        <label className={`block text-sm font-medium mb-2 ${theme.textMuted}`}>
-          简介
+        <label className={`block text-sm font-medium mb-2 ${themeConfig.textMuted}`}>
+          Bio
         </label>
         <textarea
           value={formData.bio}
           onChange={(e) => handleChange('bio', e.target.value)}
-          placeholder="介绍一下你的 Agent..."
+          placeholder="Introduce your Agent..."
           rows={3}
-          className={`w-full px-3 py-2 rounded-lg border ${theme.border} ${theme.background} ${theme.text} focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none`}
+          className={`w-full px-3 py-2 rounded-lg border ${themeConfig.border} ${themeConfig.background} ${themeConfig.text} focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none`}
         />
       </div>
 
       {/* Skills */}
       <div className="mb-4">
-        <label className={`block text-sm font-medium mb-2 ${theme.textMuted}`}>
-          技能标签
+        <label className={`block text-sm font-medium mb-2 ${themeConfig.textMuted}`}>
+          Skills
         </label>
         <div className="flex gap-2 mb-2">
           <input
@@ -129,21 +129,21 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
             value={skillInput}
             onChange={(e) => setSkillInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSkill())}
-            placeholder="添加技能 (按回车)"
-            className={`flex-1 px-3 py-2 rounded-lg border ${theme.border} ${theme.background} ${theme.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            placeholder="Add skill (press Enter)"
+            className={`flex-1 px-3 py-2 rounded-lg border ${themeConfig.border} ${themeConfig.background} ${themeConfig.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
           />
           <button
             onClick={addSkill}
             className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
           >
-            添加
+            Add
           </button>
         </div>
         <div className="flex flex-wrap gap-2">
           {formData.skills.map((skill) => (
             <span
               key={skill}
-              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm ${theme.background} ${theme.text} border ${theme.border}`}
+              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm ${themeConfig.background} ${themeConfig.text} border ${themeConfig.border}`}
             >
               {skill}
               <button
@@ -159,8 +159,8 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
 
       {/* Social Links */}
       <div className="mb-6">
-        <label className={`block text-sm font-medium mb-2 ${theme.textMuted}`}>
-          社交链接
+        <label className={`block text-sm font-medium mb-2 ${themeConfig.textMuted}`}>
+          Social Links
         </label>
         <div className="space-y-2">
           <input
@@ -168,21 +168,21 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
             value={formData.social.twitter || ''}
             onChange={(e) => handleSocialChange('twitter', e.target.value)}
             placeholder="Twitter URL"
-            className={`w-full px-3 py-2 rounded-lg border ${theme.border} ${theme.background} ${theme.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            className={`w-full px-3 py-2 rounded-lg border ${themeConfig.border} ${themeConfig.background} ${themeConfig.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
           />
           <input
             type="url"
             value={formData.social.github || ''}
             onChange={(e) => handleSocialChange('github', e.target.value)}
             placeholder="GitHub URL"
-            className={`w-full px-3 py-2 rounded-lg border ${theme.border} ${theme.background} ${theme.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            className={`w-full px-3 py-2 rounded-lg border ${themeConfig.border} ${themeConfig.background} ${themeConfig.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
           />
           <input
             type="url"
             value={formData.social.website || ''}
             onChange={(e) => handleSocialChange('website', e.target.value)}
-            placeholder="个人网站 URL"
-            className={`w-full px-3 py-2 rounded-lg border ${theme.border} ${theme.background} ${theme.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            placeholder="Website URL"
+            className={`w-full px-3 py-2 rounded-lg border ${themeConfig.border} ${themeConfig.background} ${themeConfig.text} focus:outline-none focus:ring-2 focus:ring-blue-500`}
           />
         </div>
       </div>
@@ -192,9 +192,9 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
         {onCancel && (
           <button
             onClick={onCancel}
-            className={`px-4 py-2 rounded-lg border ${theme.border} ${theme.textMuted} hover:${theme.background} transition-colors`}
+            className={`px-4 py-2 rounded-lg border ${themeConfig.border} ${themeConfig.textMuted} hover:${themeConfig.background} transition-colors`}
           >
-            取消
+            Cancel
           </button>
         )}
         <button
