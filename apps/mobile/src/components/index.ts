@@ -24,6 +24,16 @@ export { ShareProfile } from './ShareProfile';
 export { ProfileStats } from './ProfileStats';
 export { AchievementGallery, type Achievement, type AchievementTier } from './AchievementGallery';
 
+// Modular Profile Components (v2.0)
+export {
+  ProfileHeader,
+  ProfileStatsCard,
+  ProfileSurvivalStatus,
+  type ProfileHeaderProps,
+  type ProfileStatsCardProps,
+  type ProfileSurvivalStatusProps,
+} from './profile';
+
 // Performance Components
 export { PerformanceMonitor } from './PerformanceMonitor';
 
