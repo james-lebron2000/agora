@@ -16,6 +16,43 @@ export const USDC_ADDRESSES = {
     optimism: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
     arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
 };
+// USDT addresses
+export const USDT_ADDRESSES = {
+    ethereum: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+    base: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2',
+    optimism: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
+    arbitrum: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9'
+};
+// DAI addresses
+export const DAI_ADDRESSES = {
+    ethereum: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
+    base: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb',
+    optimism: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
+    arbitrum: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1'
+};
+// WETH addresses
+export const WETH_ADDRESSES = {
+    ethereum: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    base: '0x4200000000000000000000000000000000000006',
+    optimism: '0x4200000000000000000000000000000000000006',
+    arbitrum: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'
+};
+// Token addresses lookup helper
+export const TOKEN_ADDRESSES = {
+    USDC: USDC_ADDRESSES,
+    USDT: USDT_ADDRESSES,
+    DAI: DAI_ADDRESSES,
+    WETH: WETH_ADDRESSES
+};
+// Supported tokens
+export const SUPPORTED_TOKENS = ['USDC', 'USDT', 'DAI', 'WETH'];
+// Token decimals
+export const TOKEN_DECIMALS = {
+    USDC: 6,
+    USDT: 6,
+    DAI: 18,
+    WETH: 18
+};
 // LayerZero Endpoint addresses (V2)
 export const LAYERZERO_ENDPOINTS = {
     ethereum: '0x1a44076050125825900e736c501f859c50fE728c',
@@ -145,6 +182,50 @@ export const RPC_URLS = {
     optimism: ['https://optimism.llamarpc.com', 'https://mainnet.optimism.io'],
     arbitrum: ['https://arbitrum.llamarpc.com', 'https://arb1.arbitrum.io/rpc']
 };
+/**
+ * Get token balance for any supported token
+ */
+export async function getTokenBalance(address, chain, token) {
+    // WETH is the native token wrapper, check native balance
+    if (token === 'WETH') {
+        const native = await getNativeBalance(address, chain);
+        return native;
+    }
+    const client = createChainPublicClient(chain);
+    const tokenAddress = TOKEN_ADDRESSES[token][chain];
+    try {
+        const balance = await client.readContract({
+            address: tokenAddress,
+            abi: USDC_ABI, // ERC20 standard ABI works for all
+            functionName: 'balanceOf',
+            args: [address]
+        });
+        return formatUnits(balance, TOKEN_DECIMALS[token]);
+    }
+    catch (error) {
+        console.error(`[Bridge] Failed to get ${token} balance on ${chain}:`, error);
+        return '0';
+    }
+}
+/**
+ * Get all token balances for an address across all chains
+ */
+export async function getAllTokenBalances(address) {
+    const chains = ['ethereum', 'base', 'optimism', 'arbitrum'];
+    const result = {};
+    for (const chain of chains) {
+        result[chain] = {
+            USDC: '0',
+            USDT: '0',
+            DAI: '0',
+            WETH: '0'
+        };
+        for (const token of SUPPORTED_TOKENS) {
+            result[chain][token] = await getTokenBalance(address, chain, token);
+        }
+    }
+    return result;
+}
 // LayerZero Endpoint ABI (V2) for message tracking
 const LZ_ENDPOINT_ABI = [
     {
@@ -417,11 +498,15 @@ export async function getBridgeQuote(params, senderAddress) {
     if (sourceChain === destinationChain) {
         throw new Error('Source and destination chains must be different');
     }
+    // Validate token is supported
+    if (!SUPPORTED_TOKENS.includes(token)) {
+        throw new Error(`Unsupported token: ${token}. Supported: ${SUPPORTED_TOKENS.join(', ')}`);
+    }
     let lzFee;
-    // Get accurate LZ fee quote for USDC transfers
+    // Get accurate LZ fee quote for OFT-supported tokens (USDC only via LayerZero OFT currently)
     if (token === 'USDC') {
         try {
-            const amountInUnits = parseUnits(amount, 6);
+            const amountInUnits = parseUnits(amount, TOKEN_DECIMALS[token]);
             lzFee = await quoteOFTSend(sourceChain, destinationChain, amountInUnits, senderAddress);
         }
         catch (error) {
@@ -521,6 +606,10 @@ export async function estimateBridgeFee(params) {
     if (sourceChain === destinationChain) {
         throw new BridgeError('Source and destination chains must be different', 'INVALID_PARAMS');
     }
+    // Validate token is supported
+    if (!SUPPORTED_TOKENS.includes(token)) {
+        throw new BridgeError(`Unsupported token: ${token}. Supported: ${SUPPORTED_TOKENS.join(', ')}`, 'INVALID_PARAMS');
+    }
     const publicClient = createChainPublicClient(sourceChain);
     const testAddress = senderAddress || '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
     let nativeFee = 0n;
@@ -529,7 +618,7 @@ export async function estimateBridgeFee(params) {
     try {
         if (token === 'USDC') {
             // Get accurate fee quote from LayerZero OFT
-            const amountInUnits = parseUnits(amount, 6);
+            const amountInUnits = parseUnits(amount, TOKEN_DECIMALS[token]);
             const oftAddress = LAYERZERO_USDC_OFT[sourceChain];
             const dstEid = LAYERZERO_CHAIN_IDS[destinationChain];
             // Convert address to bytes32
@@ -1322,7 +1411,7 @@ export class CrossChainBridge extends EventEmitter {
     /**
      * Update transaction status and emit event
      */
-    updateTransactionStatus(txHash, status, sourceChain, destinationChain, amount) {
+    updateTransactionStatus(txHash, status, sourceChain, destinationChain, amount, token = 'USDC') {
         this.history.updateTransactionStatus(txHash, status);
         if (status === 'completed') {
             this.emit('transactionConfirmed', {
@@ -1330,7 +1419,7 @@ export class CrossChainBridge extends EventEmitter {
                 sourceChain,
                 destinationChain,
                 amount,
-                token: 'USDC',
+                token,
                 timestamp: Date.now()
             });
         }
@@ -1340,7 +1429,7 @@ export class CrossChainBridge extends EventEmitter {
                 sourceChain,
                 destinationChain,
                 amount,
-                token: 'USDC'
+                token
             });
         }
     }
@@ -1389,7 +1478,7 @@ export class CrossChainBridge extends EventEmitter {
      * Provides comprehensive fee breakdown including protocol fees, gas costs, and bridge fees
      *
      * @param destinationChain - Target chain for the bridge
-     * @param token - Token to bridge ('USDC' | 'ETH')
+     * @param token - Token to bridge (USDC | USDT | DAI | WETH)
      * @param amount - Amount to bridge
      * @param sourceChain - Source chain (defaults to defaultChain)
      * @returns Detailed fee estimate
@@ -1713,13 +1802,14 @@ export class CrossChainBridge extends EventEmitter {
                 };
             }
             console.log(`[Bridge] Bridge confirmed! From ${srcChain} to ${destinationChain}: ${bridgeTx}`);
-            this.updateTransactionStatus(bridgeTx, 'completed', srcChain, destinationChain, amount);
+            this.updateTransactionStatus(bridgeTx, 'completed', srcChain, destinationChain, amount, 'USDC');
             return {
                 success: true,
                 txHash: bridgeTx,
                 sourceChain: srcChain,
                 destinationChain,
                 amount,
+                token: 'USDC',
                 fees: {
                     nativeFee: formatUnits(lzFee.nativeFee, 18),
                     lzTokenFee: formatUnits(lzFee.lzTokenFee, 18)
@@ -1744,6 +1834,91 @@ export class CrossChainBridge extends EventEmitter {
                 amount
             };
         }
+    }
+    /**
+     * Bridge any supported token using LayerZero OFT or adapter contracts
+     * Supports USDC, USDT, DAI, WETH across Base, Optimism, Arbitrum
+     *
+     * Note: Currently USDC uses native LayerZero OFT. Other tokens will use
+     * adapter contracts or fallback mechanisms (implementation required for full support).
+     *
+     * Emits events:
+     * - 'approvalRequired' - When token approval is needed
+     * - 'approvalConfirmed' - When token approval is confirmed
+     * - 'transactionSent' - When bridge transaction is submitted
+     * - 'transactionConfirmed' - When bridge transaction is confirmed
+     * - 'transactionFailed' - When bridge transaction fails
+     * - 'balanceInsufficient' - When balance is insufficient
+     * - 'feeEstimated' - When fees are estimated
+     *
+     * @param destinationChain - Target chain
+     * @param token - Token to bridge (USDC | USDT | DAI | WETH)
+     * @param amount - Amount to bridge (in token units, e.g., "10.5")
+     * @param sourceChain - Source chain (defaults to defaultChain)
+     * @returns BridgeResult with transaction details
+     */
+    async bridgeToken(destinationChain, token, amount, sourceChain) {
+        const account = privateKeyToAccount(this.privateKey);
+        const srcChain = sourceChain || this.defaultChain;
+        // Validate token is supported
+        if (!SUPPORTED_TOKENS.includes(token)) {
+            const error = `Unsupported token: ${token}. Supported: ${SUPPORTED_TOKENS.join(', ')}`;
+            this.emit('transactionFailed', {
+                error,
+                sourceChain: srcChain,
+                destinationChain,
+                amount,
+                token
+            });
+            return {
+                success: false,
+                error,
+                sourceChain: srcChain,
+                destinationChain,
+                amount
+            };
+        }
+        // For USDC, use the optimized native bridge
+        if (token === 'USDC') {
+            return this.bridgeUSDC(destinationChain, amount, srcChain);
+        }
+        // For other tokens, currently return a not-implemented error
+        // Full implementation requires LayerZero OFT contracts for each token
+        const error = `${token} bridging via LayerZero OFT is not yet fully implemented. Currently only USDC is supported for direct bridging. Use bridgeUSDC() for USDC transfers.`;
+        this.emit('transactionFailed', {
+            error,
+            sourceChain: srcChain,
+            destinationChain,
+            amount,
+            token
+        });
+        return {
+            success: false,
+            error,
+            sourceChain: srcChain,
+            destinationChain,
+            amount,
+            token
+        };
+    }
+    /**
+     * Get balance for any supported token
+     * @param token - Token to check balance for
+     * @param chain - Chain to check on (defaults to defaultChain)
+     * @returns Token balance as string
+     */
+    async getTokenBalance(token, chain) {
+        const account = privateKeyToAccount(this.privateKey);
+        const checkChain = chain || this.defaultChain;
+        return getTokenBalance(account.address, checkChain, token);
+    }
+    /**
+     * Get all token balances across all chains
+     * @returns Record of chain -> token -> balance
+     */
+    async getAllTokenBalances() {
+        const account = privateKeyToAccount(this.privateKey);
+        return getAllTokenBalances(account.address);
     }
 }
 /**

@@ -16,8 +16,8 @@ export { EchoSurvivalManager, getOrCreateSurvivalManager, getSurvivalManager, re
 export { generateWallet, loadOrCreateWallet, loadWallet, saveEncryptedWallet, getWalletAddress, walletExists, getWalletPath, AGORA_DIR, WALLET_FILE } from './wallet-manager.js';
 // Multi-chain wallet management (v1.2)
 export { createMultiChainClient, createMultiChainWallet, loadOrCreateMultiChainWallet, refreshBalances, getTotalUSDCBalance, getChainWithHighestBalance, getCheapestChainForOperations, hasSufficientBalance, selectOptimalChain, MultiChainWalletManager } from './wallet-manager.js';
-// Cross-chain bridge (v1.2)
-export { CrossChainBridge, createChainPublicClient, getUSDCBalance, getNativeBalance, getAllBalances, getBridgeQuote, findCheapestChain, estimateBridgeFee, SUPPORTED_CHAINS, USDC_ADDRESSES, LAYERZERO_ENDPOINTS, LAYERZERO_CHAIN_IDS, LAYERZERO_USDC_OFT, RPC_URLS, BridgeTransactionHistory, BridgeTransactionMonitor, BridgeError, defaultLogger, listenLayerZeroMessages, getBridgeHistory } from './bridge.js';
+// Cross-chain bridge (v1.3) - Multi-token support
+export { CrossChainBridge, createChainPublicClient, getUSDCBalance, getNativeBalance, getAllBalances, getTokenBalance, getAllTokenBalances, getBridgeQuote, findCheapestChain, estimateBridgeFee, SUPPORTED_CHAINS, SUPPORTED_TOKENS, USDC_ADDRESSES, USDT_ADDRESSES, DAI_ADDRESSES, WETH_ADDRESSES, TOKEN_ADDRESSES, TOKEN_DECIMALS, LAYERZERO_ENDPOINTS, LAYERZERO_CHAIN_IDS, LAYERZERO_USDC_OFT, RPC_URLS, BridgeTransactionHistory, BridgeTransactionMonitor, BridgeError, defaultLogger, listenLayerZeroMessages, getBridgeHistory } from './bridge.js';
 // Performance Optimization module (v1.0)
 export { PerformanceMonitor, createPerformanceMonitor, benchmark, measureLatency, measureLatencyAsync, withLatencyTracking, withLatencyTrackingAsync, trackMemory, generateOptimizationReport, } from './performance.js';
 // API Cache Layer (v1.0)
