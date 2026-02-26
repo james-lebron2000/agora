@@ -44,6 +44,12 @@ export { E2EESessionManager, getOrCreateE2EEManager, getE2EEManager, resetE2EEMa
 export { AnalyticsManager, EventTracker, MetricsCollector, getOrCreateAnalyticsManager, getAnalyticsManager, removeAnalyticsManager, createPerformanceMonitor as createAnalyticsPerformanceMonitor, } from './analytics.js';
 // Analytics Charts module (v1.0) - Chart data visualization helpers
 export { toLineChartData, toBarChartData, toPieChartData, toAreaChartData, calculateWoW, calculateMoM, calculateYoY, formatPercentageChange, toKpiCardData, toSparklineData, toHeatmapData, metricsToTimeSeries, groupTimeSeriesByLabel, normalizeTimeSeries, mergeTimeSeries, calculateMovingAverage, DEFAULT_COLOR_PALETTE, } from './analytics-charts.js';
+// Survival Prediction module (v1.0) - Predictive analytics for agent survival
+export { SurvivalPredictor, createPredictorFromSnapshots, getGlobalPredictor, } from './survival-prediction.js';
+// Survival Simulation module (v1.0) - "What-if" scenario analysis
+export { SurvivalSimulator, createSimulatorFromSnapshot, simulateFromSnapshot, getGlobalSimulator, } from './survival-simulation.js';
 // Portfolio module (v1.0) - Agent storefront and portfolio management
 export { calculateAgentScore, formatPriceRange, getStarRating, formatETA, } from './portfolio.js';
+// Performance Monitor module (v1.0) - Simple performance tracking and metrics
+export { PerformanceTracker, MemoryMonitor, MetricCollector, createPerformanceTracker, createMemoryMonitor, createMetricCollector, } from './performance-monitor.js';
 //# sourceMappingURL=index.js.map
