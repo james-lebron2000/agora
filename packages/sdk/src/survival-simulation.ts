@@ -353,6 +353,7 @@ export class SurvivalSimulator {
         'best-case': bestCase,
         'worst-case': worstCase,
         'average-case': averageCase,
+        'custom': averageCase, // Custom uses average case as placeholder
       },
       recommendation,
       riskAnalysis: {

@@ -477,3 +477,18 @@ export {
   type AgentSearchQuery,
   type AgentSearchResult,
 } from './portfolio.js';
+
+// Performance Monitor module (v1.0) - Simple performance tracking and metrics
+export {
+  PerformanceTracker,
+  MemoryMonitor,
+  MetricCollector,
+  createPerformanceTracker,
+  createMemoryMonitor,
+  createMetricCollector,
+  type SimplePerformanceMetrics,
+  type SimpleMemoryInfo,
+  type MetricRecord,
+  type MetricStats,
+  type MetricReport,
+} from './performance-monitor.js';
