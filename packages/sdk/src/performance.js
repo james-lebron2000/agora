@@ -1019,6 +1019,952 @@ export default {
     trackMemory,
     generateOptimizationReport,
 };
+export class OperationCache {
+    cache = new Map();
+    options;
+    hits = 0;
+    misses = 0;
+    evictions = 0;
+    constructor(options) {
+        this.options = {
+            maxSize: 1000,
+            updateOnAccess: false,
+            ...options,
+        };
+    }
+    /**
+     * Get a value from the cache
+     */
+    get(key) {
+        const entry = this.cache.get(key);
+        if (!entry) {
+            this.misses++;
+            return undefined;
+        }
+        if (Date.now() > entry.expiresAt) {
+            this.cache.delete(key);
+            this.misses++;
+            return undefined;
+        }
+        entry.accessCount++;
+        this.hits++;
+        if (this.options.updateOnAccess) {
+            entry.expiresAt = Date.now() + this.options.ttlMs;
+        }
+        return entry.value;
+    }
+    /**
+     * Set a value in the cache
+     */
+    set(key, value) {
+        if (this.cache.size >= this.options.maxSize && !this.cache.has(key)) {
+            this.evictLRU();
+        }
+        const now = Date.now();
+        this.cache.set(key, {
+            value,
+            expiresAt: now + this.options.ttlMs,
+            accessCount: 1,
+            createdAt: now,
+        });
+    }
+    /**
+     * Delete a value from the cache
+     */
+    delete(key) {
+        return this.cache.delete(key);
+    }
+    /**
+     * Check if a key exists and is not expired
+     */
+    has(key) {
+        const entry = this.cache.get(key);
+        if (!entry)
+            return false;
+        if (Date.now() > entry.expiresAt) {
+            this.cache.delete(key);
+            return false;
+        }
+        return true;
+    }
+    /**
+     * Clear all entries
+     */
+    clear() {
+        this.cache.clear();
+        this.hits = 0;
+        this.misses = 0;
+        this.evictions = 0;
+    }
+    /**
+     * Get cache statistics
+     */
+    getStats() {
+        const total = this.hits + this.misses;
+        return {
+            size: this.cache.size,
+            hits: this.hits,
+            misses: this.misses,
+            hitRate: total > 0 ? this.hits / total : 0,
+            evictions: this.evictions,
+        };
+    }
+    /**
+     * Get all valid keys
+     */
+    keys() {
+        const now = Date.now();
+        const validKeys = [];
+        for (const [key, entry] of this.cache.entries()) {
+            if (now <= entry.expiresAt) {
+                validKeys.push(key);
+            }
+            else {
+                this.cache.delete(key);
+            }
+        }
+        return validKeys;
+    }
+    /**
+     * Clean up expired entries
+     */
+    cleanup() {
+        const now = Date.now();
+        let removed = 0;
+        for (const [key, entry] of this.cache.entries()) {
+            if (now > entry.expiresAt) {
+                this.cache.delete(key);
+                removed++;
+            }
+        }
+        return removed;
+    }
+    evictLRU() {
+        let oldestKey = null;
+        let oldestAccess = Infinity;
+        for (const [key, entry] of this.cache.entries()) {
+            if (entry.accessCount < oldestAccess) {
+                oldestAccess = entry.accessCount;
+                oldestKey = key;
+            }
+        }
+        if (oldestKey) {
+            this.cache.delete(oldestKey);
+            this.evictions++;
+        }
+    }
+}
+/**
+ * Create a TTL cache
+ */
+export function createCache(options) {
+    return new OperationCache(options);
+}
+/**
+ * Wrap a function with caching
+ */
+export function withCache(fn, keyFn, cache) {
+    return async (...args) => {
+        const key = keyFn(...args);
+        const cached = cache.get(key);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const result = await fn(...args);
+        cache.set(key, result);
+        return result;
+    };
+}
+/**
+ * Alias for withCache - wraps a function with caching
+ * @deprecated Use withCache instead
+ */
+export function withPerformanceCache(fn, keyFn, cache) {
+    return withCache(fn, keyFn, cache);
+}
+export class BatchProcessor {
+    queue = [];
+    config;
+    processor;
+    timeout = null;
+    isProcessing = false;
+    totalBatches = 0;
+    totalItems = 0;
+    failedBatches = 0;
+    constructor(processor, config) {
+        this.processor = processor;
+        this.config = {
+            retryAttempts: 3,
+            retryDelayMs: 1000,
+            ...config,
+        };
+    }
+    /**
+     * Add an item to the batch queue
+     */
+    add(request) {
+        return new Promise((resolve, reject) => {
+            const item = {
+                id: randomUUID(),
+                request,
+                resolve,
+                reject,
+                timestamp: Date.now(),
+                attempts: 0,
+            };
+            this.queue.push(item);
+            this.totalItems++;
+            if (this.queue.length >= this.config.maxBatchSize) {
+                this.processBatch();
+            }
+            else if (!this.timeout) {
+                this.timeout = setTimeout(() => {
+                    this.processBatch();
+                }, this.config.maxWaitMs);
+            }
+        });
+    }
+    /**
+     * Process the current batch
+     */
+    async processBatch() {
+        if (this.isProcessing || this.queue.length === 0)
+            return;
+        this.isProcessing = true;
+        if (this.timeout) {
+            clearTimeout(this.timeout);
+            this.timeout = null;
+        }
+        const batch = this.queue.splice(0, this.config.maxBatchSize);
+        this.totalBatches++;
+        try {
+            const requests = batch.map(item => item.request);
+            const results = await this.processor(requests);
+            if (results.length !== batch.length) {
+                throw new Error(`Batch processor returned ${results.length} results for ${batch.length} requests`);
+            }
+            batch.forEach((item, index) => {
+                item.resolve(results[index]);
+            });
+        }
+        catch (error) {
+            const failedItems = batch.filter(item => {
+                item.attempts++;
+                if (item.attempts < this.config.retryAttempts) {
+                    this.queue.unshift(item);
+                    return false;
+                }
+                return true;
+            });
+            if (failedItems.length > 0) {
+                this.failedBatches++;
+                failedItems.forEach(item => {
+                    item.reject(error instanceof Error ? error : new Error(String(error)));
+                });
+            }
+            if (batch.some(item => item.attempts < this.config.retryAttempts)) {
+                setTimeout(() => {
+                    this.isProcessing = false;
+                    this.processBatch();
+                }, this.config.retryDelayMs);
+                return;
+            }
+        }
+        this.isProcessing = false;
+        if (this.queue.length > 0) {
+            this.processBatch();
+        }
+    }
+    /**
+     * Flush all pending items
+     */
+    async flush() {
+        if (this.timeout) {
+            clearTimeout(this.timeout);
+            this.timeout = null;
+        }
+        while (this.queue.length > 0) {
+            await this.processBatch();
+        }
+    }
+    /**
+     * Get queue statistics
+     */
+    getStats() {
+        const total = this.totalBatches + this.failedBatches;
+        return {
+            queueSize: this.queue.length,
+            totalBatches: this.totalBatches,
+            totalItems: this.totalItems,
+            failedBatches: this.failedBatches,
+            successRate: total > 0 ? this.totalBatches / total : 1,
+        };
+    }
+    /**
+     * Clear the queue and reject all pending items
+     */
+    clear(reason = 'Batch processor cleared') {
+        if (this.timeout) {
+            clearTimeout(this.timeout);
+            this.timeout = null;
+        }
+        const error = new Error(reason);
+        this.queue.forEach(item => item.reject(error));
+        this.queue = [];
+    }
+}
+/**
+ * Create a batch processor
+ */
+export function createBatchProcessor(processor, config) {
+    return new BatchProcessor(processor, config);
+}
+export class WebSocketPool {
+    connections = new Map();
+    config;
+    url;
+    connectionFactory;
+    heartbeatInterval = null;
+    cleanupInterval = null;
+    waitQueue = [];
+    constructor(url, config, connectionFactory) {
+        this.url = url;
+        this.config = {
+            minConnections: 2,
+            maxConnections: 10,
+            idleTimeoutMs: 30000,
+            connectionTimeoutMs: 10000,
+            heartbeatIntervalMs: 30000,
+            ...config,
+        };
+        this.connectionFactory = connectionFactory || (() => {
+            // In browser environment, use native WebSocket
+            if (typeof globalThis !== 'undefined' && 'WebSocket' in globalThis) {
+                return new globalThis.WebSocket(url);
+            }
+            throw new Error('WebSocket not available in this environment');
+        });
+    }
+    /**
+     * Initialize the pool with minimum connections
+     */
+    async initialize() {
+        const promises = [];
+        for (let i = 0; i < this.config.minConnections; i++) {
+            promises.push(this.createConnection());
+        }
+        await Promise.all(promises);
+        this.heartbeatInterval = setInterval(() => {
+            this.sendHeartbeats();
+        }, this.config.heartbeatIntervalMs);
+        this.cleanupInterval = setInterval(() => {
+            this.cleanupIdleConnections();
+        }, this.config.idleTimeoutMs);
+    }
+    /**
+     * Acquire a connection from the pool
+     */
+    async acquire() {
+        const available = Array.from(this.connections.values()).find(conn => !conn.isActive && conn.ws.readyState === WebSocket.OPEN);
+        if (available) {
+            available.isActive = true;
+            available.lastUsed = Date.now();
+            return available;
+        }
+        if (this.connections.size < this.config.maxConnections) {
+            await this.createConnection();
+            return this.acquire();
+        }
+        return new Promise((resolve) => {
+            this.waitQueue.push(resolve);
+        });
+    }
+    /**
+     * Release a connection back to the pool
+     */
+    release(connection) {
+        const conn = this.connections.get(connection.id);
+        if (conn) {
+            conn.isActive = false;
+            conn.lastUsed = Date.now();
+            if (this.waitQueue.length > 0) {
+                const resolver = this.waitQueue.shift();
+                if (resolver) {
+                    conn.isActive = true;
+                    resolver(conn);
+                }
+            }
+        }
+    }
+    /**
+     * Create a new connection
+     */
+    async createConnection() {
+        const id = randomUUID();
+        const ws = this.connectionFactory();
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                ws.close();
+                reject(new Error('Connection timeout'));
+            }, this.config.connectionTimeoutMs);
+            ws.onopen = () => {
+                clearTimeout(timeout);
+                const connection = {
+                    id,
+                    ws,
+                    isActive: false,
+                    lastUsed: Date.now(),
+                    createdAt: Date.now(),
+                    messageCount: 0,
+                };
+                ws.onmessage = () => {
+                    connection.messageCount++;
+                };
+                ws.onclose = () => {
+                    this.connections.delete(id);
+                    this.ensureMinimumConnections();
+                };
+                ws.onerror = () => {
+                    this.connections.delete(id);
+                };
+                this.connections.set(id, connection);
+                resolve();
+            };
+            ws.onerror = (error) => {
+                clearTimeout(timeout);
+                reject(error);
+            };
+        });
+    }
+    /**
+     * Send heartbeat to all connections
+     */
+    sendHeartbeats() {
+        this.connections.forEach(conn => {
+            if (conn.ws.readyState === WebSocket.OPEN) {
+                try {
+                    conn.ws.send(JSON.stringify({ type: 'ping', timestamp: Date.now() }));
+                }
+                catch {
+                    this.connections.delete(conn.id);
+                }
+            }
+        });
+    }
+    /**
+     * Clean up idle connections
+     */
+    cleanupIdleConnections() {
+        const now = Date.now();
+        const activeCount = Array.from(this.connections.values()).filter(c => c.isActive).length;
+        const idleConnections = Array.from(this.connections.values()).filter(conn => !conn.isActive && now - conn.lastUsed > this.config.idleTimeoutMs);
+        while (idleConnections.length > 0 &&
+            this.connections.size - idleConnections.length + 1 >= this.config.minConnections) {
+            const conn = idleConnections.shift();
+            if (conn) {
+                conn.ws.close();
+                this.connections.delete(conn.id);
+            }
+        }
+    }
+    /**
+     * Ensure minimum connections
+     */
+    async ensureMinimumConnections() {
+        while (this.connections.size < this.config.minConnections) {
+            try {
+                await this.createConnection();
+            }
+            catch (error) {
+                break;
+            }
+        }
+    }
+    /**
+     * Get pool statistics
+     */
+    getStats() {
+        const connections = Array.from(this.connections.values());
+        return {
+            totalConnections: connections.length,
+            activeConnections: connections.filter(c => c.isActive).length,
+            idleConnections: connections.filter(c => !c.isActive).length,
+            waitQueueLength: this.waitQueue.length,
+        };
+    }
+    /**
+     * Broadcast a message to all connections
+     */
+    broadcast(message) {
+        const data = typeof message === 'string' ? message : JSON.stringify(message);
+        this.connections.forEach(conn => {
+            if (conn.ws.readyState === WebSocket.OPEN) {
+                conn.ws.send(data);
+            }
+        });
+    }
+    /**
+     * Close all connections and cleanup
+     */
+    destroy() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+        }
+        this.waitQueue.forEach(resolve => {
+            resolve({});
+        });
+        this.waitQueue = [];
+        this.connections.forEach(conn => {
+            conn.ws.close();
+        });
+        this.connections.clear();
+    }
+}
+/**
+ * Create a WebSocket connection pool
+ */
+export function createWebSocketPool(url, config, connectionFactory) {
+    return new WebSocketPool(url, config || {}, connectionFactory);
+}
+export class LazyLoader {
+    loader;
+    config;
+    instance;
+    loadingPromise = null;
+    isLoaded = false;
+    loadAttempts = 0;
+    unloadCallbacks = new Set();
+    constructor(loader, config) {
+        this.loader = loader;
+        this.config = {
+            preload: false,
+            preloadDelayMs: 5000,
+            retryAttempts: 3,
+            retryDelayMs: 1000,
+            timeoutMs: 30000,
+            ...config,
+        };
+        if (this.config.preload) {
+            setTimeout(() => {
+                this.load().catch(() => { });
+            }, this.config.preloadDelayMs);
+        }
+    }
+    /**
+     * Load the component
+     */
+    async load() {
+        if (this.isLoaded && this.instance !== undefined) {
+            return this.instance;
+        }
+        if (this.loadingPromise) {
+            return this.loadingPromise;
+        }
+        this.loadingPromise = this.doLoad();
+        return this.loadingPromise;
+    }
+    async doLoad() {
+        const startTime = Date.now();
+        while (this.loadAttempts < this.config.retryAttempts) {
+            this.loadAttempts++;
+            try {
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => {
+                        reject(new Error(`Lazy load timeout after ${this.config.timeoutMs}ms`));
+                    }, this.config.timeoutMs);
+                });
+                this.instance = await Promise.race([this.loader(), timeoutPromise]);
+                this.isLoaded = true;
+                this.loadingPromise = null;
+                return this.instance;
+            }
+            catch (error) {
+                if (this.loadAttempts >= this.config.retryAttempts) {
+                    this.loadingPromise = null;
+                    throw error;
+                }
+                await this.delay(this.config.retryDelayMs * this.loadAttempts);
+            }
+        }
+        throw new Error('Failed to load component after maximum retries');
+    }
+    /**
+     * Get the loaded instance (throws if not loaded)
+     */
+    get() {
+        if (!this.isLoaded || this.instance === undefined) {
+            throw new Error('Component not loaded. Call load() first.');
+        }
+        return this.instance;
+    }
+    /**
+     * Check if component is loaded
+     */
+    loaded() {
+        return this.isLoaded;
+    }
+    /**
+     * Unload the component
+     */
+    unload() {
+        this.unloadCallbacks.forEach(cb => {
+            try {
+                cb();
+            }
+            catch { }
+        });
+        this.instance = undefined;
+        this.isLoaded = false;
+        this.loadAttempts = 0;
+        this.loadingPromise = null;
+    }
+    /**
+     * Register a callback to be called when unloading
+     */
+    onUnload(callback) {
+        this.unloadCallbacks.add(callback);
+        return () => {
+            this.unloadCallbacks.delete(callback);
+        };
+    }
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}
+/**
+ * Create a lazy loader
+ */
+export function createLazyLoader(loader, config) {
+    return new LazyLoader(loader, config);
+}
+export class AdaptiveRateLimiter {
+    config;
+    state;
+    waiting = [];
+    constructor(config) {
+        this.config = {
+            burstSize: config.requestsPerSecond,
+            enableAdaptiveBackoff: true,
+            backoffMultiplier: 2,
+            maxBackoffMs: 60000,
+            recoveryRate: 0.1,
+            ...config,
+        };
+        this.state = {
+            tokens: this.config.burstSize,
+            lastUpdate: Date.now(),
+            currentBackoffMs: 0,
+            consecutiveErrors: 0,
+            successCount: 0,
+        };
+    }
+    /**
+     * Acquire permission to make a request
+     */
+    async acquire() {
+        this.refillTokens();
+        if (this.state.tokens >= 1) {
+            this.state.tokens--;
+            if (this.state.currentBackoffMs > 0) {
+                await this.delay(this.state.currentBackoffMs);
+            }
+            return;
+        }
+        return new Promise(resolve => {
+            this.waiting.push(resolve);
+        });
+    }
+    /**
+     * Report a successful request
+     */
+    reportSuccess() {
+        this.state.consecutiveErrors = 0;
+        this.state.successCount++;
+        if (this.state.successCount >= 10 && this.state.currentBackoffMs > 0) {
+            this.state.currentBackoffMs = Math.max(0, this.state.currentBackoffMs * (1 - this.config.recoveryRate));
+            this.state.successCount = 0;
+        }
+    }
+    /**
+     * Report a failed request (triggers backoff)
+     */
+    reportError(error) {
+        this.state.consecutiveErrors++;
+        this.state.successCount = 0;
+        if (this.config.enableAdaptiveBackoff) {
+            const baseDelay = this.state.currentBackoffMs || 100;
+            this.state.currentBackoffMs = Math.min(baseDelay * this.config.backoffMultiplier, this.config.maxBackoffMs);
+        }
+    }
+    /**
+     * Get current state
+     */
+    getState() {
+        this.refillTokens();
+        return { ...this.state };
+    }
+    refillTokens() {
+        const now = Date.now();
+        const elapsed = (now - this.state.lastUpdate) / 1000;
+        const tokensToAdd = elapsed * this.config.requestsPerSecond;
+        this.state.tokens = Math.min(this.config.burstSize, this.state.tokens + tokensToAdd);
+        this.state.lastUpdate = now;
+        while (this.state.tokens >= 1 && this.waiting.length > 0) {
+            this.state.tokens--;
+            const resolver = this.waiting.shift();
+            if (resolver)
+                resolver();
+        }
+    }
+    delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}
+/**
+ * Create an adaptive rate limiter
+ */
+export function createRateLimiter(config) {
+    return new AdaptiveRateLimiter(config);
+}
+export class RequestDeduplicator {
+    fn;
+    config;
+    pending = new Map();
+    completed = new Map();
+    dedupeCount = 0;
+    constructor(fn, config) {
+        this.fn = fn;
+        this.config = {
+            maxPending: 1000,
+            ...config,
+        };
+    }
+    /**
+     * Execute with deduplication
+     */
+    async execute(...args) {
+        const key = this.getKey(args);
+        // Check completed cache
+        const cached = this.completed.get(key);
+        if (cached && Date.now() - cached.timestamp < this.config.ttlMs) {
+            return cached.result;
+        }
+        // Check pending requests
+        const pending = this.pending.get(key);
+        if (pending) {
+            this.dedupeCount++;
+            return new Promise((resolve, reject) => {
+                pending.resolvers.push(resolve);
+                pending.rejecters.push(reject);
+            });
+        }
+        // Create new request
+        const id = randomUUID();
+        const promise = this.fn(...args).then(result => {
+            this.completed.set(key, { result, timestamp: Date.now() });
+            this.pending.delete(key);
+            return result;
+        }, error => {
+            this.pending.delete(key);
+            throw error;
+        });
+        const pendingRequest = {
+            id,
+            promise,
+            resolvers: [],
+            rejecters: [],
+            timestamp: Date.now(),
+        };
+        this.pending.set(key, pendingRequest);
+        // Cleanup old completed entries
+        this.cleanup();
+        return promise;
+    }
+    /**
+     * Get deduplication statistics
+     */
+    getStats() {
+        return {
+            pendingCount: this.pending.size,
+            completedCount: this.completed.size,
+            dedupeCount: this.dedupeCount,
+        };
+    }
+    /**
+     * Clear all caches
+     */
+    clear() {
+        this.pending.clear();
+        this.completed.clear();
+        this.dedupeCount = 0;
+    }
+    getKey(args) {
+        return JSON.stringify(args);
+    }
+    cleanup() {
+        const now = Date.now();
+        for (const [key, entry] of this.completed.entries()) {
+            if (now - entry.timestamp > this.config.ttlMs) {
+                this.completed.delete(key);
+            }
+        }
+        if (this.pending.size > this.config.maxPending) {
+            const sorted = Array.from(this.pending.entries())
+                .sort((a, b) => a[1].timestamp - b[1].timestamp);
+            while (this.pending.size > this.config.maxPending) {
+                const [key] = sorted.shift() || [];
+                if (key)
+                    this.pending.delete(key);
+            }
+        }
+    }
+}
+/**
+ * Create a request deduplicator
+ */
+export function createDeduplicator(fn, config) {
+    return new RequestDeduplicator(fn, config);
+}
+/**
+ * Wrap a function with deduplication
+ */
+export function withDeduplication(fn, config) {
+    const deduplicator = createDeduplicator(fn, config);
+    return (...args) => deduplicator.execute(...args);
+}
+export class BundleOptimizer {
+    chunks = new Map();
+    loadedChunks = new Set();
+    preloadQueue = [];
+    /**
+     * Register a chunk
+     */
+    registerChunk(config) {
+        this.chunks.set(config.name, config);
+        if (config.preload) {
+            this.preloadQueue.push(config.name);
+        }
+    }
+    /**
+     * Load a chunk on demand
+     */
+    async loadChunk(name) {
+        if (this.loadedChunks.has(name)) {
+            return;
+        }
+        const chunk = this.chunks.get(name);
+        if (!chunk) {
+            throw new Error(`Chunk "${name}" not found`);
+        }
+        if (chunk.async) {
+            await this.loadAsync(chunk);
+        }
+        else {
+            await this.loadSync(chunk);
+        }
+        this.loadedChunks.add(name);
+    }
+    /**
+     * Preload chunks in the background
+     */
+    async preload() {
+        for (const name of this.preloadQueue) {
+            try {
+                await this.loadChunk(name);
+            }
+            catch {
+                // Ignore preload errors
+            }
+        }
+    }
+    /**
+     * Get bundle analysis
+     */
+    analyze() {
+        const chunks = Array.from(this.chunks.values());
+        let totalSize = 0;
+        chunks.forEach(chunk => {
+            totalSize += chunk.files.reduce((sum, file) => {
+                return sum + this.estimateSize(file);
+            }, 0);
+        });
+        return {
+            chunks,
+            maxChunkSize: 244 * 1024, // 244KB for gzip
+            totalSize,
+        };
+    }
+    /**
+     * Check if a chunk is loaded
+     */
+    isLoaded(name) {
+        return this.loadedChunks.has(name);
+    }
+    /**
+     * Get loaded chunk names
+     */
+    getLoadedChunks() {
+        return Array.from(this.loadedChunks);
+    }
+    /**
+     * Estimate file size (simplified)
+     */
+    estimateSize(file) {
+        // In a real implementation, this would use actual file sizes
+        // This is a simplified estimation
+        return file.length * 100;
+    }
+    async loadAsync(chunk) {
+        // Simulate async loading
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    async loadSync(chunk) {
+        // Simulate sync loading
+        await new Promise(resolve => setTimeout(resolve, 5));
+    }
+}
+/**
+ * Create a bundle optimizer
+ */
+export function createBundleOptimizer() {
+    return new BundleOptimizer();
+}
+/**
+ * Dynamic import helper with retry
+ */
+export async function dynamicImport(importer, options = {}) {
+    const { retries = 3, retryDelayMs = 1000, timeoutMs = 30000 } = options;
+    for (let attempt = 0; attempt < retries; attempt++) {
+        try {
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Import timeout')), timeoutMs);
+            });
+            return await Promise.race([importer(), timeoutPromise]);
+        }
+        catch (error) {
+            if (attempt === retries - 1)
+                throw error;
+            await new Promise(resolve => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+        }
+    }
+    throw new Error('Failed to import after maximum retries');
+}
+/**
+ * Prefetch a module for faster subsequent loads
+ */
+export function prefetchModule(specifier) {
+    if (typeof document !== 'undefined') {
+        const link = document.createElement('link');
+        link.rel = 'prefetch';
+        link.href = specifier;
+        document.head.appendChild(link);
+    }
+}
 // ============================================================================
 // NEW ENHANCED EXPORTS
 // ============================================================================

@@ -10,7 +10,91 @@
  *
  * @module survival
  */
+import { isAddress } from 'viem';
 import { getAllBalances, getAllTokenBalances, SUPPORTED_TOKENS } from './bridge.js';
+/**
+ * Custom Survival Error class with error codes and retry capability
+ */
+export class SurvivalError extends Error {
+    code;
+    agentId;
+    retryable;
+    timestamp;
+    cause;
+    constructor(message, code = 'UNKNOWN_ERROR', options) {
+        super(message);
+        this.name = 'SurvivalError';
+        this.code = code;
+        this.agentId = options?.agentId;
+        this.retryable = options?.retryable ?? true;
+        this.timestamp = Date.now();
+        this.cause = options?.cause;
+    }
+    /**
+     * Check if error is retryable
+     */
+    isRetryable() {
+        return this.retryable && [
+            'NETWORK_ERROR',
+            'HEALTH_CHECK_FAILED',
+            'ECONOMICS_CHECK_FAILED',
+            'HEARTBEAT_FAILED',
+            'PREDICTION_FAILED'
+        ].includes(this.code);
+    }
+    /**
+     * Convert error to JSON representation
+     */
+    toJSON() {
+        return {
+            name: this.name,
+            message: this.message,
+            code: this.code,
+            agentId: this.agentId,
+            retryable: this.retryable,
+            timestamp: this.timestamp,
+            cause: this.cause?.message
+        };
+    }
+}
+/**
+ * Default retry configuration
+ */
+export const DEFAULT_RETRY_CONFIG = {
+    maxRetries: 3,
+    baseDelayMs: 1000,
+    maxDelayMs: 30000,
+    backoffMultiplier: 2
+};
+/**
+ * Execute an async function with retry logic
+ * @param fn - Function to execute
+ * @param config - Retry configuration
+ * @param context - Error context for logging
+ */
+export async function withRetry(fn, config = {}, context) {
+    const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
+    let lastError;
+    for (let attempt = 0; attempt <= retryConfig.maxRetries; attempt++) {
+        try {
+            return await fn();
+        }
+        catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            // Check if error is retryable
+            const survivalError = error instanceof SurvivalError ? error : null;
+            if (survivalError && !survivalError.isRetryable()) {
+                throw survivalError;
+            }
+            if (attempt < retryConfig.maxRetries) {
+                const delay = Math.min(retryConfig.baseDelayMs * Math.pow(retryConfig.backoffMultiplier, attempt), retryConfig.maxDelayMs);
+                console.warn(`[Survival] Retry ${attempt + 1}/${retryConfig.maxRetries} for ${context?.operation}: ${lastError.message}. Waiting ${delay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+    throw new SurvivalError(`Failed after ${retryConfig.maxRetries} retries: ${lastError?.message}`, 'UNKNOWN_ERROR', { agentId: context?.agentId, retryable: false, cause: lastError });
+}
 /**
  * Default survival configuration
  */
@@ -28,10 +112,283 @@ export const DEFAULT_SURVIVAL_CONFIG = {
     autoBridgeTargetToken: 'USDC',
     preferredChain: 'base'
 };
+// ============================================================================
+// INPUT VALIDATION UTILITIES
+// ============================================================================
+const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+/**
+ * Validates and normalizes agent ID
+ * @param agentId - Agent ID to validate
+ * @returns Normalized agent ID
+ * @throws SurvivalError if invalid
+ */
+function normalizeAgentId(agentId) {
+    if (typeof agentId !== 'string' || agentId.trim().length === 0) {
+        throw new SurvivalError('agentId must be a non-empty string', 'INVALID_PARAMS', { retryable: false });
+    }
+    return agentId.trim();
+}
+/**
+ * Validates and normalizes EVM address
+ * @param address - Address to validate
+ * @param fieldName - Field name for error messages
+ * @returns Normalized address
+ * @throws SurvivalError if invalid
+ */
+function normalizeAddress(address, fieldName = 'address') {
+    if (typeof address !== 'string' || !ADDRESS_REGEX.test(address) || !isAddress(address, { strict: false })) {
+        throw new SurvivalError(`${fieldName} must be a valid EVM address`, 'INVALID_PARAMS', { retryable: false });
+    }
+    return address;
+}
+/**
+ * Parses and validates a finite number
+ * @param value - Value to parse
+ * @param fieldName - Field name for error messages
+ * @returns Parsed number
+ * @throws SurvivalError if not finite
+ */
+function parseFiniteNumber(value, fieldName) {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(parsed)) {
+        throw new SurvivalError(`${fieldName} must be a finite number`, 'INVALID_PARAMS', { retryable: false });
+    }
+    return parsed;
+}
+/**
+ * Parses and validates a non-negative number
+ * @param value - Value to parse
+ * @param fieldName - Field name for error messages
+ * @returns Parsed non-negative number
+ * @throws SurvivalError if negative
+ */
+function parseNonNegative(value, fieldName) {
+    const parsed = parseFiniteNumber(value, fieldName);
+    if (parsed < 0) {
+        throw new SurvivalError(`${fieldName} must be greater than or equal to 0`, 'INVALID_PARAMS', { retryable: false });
+    }
+    return parsed;
+}
+/**
+ * Parses and validates a positive integer
+ * @param value - Value to parse
+ * @param fieldName - Field name for error messages
+ * @returns Parsed positive integer
+ * @throws SurvivalError if not positive integer
+ */
+function parsePositiveInteger(value, fieldName) {
+    const parsed = parseFiniteNumber(value, fieldName);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new SurvivalError(`${fieldName} must be a positive integer`, 'INVALID_PARAMS', { retryable: false });
+    }
+    return parsed;
+}
+/**
+ * Parses and validates a rate between 0 and 1
+ * @param value - Value to parse
+ * @param fieldName - Field name for error messages
+ * @returns Parsed rate
+ * @throws SurvivalError if out of range
+ */
+function parseRate(value, fieldName) {
+    const parsed = parseFiniteNumber(value, fieldName);
+    if (parsed < 0 || parsed > 1) {
+        throw new SurvivalError(`${fieldName} must be between 0 and 1`, 'INVALID_PARAMS', { retryable: false });
+    }
+    return parsed;
+}
+/**
+ * Validates and normalizes USD amount string
+ * @param value - Value to validate
+ * @param fieldName - Field name for error messages
+ * @returns Normalized USD string
+ * @throws SurvivalError if invalid
+ */
+function normalizeUsdString(value, fieldName) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+        throw new SurvivalError(`${fieldName} must be a non-empty numeric string`, 'INVALID_PARAMS', { retryable: false });
+    }
+    const parsed = parseNonNegative(value, fieldName);
+    return parsed.toString();
+}
+/**
+ * Validates survival snapshot structure
+ * @param snapshot - Snapshot to validate
+ * @throws SurvivalError if invalid
+ */
+function validateSurvivalSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') {
+        throw new SurvivalError('snapshot must be an object', 'INVALID_PARAMS', { retryable: false });
+    }
+    const s = snapshot;
+    if (!s.health || typeof s.health !== 'object') {
+        throw new SurvivalError('snapshot.health is required', 'INVALID_PARAMS', { retryable: false });
+    }
+    if (!s.economics || typeof s.economics !== 'object') {
+        throw new SurvivalError('snapshot.economics is required', 'INVALID_PARAMS', { retryable: false });
+    }
+    const health = s.health;
+    const economics = s.economics;
+    if (typeof health.status !== 'string') {
+        throw new SurvivalError('snapshot.health.status must be a string', 'INVALID_PARAMS', { retryable: false });
+    }
+    if (typeof economics.balance !== 'string') {
+        throw new SurvivalError('snapshot.economics.balance must be a string', 'INVALID_PARAMS', { retryable: false });
+    }
+    if (typeof economics.runwayDays !== 'number' || !Number.isFinite(economics.runwayDays)) {
+        throw new SurvivalError('snapshot.economics.runwayDays must be a valid number', 'INVALID_PARAMS', { retryable: false });
+    }
+}
+/**
+ * Validates partial health updates
+ * @param updates - Updates to validate
+ * @throws SurvivalError if invalid
+ */
+function validateHealthUpdates(updates) {
+    if (!updates || typeof updates !== 'object') {
+        throw new SurvivalError('updates must be an object', 'INVALID_PARAMS', { retryable: false });
+    }
+    const u = updates;
+    if (u.successRate !== undefined) {
+        parseRate(u.successRate, 'successRate');
+    }
+    if (u.consecutiveFailures !== undefined) {
+        parseNonNegative(u.consecutiveFailures, 'consecutiveFailures');
+    }
+    if (u.totalTasksCompleted !== undefined) {
+        parseNonNegative(u.totalTasksCompleted, 'totalTasksCompleted');
+    }
+    if (u.totalTasksFailed !== undefined) {
+        parseNonNegative(u.totalTasksFailed, 'totalTasksFailed');
+    }
+    if (u.averageResponseTime !== undefined) {
+        parseNonNegative(u.averageResponseTime, 'averageResponseTime');
+    }
+}
+// ============================================================================
+// STATE MACHINE
+// ============================================================================
+/**
+ * Survival mode state machine
+ * Manages transitions between survival states
+ */
+class SurvivalStateMachine {
+    currentState = 'normal';
+    transitionHistory = [];
+    maxHistorySize = 100;
+    /**
+     * Get current state
+     */
+    getState() {
+        return this.currentState;
+    }
+    /**
+     * Check if transition is valid
+     */
+    isValidTransition(from, to) {
+        const validTransitions = {
+            normal: ['caution', 'survival', 'shutdown'],
+            caution: ['normal', 'survival', 'recovery', 'shutdown'],
+            survival: ['recovery', 'shutdown', 'caution'],
+            recovery: ['normal', 'caution', 'survival'],
+            shutdown: [] // Terminal state
+        };
+        return validTransitions[from]?.includes(to) ?? false;
+    }
+    /**
+     * Transition to new state
+     * @param to - Target state
+     * @param reason - Reason for transition
+     * @param triggeredBy - What triggered the transition
+     * @returns The transition record
+     * @throws SurvivalError if transition is invalid
+     */
+    transition(to, reason, triggeredBy) {
+        const from = this.currentState;
+        if (from === to) {
+            return {
+                from,
+                to,
+                reason,
+                timestamp: Date.now(),
+                triggeredBy
+            };
+        }
+        if (!this.isValidTransition(from, to)) {
+            throw new SurvivalError(`Invalid state transition from ${from} to ${to}`, 'STATE_TRANSITION_ERROR', { retryable: false });
+        }
+        const transition = {
+            from,
+            to,
+            reason,
+            timestamp: Date.now(),
+            triggeredBy
+        };
+        this.currentState = to;
+        this.transitionHistory.push(transition);
+        // Trim history if needed
+        if (this.transitionHistory.length > this.maxHistorySize) {
+            this.transitionHistory = this.transitionHistory.slice(-this.maxHistorySize);
+        }
+        console.log(`[Survival] State transition: ${from} -> ${to} (${triggeredBy}): ${reason}`);
+        return transition;
+    }
+    /**
+     * Get transition history
+     */
+    getHistory(limit = 50) {
+        return this.transitionHistory.slice(-limit);
+    }
+    /**
+     * Determine target state based on health and economics
+     */
+    determineTargetState(health, economics, minBalance) {
+        const balance = parseFloat(economics.currentBalance);
+        const minBal = parseFloat(minBalance);
+        // Shutdown conditions
+        if (health.status === 'dead' || balance <= 0) {
+            return 'shutdown';
+        }
+        // Survival mode conditions
+        if (health.status === 'critical' || balance < minBal || economics.daysOfRunway < 3) {
+            return 'survival';
+        }
+        // Caution mode conditions
+        if (health.status === 'degraded' || balance < minBal * 2 || economics.daysOfRunway < 7) {
+            return 'caution';
+        }
+        // Recovery if improving from survival
+        if (this.currentState === 'survival' && balance >= minBal * 1.5 && economics.daysOfRunway >= 5) {
+            return 'recovery';
+        }
+        // Normal operation
+        return 'normal';
+    }
+}
+// ============================================================================
+// IN-MEMORY STORAGE
+// ============================================================================
+/** In-memory heartbeat storage */
+const heartbeatStore = new Map();
+/** In-memory health storage */
+const healthStore = new Map();
+/** In-memory economics storage */
+const economicsStore = new Map();
+/** In-memory survival history storage */
+const survivalHistoryStore = new Map();
+/** In-memory automated actions storage */
+const automatedActionsStore = new Map();
+// ============================================================================
+// FORMATTING UTILITIES
+// ============================================================================
 /**
  * Format survival report as readable string
+ * @param snapshot - Survival snapshot to format
+ * @returns Formatted report string
+ * @throws SurvivalError if snapshot is invalid
  */
 export function formatSurvivalReport(snapshot) {
+    validateSurvivalSnapshot(snapshot);
     const { health, economics, timestamp } = snapshot;
     const date = new Date(timestamp).toLocaleString();
     let report = `🤖 Survival Report (${date})\n`;
@@ -53,12 +410,30 @@ export function formatSurvivalReport(snapshot) {
 }
 /**
  * Determine if agent should accept a task based on survival state
+ * @param snapshot - Current survival snapshot
+ * @param budget - Task budget in USD
+ * @param estimatedCost - Estimated task cost in USD
+ * @param minProfitMargin - Minimum required profit margin (0-1)
+ * @returns Task decision result
+ * @throws SurvivalError if parameters are invalid
  */
 export function shouldAcceptTask(snapshot, budget, estimatedCost, minProfitMargin = 0.1) {
+    // Validate inputs
+    validateSurvivalSnapshot(snapshot);
+    if (typeof budget !== 'string' || budget.trim().length === 0) {
+        throw new SurvivalError('budget must be a non-empty string', 'INVALID_PARAMS', { retryable: false });
+    }
+    if (typeof estimatedCost !== 'string' || estimatedCost.trim().length === 0) {
+        throw new SurvivalError('estimatedCost must be a non-empty string', 'INVALID_PARAMS', { retryable: false });
+    }
+    const margin = parseRate(minProfitMargin, 'minProfitMargin');
     const balance = parseFloat(snapshot.economics.balance);
     const taskBudget = parseFloat(budget);
     const cost = parseFloat(estimatedCost);
     const minBalance = parseFloat(DEFAULT_SURVIVAL_CONFIG.minSurvivalBalance);
+    if (![balance, taskBudget, cost, minBalance].every((value) => Number.isFinite(value))) {
+        throw new SurvivalError('snapshot, budget, and estimatedCost must contain valid numeric values', 'INVALID_PARAMS', { retryable: false });
+    }
     // Check survival mode
     if (snapshot.health.status === 'critical' || snapshot.health.status === 'dead') {
         return {
@@ -83,10 +458,10 @@ export function shouldAcceptTask(snapshot, budget, estimatedCost, minProfitMargi
     // Check profitability
     const profit = taskBudget - cost;
     const profitMargin = cost > 0 ? profit / cost : 0;
-    if (profitMargin < minProfitMargin) {
+    if (profitMargin < margin) {
         return {
             accept: false,
-            reason: `Profit margin (${(profitMargin * 100).toFixed(1)}%) below minimum (${(minProfitMargin * 100).toFixed(0)}%)`
+            reason: `Profit margin (${(profitMargin * 100).toFixed(1)}%) below minimum (${(margin * 100).toFixed(0)}%)`
         };
     }
     // Check if we can afford the cost
@@ -101,14 +476,60 @@ export function shouldAcceptTask(snapshot, budget, estimatedCost, minProfitMargi
         reason: `Task profitable (${(profitMargin * 100).toFixed(1)}% margin) and within budget constraints`
     };
 }
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
 /**
- * In-memory storage (production should use persistent storage)
+ * Normalizes and validates survival configuration
+ * @param config - Configuration to normalize
+ * @returns Normalized configuration
+ * @throws SurvivalError if configuration is invalid
  */
-const heartbeatStore = new Map();
-const healthStore = new Map();
-const economicsStore = new Map();
-const survivalHistoryStore = new Map();
-const automatedActionsStore = new Map();
+function normalizeSurvivalConfig(config) {
+    if (!config || typeof config !== 'object') {
+        throw new SurvivalError('config must be an object', 'INVALID_PARAMS', { retryable: false });
+    }
+    const minSurvivalBalance = normalizeUsdString(config.minSurvivalBalance ?? DEFAULT_SURVIVAL_CONFIG.minSurvivalBalance, 'minSurvivalBalance');
+    const dailyBurnRate = normalizeUsdString(config.dailyBurnRate ?? DEFAULT_SURVIVAL_CONFIG.dailyBurnRate, 'dailyBurnRate');
+    const autoBridgeThreshold = normalizeUsdString(config.autoBridgeThreshold ?? DEFAULT_SURVIVAL_CONFIG.autoBridgeThreshold, 'autoBridgeThreshold');
+    const healthCheckInterval = parsePositiveInteger(config.healthCheckInterval ?? DEFAULT_SURVIVAL_CONFIG.healthCheckInterval, 'healthCheckInterval');
+    const heartbeatInterval = parsePositiveInteger(config.heartbeatInterval ?? DEFAULT_SURVIVAL_CONFIG.heartbeatInterval, 'heartbeatInterval');
+    const healthySuccessRate = parseRate(config.healthySuccessRate ?? DEFAULT_SURVIVAL_CONFIG.healthySuccessRate, 'healthySuccessRate');
+    const criticalSuccessRate = parseRate(config.criticalSuccessRate ?? DEFAULT_SURVIVAL_CONFIG.criticalSuccessRate, 'criticalSuccessRate');
+    const maxResponseTime = parsePositiveInteger(config.maxResponseTime ?? DEFAULT_SURVIVAL_CONFIG.maxResponseTime, 'maxResponseTime');
+    const alertThreshold = parseNonNegative(config.alertThreshold ?? DEFAULT_SURVIVAL_CONFIG.alertThreshold, 'alertThreshold');
+    // Validate chain
+    const preferredChain = config.preferredChain ?? DEFAULT_SURVIVAL_CONFIG.preferredChain;
+    const validChains = ['ethereum', 'base', 'optimism', 'arbitrum', 'polygon', 'avalanche', 'bsc'];
+    if (!validChains.includes(preferredChain)) {
+        throw new SurvivalError(`preferredChain must be one of: ${validChains.join(', ')}`, 'INVALID_PARAMS', { retryable: false });
+    }
+    // Validate token
+    const autoBridgeTargetToken = config.autoBridgeTargetToken ?? DEFAULT_SURVIVAL_CONFIG.autoBridgeTargetToken;
+    if (!SUPPORTED_TOKENS.includes(autoBridgeTargetToken)) {
+        throw new SurvivalError(`autoBridgeTargetToken must be one of: ${SUPPORTED_TOKENS.join(', ')}`, 'INVALID_PARAMS', { retryable: false });
+    }
+    if (criticalSuccessRate > healthySuccessRate) {
+        throw new SurvivalError('criticalSuccessRate must be less than or equal to healthySuccessRate', 'INVALID_PARAMS', { retryable: false });
+    }
+    return {
+        minSurvivalBalance,
+        dailyBurnRate,
+        autoBridgeThreshold,
+        healthCheckInterval,
+        heartbeatInterval,
+        healthySuccessRate,
+        criticalSuccessRate,
+        maxResponseTime,
+        alertThreshold,
+        enableAutomation: config.enableAutomation ?? DEFAULT_SURVIVAL_CONFIG.enableAutomation,
+        autoBridgeTargetToken: autoBridgeTargetToken,
+        preferredChain: preferredChain
+    };
+}
+// ============================================================================
+// SURVIVAL MANAGER
+// ============================================================================
 /**
  * Echo Survival Manager
  * Manages agent health and economic sustainability
@@ -649,7 +1070,10 @@ export class EchoSurvivalManager {
             ethereum: 0,
             base: 0,
             optimism: 0,
-            arbitrum: 0
+            arbitrum: 0,
+            polygon: 0,
+            avalanche: 0,
+            bsc: 0
         };
         // Aggregate values by token and chain
         for (const chain of Object.keys(balances)) {
@@ -714,7 +1138,10 @@ export class EchoSurvivalManager {
             ethereum: { read: 0.5, write: 2.0, bridge: 5.0, swap: 3.0 },
             base: { read: 0.001, write: 0.01, bridge: 0.02, swap: 0.015 },
             optimism: { read: 0.002, write: 0.015, bridge: 0.025, swap: 0.02 },
-            arbitrum: { read: 0.003, write: 0.02, bridge: 0.03, swap: 0.025 }
+            arbitrum: { read: 0.003, write: 0.02, bridge: 0.03, swap: 0.025 },
+            polygon: { read: 0.001, write: 0.01, bridge: 0.02, swap: 0.015 },
+            avalanche: { read: 0.002, write: 0.015, bridge: 0.025, swap: 0.02 },
+            bsc: { read: 0.001, write: 0.005, bridge: 0.01, swap: 0.008 }
         };
         let bestChain = this.config.preferredChain;
         let bestScore = -1;

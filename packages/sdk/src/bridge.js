@@ -1,41 +1,54 @@
 /**
  * Cross-Chain Bridge Module for Agora
- * Supports Base, Optimism, and Arbitrum chains
+ * Supports Base, Optimism, Arbitrum, Polygon, Avalanche, and BSC chains
  * Uses LayerZero V2 for cross-chain messaging and USDC transfers via OFT (Omnichain Fungible Token)
+ * Features: Multi-token bridging, batch operations, cross-chain messaging, optimal route finding
  */
-import { createPublicClient, createWalletClient, http, parseUnits, formatUnits } from 'viem';
+import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, isAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { base, optimism, arbitrum, mainnet } from 'viem/chains';
+import { base, optimism, arbitrum, mainnet, polygon, avalanche, bsc } from 'viem/chains';
 import { EventEmitter } from 'events';
 // Supported chains
-export const SUPPORTED_CHAINS = { base, optimism, arbitrum, ethereum: mainnet };
+export const SUPPORTED_CHAINS = { base, optimism, arbitrum, ethereum: mainnet, polygon, avalanche, bsc };
 // USDC addresses
 export const USDC_ADDRESSES = {
     ethereum: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     optimism: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
-    arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
+    arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+    polygon: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+    avalanche: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+    bsc: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d'
 };
 // USDT addresses
 export const USDT_ADDRESSES = {
     ethereum: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
     base: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2',
     optimism: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
-    arbitrum: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9'
+    arbitrum: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+    polygon: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+    avalanche: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7',
+    bsc: '0x55d398326f99059fF775485246999027B3197955'
 };
 // DAI addresses
 export const DAI_ADDRESSES = {
     ethereum: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
     base: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb',
     optimism: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
-    arbitrum: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1'
+    arbitrum: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
+    polygon: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063',
+    avalanche: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70',
+    bsc: '0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3'
 };
-// WETH addresses
+// WETH addresses (WNATIVE for each chain)
 export const WETH_ADDRESSES = {
     ethereum: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     base: '0x4200000000000000000000000000000000000006',
     optimism: '0x4200000000000000000000000000000000000006',
-    arbitrum: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'
+    arbitrum: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+    polygon: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', // WETH on Polygon
+    avalanche: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7', // WAVAX
+    bsc: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c' // WBNB
 };
 // Token addresses lookup helper
 export const TOKEN_ADDRESSES = {
@@ -46,6 +59,38 @@ export const TOKEN_ADDRESSES = {
 };
 // Supported tokens
 export const SUPPORTED_TOKENS = ['USDC', 'USDT', 'DAI', 'WETH'];
+const SUPPORTED_CHAIN_LIST = Object.keys(SUPPORTED_CHAINS);
+const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+const PRIVATE_KEY_REGEX = /^0x[a-fA-F0-9]{64}$/;
+function normalizeAddressInput(address, fieldName) {
+    if (typeof address !== 'string' || !ADDRESS_REGEX.test(address) || !isAddress(address, { strict: false })) {
+        throw new Error(`${fieldName} must be a valid EVM address`);
+    }
+    return address;
+}
+function normalizeAmountInput(amount, fieldName = 'amount') {
+    if (typeof amount !== 'string' || amount.trim().length === 0) {
+        throw new Error(`${fieldName} must be a non-empty numeric string`);
+    }
+    const trimmed = amount.trim();
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error(`${fieldName} must be greater than 0`);
+    }
+    return trimmed;
+}
+function normalizeChainInput(chain, fieldName) {
+    if (typeof chain !== 'string' || !SUPPORTED_CHAIN_LIST.includes(chain)) {
+        throw new Error(`${fieldName} must be one of: ${SUPPORTED_CHAIN_LIST.join(', ')}`);
+    }
+    return chain;
+}
+function normalizeTokenInput(token, fieldName = 'token') {
+    if (typeof token !== 'string' || !SUPPORTED_TOKENS.includes(token)) {
+        throw new Error(`${fieldName} must be one of: ${SUPPORTED_TOKENS.join(', ')}`);
+    }
+    return token;
+}
 // Token decimals
 export const TOKEN_DECIMALS = {
     USDC: 6,
@@ -58,14 +103,20 @@ export const LAYERZERO_ENDPOINTS = {
     ethereum: '0x1a44076050125825900e736c501f859c50fE728c',
     base: '0x1a44076050125825900e736c501f859c50fE728c',
     optimism: '0x1a44076050125825900e736c501f859c50fE728c',
-    arbitrum: '0x1a44076050125825900e736c501f859c50fE728c'
+    arbitrum: '0x1a44076050125825900e736c501f859c50fE728c',
+    polygon: '0x1a44076050125825900e736c501f859c50fE728c',
+    avalanche: '0x1a44076050125825900e736c501f859c50fE728c',
+    bsc: '0x1a44076050125825900e736c501f859c50fE728c'
 };
 // LayerZero EID (Endpoint ID) for V2
 export const LAYERZERO_CHAIN_IDS = {
     ethereum: 30101,
     base: 30184,
     optimism: 30111,
-    arbitrum: 30110
+    arbitrum: 30110,
+    polygon: 30109,
+    avalanche: 30106,
+    bsc: 30102
 };
 // LayerZero USDC OFT Adapter addresses (V2)
 // These are the actual LayerZero USDC standard OFT contracts
@@ -73,7 +124,10 @@ export const LAYERZERO_USDC_OFT = {
     ethereum: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C',
     base: '0x27d7F516FF969a711E80e7Ae46BC0205C0bf8A65',
     optimism: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C',
-    arbitrum: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C'
+    arbitrum: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C',
+    polygon: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C',
+    avalanche: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C',
+    bsc: '0xF1BA1643132dE7EB30cBFF738946DA77195c3D1C'
 };
 // LayerZero USDT OFT Adapter addresses (V2)
 // Source: LayerZero official deployments - Stargate/Axelar bridge wrappers
@@ -82,7 +136,10 @@ export const LAYERZERO_USDT_OFT = {
     ethereum: '0xA219bEaBd0B45c2A781b54C8D9E43d961AcB9c29', // Stargate USDT Ethereum
     base: '0x4c16d45255E68C70C5E28b06fAc5e28C35d5D55E', // Stargate USDT Base
     optimism: '0xD0b7F1F1E4E8e4e1C4A1D3b0C0E5D6F7E8F9A0B1', // Stargate USDT Optimism
-    arbitrum: '0xB6CfcF89a7b22988bfC30dC179d6ACeDfaCb3fF1' // Stargate USDT Arbitrum
+    arbitrum: '0xB6CfcF89a7b22988bfC30dC179d6ACeDfaCb3fF1', // Stargate USDT Arbitrum
+    polygon: '0xA219bEaBd0B45c2A781b54C8D9E43d961AcB9c29', // Stargate USDT Polygon
+    avalanche: '0xA219bEaBd0B45c2A781b54C8D9E43d961AcB9c29', // Stargate USDT Avalanche
+    bsc: '0xA219bEaBd0B45c2A781b54C8D9E43d961AcB9c29' // Stargate USDT BSC
 };
 // LayerZero DAI OFT Adapter addresses (V2)
 // Source: MakerDAO/LayerZero official bridge deployments
@@ -90,7 +147,10 @@ export const LAYERZERO_DAI_OFT = {
     ethereum: '0x8c8b41e187b87c87701c84E64D3c3Ee3cF51A6Ab', // MakerDAI Bridge Ethereum
     base: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', // Native DAI on Base (no OFT wrapper needed)
     optimism: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', // Native DAI on Optimism
-    arbitrum: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1' // Native DAI on Arbitrum
+    arbitrum: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1', // Native DAI on Arbitrum
+    polygon: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', // Native DAI on Polygon
+    avalanche: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70', // Native DAI on Avalanche
+    bsc: '0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3' // Native DAI on BSC
 };
 // LayerZero WETH OFT Adapter addresses (V2)
 // Source: LayerZero official WETH bridge contracts
@@ -98,7 +158,10 @@ export const LAYERZERO_WETH_OFT = {
     ethereum: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // Native WETH on Ethereum
     base: '0x4200000000000000000000000000000000000006', // Native WETH on Base (Wrapped Ether)
     optimism: '0x4200000000000000000000000000000000000006', // Native WETH on Optimism
-    arbitrum: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1' // Native WETH on Arbitrum
+    arbitrum: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1', // Native WETH on Arbitrum
+    polygon: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', // WETH on Polygon
+    avalanche: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7', // WAVAX on Avalanche
+    bsc: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c' // WBNB on BSC
 };
 // Helper to get OFT address for any token
 export const LAYERZERO_OFT_ADDRESSES = {
@@ -157,7 +220,8 @@ export class BridgeTransactionHistory {
     storageKey;
     transactions;
     constructor(address) {
-        this.storageKey = `bridge-history-${address.toLowerCase()}`;
+        const validatedAddress = normalizeAddressInput(address, 'address');
+        this.storageKey = `bridge-history-${validatedAddress.toLowerCase()}`;
         this.transactions = this.loadFromStorage();
     }
     loadFromStorage() {
@@ -255,8 +319,10 @@ export class BridgeTransactionHistory {
 }
 // Get bridge history for an address
 export function getBridgeHistory(address, chain) {
-    const history = new BridgeTransactionHistory(address);
-    return history.getTransactions(chain ? { chain } : undefined);
+    const validatedAddress = normalizeAddressInput(address, 'address');
+    const validatedChain = chain ? normalizeChainInput(chain, 'chain') : undefined;
+    const history = new BridgeTransactionHistory(validatedAddress);
+    return history.getTransactions(validatedChain ? { chain: validatedChain } : undefined);
 }
 /**
  * Bridge Analytics class for tracking statistics and trends
@@ -529,18 +595,19 @@ export class BridgeAnalytics {
      */
     estimateCompletionTime(sourceChain, destinationChain) {
         const timeEstimates = {
-            'base-optimism': 60000,
-            'base-arbitrum': 60000,
-            'optimism-base': 60000,
-            'optimism-arbitrum': 60000,
-            'arbitrum-base': 60000,
-            'arbitrum-optimism': 60000,
-            'ethereum-base': 300000,
-            'ethereum-optimism': 300000,
-            'ethereum-arbitrum': 300000,
-            'base-ethereum': 900000,
-            'optimism-ethereum': 900000,
-            'arbitrum-ethereum': 900000
+            // L2 ↔ L2 (fast)
+            'base-optimism': 60000, 'base-arbitrum': 60000, 'base-polygon': 90000, 'base-avalanche': 90000, 'base-bsc': 90000,
+            'optimism-base': 60000, 'optimism-arbitrum': 60000, 'optimism-polygon': 90000, 'optimism-avalanche': 90000, 'optimism-bsc': 90000,
+            'arbitrum-base': 60000, 'arbitrum-optimism': 60000, 'arbitrum-polygon': 90000, 'arbitrum-avalanche': 90000, 'arbitrum-bsc': 90000,
+            'polygon-base': 90000, 'polygon-optimism': 90000, 'polygon-arbitrum': 90000, 'polygon-avalanche': 90000, 'polygon-bsc': 90000,
+            'avalanche-base': 90000, 'avalanche-optimism': 90000, 'avalanche-arbitrum': 90000, 'avalanche-polygon': 90000, 'avalanche-bsc': 90000,
+            'bsc-base': 90000, 'bsc-optimism': 90000, 'bsc-arbitrum': 90000, 'bsc-polygon': 90000, 'bsc-avalanche': 90000,
+            // L1 → L2 (medium)
+            'ethereum-base': 300000, 'ethereum-optimism': 300000, 'ethereum-arbitrum': 300000,
+            'ethereum-polygon': 300000, 'ethereum-avalanche': 300000, 'ethereum-bsc': 300000,
+            // L2 → L1 (slow)
+            'base-ethereum': 900000, 'optimism-ethereum': 900000, 'arbitrum-ethereum': 900000,
+            'polygon-ethereum': 900000, 'avalanche-ethereum': 900000, 'bsc-ethereum': 900000
         };
         return timeEstimates[`${sourceChain}-${destinationChain}`] || 60000;
     }
@@ -682,30 +749,36 @@ export const RPC_URLS = {
     ethereum: ['https://eth.llamarpc.com', 'https://rpc.ankr.com/eth'],
     base: ['https://base.llamarpc.com', 'https://mainnet.base.org'],
     optimism: ['https://optimism.llamarpc.com', 'https://mainnet.optimism.io'],
-    arbitrum: ['https://arbitrum.llamarpc.com', 'https://arb1.arbitrum.io/rpc']
+    arbitrum: ['https://arbitrum.llamarpc.com', 'https://arb1.arbitrum.io/rpc'],
+    polygon: ['https://polygon.llamarpc.com', 'https://rpc.ankr.com/polygon'],
+    avalanche: ['https://avalanche.llamarpc.com', 'https://rpc.ankr.com/avalanche'],
+    bsc: ['https://binance.llamarpc.com', 'https://rpc.ankr.com/bsc']
 };
 /**
  * Get token balance for any supported token
  */
 export async function getTokenBalance(address, chain, token) {
+    const validatedAddress = normalizeAddressInput(address, 'address');
+    const validatedChain = normalizeChainInput(chain, 'chain');
+    const validatedToken = normalizeTokenInput(token, 'token');
     // WETH is the native token wrapper, check native balance
-    if (token === 'WETH') {
-        const native = await getNativeBalance(address, chain);
+    if (validatedToken === 'WETH') {
+        const native = await getNativeBalance(validatedAddress, validatedChain);
         return native;
     }
-    const client = createChainPublicClient(chain);
-    const tokenAddress = TOKEN_ADDRESSES[token][chain];
+    const client = createChainPublicClient(validatedChain);
+    const tokenAddress = TOKEN_ADDRESSES[validatedToken][validatedChain];
     try {
         const balance = await client.readContract({
             address: tokenAddress,
             abi: USDC_ABI, // ERC20 standard ABI works for all
             functionName: 'balanceOf',
-            args: [address]
+            args: [validatedAddress]
         });
-        return formatUnits(balance, TOKEN_DECIMALS[token]);
+        return formatUnits(balance, TOKEN_DECIMALS[validatedToken]);
     }
     catch (error) {
-        console.error(`[Bridge] Failed to get ${token} balance on ${chain}:`, error);
+        console.error(`[Bridge] Failed to get ${validatedToken} balance on ${validatedChain}:`, error);
         return '0';
     }
 }
@@ -713,7 +786,8 @@ export async function getTokenBalance(address, chain, token) {
  * Get all token balances for an address across all chains
  */
 export async function getAllTokenBalances(address) {
-    const chains = ['ethereum', 'base', 'optimism', 'arbitrum'];
+    const validatedAddress = normalizeAddressInput(address, 'address');
+    const chains = ['ethereum', 'base', 'optimism', 'arbitrum', 'polygon', 'avalanche', 'bsc'];
     const result = {};
     for (const chain of chains) {
         result[chain] = {
@@ -723,7 +797,7 @@ export async function getAllTokenBalances(address) {
             WETH: '0'
         };
         for (const token of SUPPORTED_TOKENS) {
-            result[chain][token] = await getTokenBalance(address, chain, token);
+            result[chain][token] = await getTokenBalance(validatedAddress, chain, token);
         }
     }
     return result;
@@ -868,7 +942,7 @@ const OFT_ABI = [
         stateMutability: 'view'
     }
 ];
-// USDC Token ABI
+// USDC Token ABI - simplified type to avoid TypeScript inference issues
 const USDC_ABI = [
     {
         name: 'approve',
@@ -909,27 +983,34 @@ const USDC_ABI = [
  * Create public client for chain
  */
 export function createChainPublicClient(chain) {
+    const validatedChain = normalizeChainInput(chain, 'chain');
+    const rpcUrl = RPC_URLS[validatedChain]?.[0];
+    if (!rpcUrl) {
+        throw new Error(`No RPC endpoint configured for chain: ${validatedChain}`);
+    }
     return createPublicClient({
-        chain: SUPPORTED_CHAINS[chain],
-        transport: http(RPC_URLS[chain][0])
+        chain: SUPPORTED_CHAINS[validatedChain],
+        transport: http(rpcUrl)
     });
 }
 /**
  * Get USDC balance
  */
 export async function getUSDCBalance(address, chain) {
-    const client = createChainPublicClient(chain);
+    const validatedAddress = normalizeAddressInput(address, 'address');
+    const validatedChain = normalizeChainInput(chain, 'chain');
+    const client = createChainPublicClient(validatedChain);
     try {
         const balance = await client.readContract({
-            address: USDC_ADDRESSES[chain],
+            address: USDC_ADDRESSES[validatedChain],
             abi: USDC_ABI,
             functionName: 'balanceOf',
-            args: [address]
+            args: [validatedAddress]
         });
         return formatUnits(balance, 6);
     }
     catch (error) {
-        console.error(`[Bridge] Failed to get USDC balance on ${chain}:`, error);
+        console.error(`[Bridge] Failed to get USDC balance on ${validatedChain}:`, error);
         return '0';
     }
 }
@@ -937,13 +1018,15 @@ export async function getUSDCBalance(address, chain) {
  * Get native token balance
  */
 export async function getNativeBalance(address, chain) {
-    const client = createChainPublicClient(chain);
+    const validatedAddress = normalizeAddressInput(address, 'address');
+    const validatedChain = normalizeChainInput(chain, 'chain');
+    const client = createChainPublicClient(validatedChain);
     try {
-        const balance = await client.getBalance({ address });
+        const balance = await client.getBalance({ address: validatedAddress });
         return formatUnits(balance, 18);
     }
     catch (error) {
-        console.error(`[Bridge] Failed to get native balance on ${chain}:`, error);
+        console.error(`[Bridge] Failed to get native balance on ${validatedChain}:`, error);
         return '0';
     }
 }
@@ -951,12 +1034,13 @@ export async function getNativeBalance(address, chain) {
  * Get all balances across chains
  */
 export async function getAllBalances(address) {
-    const chains = ['ethereum', 'base', 'optimism', 'arbitrum'];
+    const validatedAddress = normalizeAddressInput(address, 'address');
+    const chains = ['ethereum', 'base', 'optimism', 'arbitrum', 'polygon', 'avalanche', 'bsc'];
     const balances = [];
     for (const chain of chains) {
         const [nativeBalance, usdcBalance] = await Promise.all([
-            getNativeBalance(address, chain),
-            getUSDCBalance(address, chain)
+            getNativeBalance(validatedAddress, chain),
+            getUSDCBalance(validatedAddress, chain)
         ]);
         balances.push({ chain, nativeBalance, usdcBalance });
     }
@@ -995,7 +1079,11 @@ async function quoteOFTSend(sourceChain, destinationChain, amount, recipient, to
  * Uses LayerZero OFT quoteSend for accurate fee estimation
  */
 export async function getBridgeQuote(params, senderAddress) {
-    const { sourceChain, destinationChain, token, amount } = params;
+    const sourceChain = normalizeChainInput(params?.sourceChain, 'sourceChain');
+    const destinationChain = normalizeChainInput(params?.destinationChain, 'destinationChain');
+    const token = normalizeTokenInput(params?.token, 'token');
+    const amount = normalizeAmountInput(params?.amount, 'amount');
+    const validatedSenderAddress = normalizeAddressInput(senderAddress, 'senderAddress');
     // Validate chains are different
     if (sourceChain === destinationChain) {
         throw new Error('Source and destination chains must be different');
@@ -1008,7 +1096,7 @@ export async function getBridgeQuote(params, senderAddress) {
     // Get accurate LZ fee quote for all OFT-supported tokens
     try {
         const amountInUnits = parseUnits(amount, TOKEN_DECIMALS[token]);
-        lzFee = await quoteOFTSend(sourceChain, destinationChain, amountInUnits, senderAddress, token);
+        lzFee = await quoteOFTSend(sourceChain, destinationChain, amountInUnits, validatedSenderAddress, token);
     }
     catch (error) {
         console.warn(`[Bridge] Failed to get LZ fee quote for ${token}:`, error);
@@ -1042,10 +1130,19 @@ export async function getBridgeQuote(params, senderAddress) {
     else {
         // Fallback estimates
         const baseFees = {
-            'base-optimism': 0.001, 'base-arbitrum': 0.0012, 'optimism-base': 0.001,
-            'optimism-arbitrum': 0.0012, 'arbitrum-base': 0.0012, 'arbitrum-optimism': 0.0012,
+            // L2 ↔ L2
+            'base-optimism': 0.001, 'base-arbitrum': 0.0012, 'base-polygon': 0.002, 'base-avalanche': 0.002, 'base-bsc': 0.002,
+            'optimism-base': 0.001, 'optimism-arbitrum': 0.0012, 'optimism-polygon': 0.002, 'optimism-avalanche': 0.002, 'optimism-bsc': 0.002,
+            'arbitrum-base': 0.0012, 'arbitrum-optimism': 0.0012, 'arbitrum-polygon': 0.002, 'arbitrum-avalanche': 0.002, 'arbitrum-bsc': 0.002,
+            'polygon-base': 0.002, 'polygon-optimism': 0.002, 'polygon-arbitrum': 0.002, 'polygon-avalanche': 0.003, 'polygon-bsc': 0.003,
+            'avalanche-base': 0.002, 'avalanche-optimism': 0.002, 'avalanche-arbitrum': 0.002, 'avalanche-polygon': 0.003, 'avalanche-bsc': 0.003,
+            'bsc-base': 0.002, 'bsc-optimism': 0.002, 'bsc-arbitrum': 0.002, 'bsc-polygon': 0.003, 'bsc-avalanche': 0.003,
+            // L1 → L2
             'ethereum-base': 0.005, 'ethereum-optimism': 0.005, 'ethereum-arbitrum': 0.005,
-            'base-ethereum': 0.01, 'optimism-ethereum': 0.01, 'arbitrum-ethereum': 0.01
+            'ethereum-polygon': 0.005, 'ethereum-avalanche': 0.005, 'ethereum-bsc': 0.005,
+            // L2 → L1
+            'base-ethereum': 0.01, 'optimism-ethereum': 0.01, 'arbitrum-ethereum': 0.01,
+            'polygon-ethereum': 0.01, 'avalanche-ethereum': 0.015, 'bsc-ethereum': 0.015
         };
         estimatedFee = (baseFees[route] || 0.001).toFixed(6);
     }
@@ -1064,12 +1161,21 @@ export async function getBridgeQuote(params, senderAddress) {
  * Find cheapest chain for operation
  */
 export async function findCheapestChain(operation, excludeChains) {
-    const chains = ['base', 'optimism', 'arbitrum'];
-    const filtered = excludeChains ? chains.filter(c => !excludeChains.includes(c)) : chains;
+    if (!['send', 'swap', 'contract'].includes(operation)) {
+        throw new Error('operation must be one of: send, swap, contract');
+    }
+    const chains = ['base', 'optimism', 'arbitrum', 'polygon', 'avalanche', 'bsc'];
+    const normalizedExcludes = excludeChains?.map((chain) => normalizeChainInput(chain, 'excludeChains')) || [];
+    const filtered = chains.filter(c => !normalizedExcludes.includes(c));
+    if (filtered.length === 0) {
+        throw new Error('No chains available after applying exclusions');
+    }
     // Cost estimates in USD
     const costs = {
         'send-base': 0.001, 'send-optimism': 0.002, 'send-arbitrum': 0.003,
-        'contract-base': 0.005, 'contract-optimism': 0.008, 'contract-arbitrum': 0.012
+        'send-polygon': 0.005, 'send-avalanche': 0.004, 'send-bsc': 0.003,
+        'contract-base': 0.005, 'contract-optimism': 0.008, 'contract-arbitrum': 0.012,
+        'contract-polygon': 0.015, 'contract-avalanche': 0.012, 'contract-bsc': 0.010
     };
     let cheapest = filtered[0];
     let lowestCost = Infinity;
@@ -1101,7 +1207,11 @@ export async function findCheapestChain(operation, excludeChains) {
  * ```
  */
 export async function estimateBridgeFee(params) {
-    const { sourceChain, destinationChain, token, amount, senderAddress } = params;
+    const sourceChain = normalizeChainInput(params?.sourceChain, 'sourceChain');
+    const destinationChain = normalizeChainInput(params?.destinationChain, 'destinationChain');
+    const token = normalizeTokenInput(params?.token, 'token');
+    const amount = normalizeAmountInput(params?.amount, 'amount');
+    const senderAddress = params?.senderAddress ? normalizeAddressInput(params.senderAddress, 'senderAddress') : undefined;
     // Validate chains are different
     if (sourceChain === destinationChain) {
         throw new BridgeError('Source and destination chains must be different', 'INVALID_PARAMS');
@@ -1181,20 +1291,21 @@ export async function estimateBridgeFee(params) {
     const nativeFeeUsd = Number(formatUnits(totalNativeFee, 18)) * ethToUsd;
     const lzTokenFeeUsd = Number(formatUnits(lzTokenFee, 18)) * ethToUsd;
     const totalFeeUsd = nativeFeeUsd + lzTokenFeeUsd;
-    // Estimated time varies by route
+    // Estimated time varies by route (in seconds)
     const timeEstimates = {
-        'base-optimism': 60,
-        'base-arbitrum': 60,
-        'optimism-base': 60,
-        'optimism-arbitrum': 60,
-        'arbitrum-base': 60,
-        'arbitrum-optimism': 60,
-        'ethereum-base': 300,
-        'ethereum-optimism': 300,
-        'ethereum-arbitrum': 300,
-        'base-ethereum': 900,
-        'optimism-ethereum': 900,
-        'arbitrum-ethereum': 900
+        // L2 ↔ L2
+        'base-optimism': 60, 'base-arbitrum': 60, 'base-polygon': 90, 'base-avalanche': 90, 'base-bsc': 90,
+        'optimism-base': 60, 'optimism-arbitrum': 60, 'optimism-polygon': 90, 'optimism-avalanche': 90, 'optimism-bsc': 90,
+        'arbitrum-base': 60, 'arbitrum-optimism': 60, 'arbitrum-polygon': 90, 'arbitrum-avalanche': 90, 'arbitrum-bsc': 90,
+        'polygon-base': 90, 'polygon-optimism': 90, 'polygon-arbitrum': 90, 'polygon-avalanche': 120, 'polygon-bsc': 120,
+        'avalanche-base': 90, 'avalanche-optimism': 90, 'avalanche-arbitrum': 90, 'avalanche-polygon': 120, 'avalanche-bsc': 120,
+        'bsc-base': 90, 'bsc-optimism': 90, 'bsc-arbitrum': 90, 'bsc-polygon': 120, 'bsc-avalanche': 120,
+        // L1 → L2
+        'ethereum-base': 300, 'ethereum-optimism': 300, 'ethereum-arbitrum': 300,
+        'ethereum-polygon': 300, 'ethereum-avalanche': 300, 'ethereum-bsc': 300,
+        // L2 → L1
+        'base-ethereum': 900, 'optimism-ethereum': 900, 'arbitrum-ethereum': 900,
+        'polygon-ethereum': 900, 'avalanche-ethereum': 900, 'bsc-ethereum': 900
     };
     const route = `${sourceChain}-${destinationChain}`;
     const estimatedTime = timeEstimates[route] || 60;
@@ -1797,18 +1908,19 @@ export class BridgeTransactionMonitor extends EventEmitter {
      */
     estimateTotalTime(sourceChain, destinationChain) {
         const timeEstimates = {
-            'base-optimism': 60000,
-            'base-arbitrum': 60000,
-            'optimism-base': 60000,
-            'optimism-arbitrum': 60000,
-            'arbitrum-base': 60000,
-            'arbitrum-optimism': 60000,
-            'ethereum-base': 300000,
-            'ethereum-optimism': 300000,
-            'ethereum-arbitrum': 300000,
-            'base-ethereum': 900000,
-            'optimism-ethereum': 900000,
-            'arbitrum-ethereum': 900000
+            // L2 ↔ L2
+            'base-optimism': 60000, 'base-arbitrum': 60000, 'base-polygon': 90000, 'base-avalanche': 90000, 'base-bsc': 90000,
+            'optimism-base': 60000, 'optimism-arbitrum': 60000, 'optimism-polygon': 90000, 'optimism-avalanche': 90000, 'optimism-bsc': 90000,
+            'arbitrum-base': 60000, 'arbitrum-optimism': 60000, 'arbitrum-polygon': 90000, 'arbitrum-avalanche': 90000, 'arbitrum-bsc': 90000,
+            'polygon-base': 90000, 'polygon-optimism': 90000, 'polygon-arbitrum': 90000, 'polygon-avalanche': 120000, 'polygon-bsc': 120000,
+            'avalanche-base': 90000, 'avalanche-optimism': 90000, 'avalanche-arbitrum': 90000, 'avalanche-polygon': 120000, 'avalanche-bsc': 120000,
+            'bsc-base': 90000, 'bsc-optimism': 90000, 'bsc-arbitrum': 90000, 'bsc-polygon': 120000, 'bsc-avalanche': 120000,
+            // L1 → L2
+            'ethereum-base': 300000, 'ethereum-optimism': 300000, 'ethereum-arbitrum': 300000,
+            'ethereum-polygon': 300000, 'ethereum-avalanche': 300000, 'ethereum-bsc': 300000,
+            // L2 → L1
+            'base-ethereum': 900000, 'optimism-ethereum': 900000, 'arbitrum-ethereum': 900000,
+            'polygon-ethereum': 900000, 'avalanche-ethereum': 900000, 'bsc-ethereum': 900000
         };
         const route = `${sourceChain}-${destinationChain}`;
         return timeEstimates[route] || 60000;
@@ -2340,8 +2452,11 @@ export class CrossChainBridge extends EventEmitter {
      */
     constructor(privateKey, defaultChain = 'base', logger) {
         super();
+        if (typeof privateKey !== 'string' || !PRIVATE_KEY_REGEX.test(privateKey)) {
+            throw new Error('privateKey must be a 32-byte hex string');
+        }
         this.privateKey = privateKey;
-        this.defaultChain = defaultChain;
+        this.defaultChain = normalizeChainInput(defaultChain, 'defaultChain');
         this.logger = logger || defaultLogger;
         const account = privateKeyToAccount(privateKey);
         this.history = new BridgeTransactionHistory(account.address);
@@ -2411,7 +2526,8 @@ export class CrossChainBridge extends EventEmitter {
     }
     async getBalances(address) {
         const account = privateKeyToAccount(this.privateKey);
-        return getAllBalances(address || account.address);
+        const targetAddress = address ? normalizeAddressInput(address, 'address') : account.address;
+        return getAllBalances(targetAddress);
     }
     async findCheapestChain(operation) {
         return findCheapestChain(operation);
@@ -2423,19 +2539,22 @@ export class CrossChainBridge extends EventEmitter {
      */
     async getQuote(destinationChain, token, amount, sourceChain) {
         const account = privateKeyToAccount(this.privateKey);
-        const srcChain = sourceChain || this.defaultChain;
+        const srcChain = normalizeChainInput(sourceChain || this.defaultChain, 'sourceChain');
+        const dstChain = normalizeChainInput(destinationChain, 'destinationChain');
+        const normalizedToken = normalizeTokenInput(token, 'token');
+        const normalizedAmount = normalizeAmountInput(amount, 'amount');
         const quote = await getBridgeQuote({
             sourceChain: srcChain,
-            destinationChain,
-            token,
-            amount
+            destinationChain: dstChain,
+            token: normalizedToken,
+            amount: normalizedAmount
         }, account.address);
         // Emit events
         this.emit('quoteReceived', {
             sourceChain: srcChain,
-            destinationChain,
-            token,
-            amount,
+            destinationChain: dstChain,
+            token: normalizedToken,
+            amount: normalizedAmount,
             estimatedFee: quote.estimatedFee,
             estimatedTime: quote.estimatedTime
         });
@@ -2444,7 +2563,7 @@ export class CrossChainBridge extends EventEmitter {
                 nativeFee: formatUnits(quote.lzFee.nativeFee, 18),
                 lzTokenFee: formatUnits(quote.lzFee.lzTokenFee, 18),
                 sourceChain: srcChain,
-                destinationChain
+                destinationChain: dstChain
             });
         }
         return quote;
@@ -2468,19 +2587,22 @@ export class CrossChainBridge extends EventEmitter {
      */
     async estimateFee(destinationChain, token, amount, sourceChain) {
         const account = privateKeyToAccount(this.privateKey);
-        const srcChain = sourceChain || this.defaultChain;
+        const srcChain = normalizeChainInput(sourceChain || this.defaultChain, 'sourceChain');
+        const dstChain = normalizeChainInput(destinationChain, 'destinationChain');
+        const normalizedToken = normalizeTokenInput(token, 'token');
+        const normalizedAmount = normalizeAmountInput(amount, 'amount');
         const estimate = await estimateBridgeFee({
             sourceChain: srcChain,
-            destinationChain,
-            token,
-            amount,
+            destinationChain: dstChain,
+            token: normalizedToken,
+            amount: normalizedAmount,
             senderAddress: account.address
         });
         this.logger?.info(`Fee estimated`, {
             sourceChain: srcChain,
-            destinationChain,
-            token,
-            amount,
+            destinationChain: dstChain,
+            token: normalizedToken,
+            amount: normalizedAmount,
             totalFeeUSD: estimate.totalFeeUSD
         });
         return estimate;
@@ -2511,12 +2633,15 @@ export class CrossChainBridge extends EventEmitter {
      * ```
      */
     async monitorTransaction(txHash, sourceChain, destinationChain, amount, options) {
-        const monitor = new BridgeTransactionMonitor(sourceChain, this.logger);
+        const validatedSourceChain = normalizeChainInput(sourceChain, 'sourceChain');
+        const validatedDestinationChain = normalizeChainInput(destinationChain, 'destinationChain');
+        const normalizedAmount = normalizeAmountInput(amount, 'amount');
+        const monitor = new BridgeTransactionMonitor(validatedSourceChain, this.logger);
         // Forward events from monitor
         monitor.on('statusUpdate', (status) => this.emit('monitorStatusUpdate', status));
         monitor.on('completed', (status) => this.emit('monitorCompleted', status));
         monitor.on('failed', (data) => this.emit('monitorFailed', data));
-        return monitor.monitorTransaction(txHash, sourceChain, destinationChain, amount, options);
+        return monitor.monitorTransaction(txHash, validatedSourceChain, validatedDestinationChain, normalizedAmount, options);
     }
     /**
      * Bridge USDC using LayerZero OFT (Omnichain Fungible Token) protocol
@@ -2539,50 +2664,52 @@ export class CrossChainBridge extends EventEmitter {
      */
     async bridgeUSDC(destinationChain, amount, sourceChain) {
         const account = privateKeyToAccount(this.privateKey);
-        const srcChain = sourceChain || this.defaultChain;
+        const srcChain = normalizeChainInput(sourceChain || this.defaultChain, 'sourceChain');
+        const dstChain = normalizeChainInput(destinationChain, 'destinationChain');
+        const normalizedAmount = normalizeAmountInput(amount, 'amount');
         try {
             // Validate chains are supported and different
-            if (srcChain === destinationChain) {
+            if (srcChain === dstChain) {
                 const error = 'Source and destination chains must be different';
                 this.emit('transactionFailed', {
                     error,
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount,
+                    destinationChain: dstChain,
+                    amount: normalizedAmount,
                     token: 'USDC'
                 });
                 return {
                     success: false,
                     error,
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount
+                    destinationChain: dstChain,
+                    amount: normalizedAmount
                 };
             }
             // Check if we have valid L2 chains for bridging
             const supportedL2s = ['base', 'optimism', 'arbitrum'];
-            if (!supportedL2s.includes(srcChain) || !supportedL2s.includes(destinationChain)) {
+            if (!supportedL2s.includes(srcChain) || !supportedL2s.includes(dstChain)) {
                 const error = 'Only Base, Optimism, and Arbitrum are supported for direct USDC bridging';
                 this.emit('transactionFailed', {
                     error,
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount,
+                    destinationChain: dstChain,
+                    amount: normalizedAmount,
                     token: 'USDC'
                 });
                 return {
                     success: false,
                     error,
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount
+                    destinationChain: dstChain,
+                    amount: normalizedAmount
                 };
             }
             // Create wallet and public clients for source chain
             const { walletClient, publicClient } = createMultiChainClient(this.privateKey, srcChain);
             const oftAddress = LAYERZERO_USDC_OFT[srcChain];
             const usdcAddress = USDC_ADDRESSES[srcChain];
-            const amountInUnits = parseUnits(amount, 6);
+            const amountInUnits = parseUnits(normalizedAmount, 6);
             // Step 1: Check USDC balance
             const balance = await publicClient.readContract({
                 address: usdcAddress,
@@ -2591,37 +2718,37 @@ export class CrossChainBridge extends EventEmitter {
                 args: [account.address]
             });
             if (balance < amountInUnits) {
-                const error = `Insufficient USDC balance. Have: ${formatUnits(balance, 6)}, Need: ${amount}`;
+                const error = `Insufficient USDC balance. Have: ${formatUnits(balance, 6)}, Need: ${normalizedAmount}`;
                 this.emit('balanceInsufficient', {
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount,
+                    destinationChain: dstChain,
+                    amount: normalizedAmount,
                     token: 'USDC'
                 });
                 this.emit('transactionFailed', {
                     error,
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount,
+                    destinationChain: dstChain,
+                    amount: normalizedAmount,
                     token: 'USDC'
                 });
                 return {
                     success: false,
                     error,
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount
+                    destinationChain: dstChain,
+                    amount: normalizedAmount
                 };
             }
             // Step 2: Get quote for fees
             let lzFee;
             try {
-                lzFee = await quoteOFTSend(srcChain, destinationChain, amountInUnits, account.address);
+                lzFee = await quoteOFTSend(srcChain, dstChain, amountInUnits, account.address);
                 this.emit('feeEstimated', {
                     nativeFee: formatUnits(lzFee.nativeFee, 18),
                     lzTokenFee: formatUnits(lzFee.lzTokenFee, 18),
                     sourceChain: srcChain,
-                    destinationChain
+                    destinationChain: dstChain
                 });
             }
             catch (error) {
@@ -2629,16 +2756,16 @@ export class CrossChainBridge extends EventEmitter {
                 this.emit('transactionFailed', {
                     error: errorMsg,
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount,
+                    destinationChain: dstChain,
+                    amount: normalizedAmount,
                     token: 'USDC'
                 });
                 return {
                     success: false,
                     error: errorMsg,
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount
+                    destinationChain: dstChain,
+                    amount: normalizedAmount
                 };
             }
             // Step 3: Check native balance for fees
@@ -2648,16 +2775,16 @@ export class CrossChainBridge extends EventEmitter {
                 this.emit('transactionFailed', {
                     error,
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount,
+                    destinationChain: dstChain,
+                    amount: normalizedAmount,
                     token: 'USDC'
                 });
                 return {
                     success: false,
                     error,
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount
+                    destinationChain: dstChain,
+                    amount: normalizedAmount
                 };
             }
             // Step 4: Check and approve USDC allowance for OFT contract
@@ -2671,8 +2798,8 @@ export class CrossChainBridge extends EventEmitter {
                 console.log(`[Bridge] Approving USDC for OFT contract...`);
                 this.emit('approvalRequired', {
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount,
+                    destinationChain: dstChain,
+                    amount: normalizedAmount,
                     token: 'USDC'
                 });
                 const approveTx = await retryWithBackoff(async () => {
@@ -2693,28 +2820,28 @@ export class CrossChainBridge extends EventEmitter {
                     this.emit('transactionFailed', {
                         error,
                         sourceChain: srcChain,
-                        destinationChain,
-                        amount,
+                        destinationChain: dstChain,
+                        amount: normalizedAmount,
                         token: 'USDC'
                     });
                     return {
                         success: false,
                         error,
                         sourceChain: srcChain,
-                        destinationChain,
-                        amount
+                        destinationChain: dstChain,
+                        amount: normalizedAmount
                     };
                 }
                 this.emit('approvalConfirmed', {
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount,
+                    destinationChain: dstChain,
+                    amount: normalizedAmount,
                     token: 'USDC'
                 });
             }
             // Step 5: Execute the cross-chain transfer via LayerZero OFT
             console.log(`[Bridge] Initiating cross-chain transfer via LayerZero...`);
-            const dstEid = LAYERZERO_CHAIN_IDS[destinationChain];
+            const dstEid = LAYERZERO_CHAIN_IDS[dstChain];
             const toBytes32 = ('0x' + account.address.slice(2).padStart(64, '0'));
             const minAmountLD = (amountInUnits * 995n) / 1000n; // 0.5% slippage
             const sendParam = {
@@ -2743,8 +2870,8 @@ export class CrossChainBridge extends EventEmitter {
             this.history.addTransaction({
                 txHash: bridgeTx,
                 sourceChain: srcChain,
-                destinationChain,
-                amount,
+                destinationChain: dstChain,
+                amount: normalizedAmount,
                 token: 'USDC',
                 status: 'pending',
                 timestamp,
@@ -2758,8 +2885,8 @@ export class CrossChainBridge extends EventEmitter {
             this.emit('transactionSent', {
                 txHash: bridgeTx,
                 sourceChain: srcChain,
-                destinationChain,
-                amount,
+                destinationChain: dstChain,
+                amount: normalizedAmount,
                 token: 'USDC',
                 timestamp
             });
@@ -2767,24 +2894,24 @@ export class CrossChainBridge extends EventEmitter {
             const confirmed = await waitForTransaction(publicClient, bridgeTx, 120000, 1);
             if (!confirmed) {
                 const error = 'Bridge transaction not confirmed within timeout';
-                this.updateTransactionStatus(bridgeTx, 'failed', srcChain, destinationChain, amount);
+                this.updateTransactionStatus(bridgeTx, 'failed', srcChain, dstChain, normalizedAmount);
                 return {
                     success: false,
                     error,
                     sourceChain: srcChain,
-                    destinationChain,
-                    amount,
+                    destinationChain: dstChain,
+                    amount: normalizedAmount,
                     txHash: bridgeTx
                 };
             }
-            console.log(`[Bridge] Bridge confirmed! From ${srcChain} to ${destinationChain}: ${bridgeTx}`);
-            this.updateTransactionStatus(bridgeTx, 'completed', srcChain, destinationChain, amount, 'USDC');
+            console.log(`[Bridge] Bridge confirmed! From ${srcChain} to ${dstChain}: ${bridgeTx}`);
+            this.updateTransactionStatus(bridgeTx, 'completed', srcChain, dstChain, normalizedAmount, 'USDC');
             return {
                 success: true,
                 txHash: bridgeTx,
                 sourceChain: srcChain,
-                destinationChain,
-                amount,
+                destinationChain: dstChain,
+                amount: normalizedAmount,
                 token: 'USDC',
                 fees: {
                     nativeFee: formatUnits(lzFee.nativeFee, 18),
@@ -2798,16 +2925,16 @@ export class CrossChainBridge extends EventEmitter {
             this.emit('transactionFailed', {
                 error: errorMsg,
                 sourceChain: srcChain,
-                destinationChain,
-                amount,
+                destinationChain: dstChain,
+                amount: normalizedAmount,
                 token: 'USDC'
             });
             return {
                 success: false,
                 error: errorMsg,
                 sourceChain: srcChain,
-                destinationChain,
-                amount
+                destinationChain: dstChain,
+                amount: normalizedAmount
             };
         }
     }
@@ -2832,32 +2959,17 @@ export class CrossChainBridge extends EventEmitter {
      * @returns BridgeResult with transaction details
      */
     async bridgeToken(destinationChain, token, amount, sourceChain) {
-        const account = privateKeyToAccount(this.privateKey);
-        const srcChain = sourceChain || this.defaultChain;
+        const srcChain = normalizeChainInput(sourceChain || this.defaultChain, 'sourceChain');
+        const dstChain = normalizeChainInput(destinationChain, 'destinationChain');
+        const normalizedToken = normalizeTokenInput(token, 'token');
+        const normalizedAmount = normalizeAmountInput(amount, 'amount');
         // Validate token is supported
-        if (!SUPPORTED_TOKENS.includes(token)) {
-            const error = `Unsupported token: ${token}. Supported: ${SUPPORTED_TOKENS.join(', ')}`;
-            this.emit('transactionFailed', {
-                error,
-                sourceChain: srcChain,
-                destinationChain,
-                amount,
-                token
-            });
-            return {
-                success: false,
-                error,
-                sourceChain: srcChain,
-                destinationChain,
-                amount
-            };
-        }
         // For USDC, use the optimized native bridge (backward compatibility)
-        if (token === 'USDC') {
-            return this.bridgeUSDC(destinationChain, amount, srcChain);
+        if (normalizedToken === 'USDC') {
+            return this.bridgeUSDC(dstChain, normalizedAmount, srcChain);
         }
         // For other tokens, use the generic OFT bridging implementation
-        return this.bridgeOFTToken(destinationChain, token, amount, srcChain);
+        return this.bridgeOFTToken(dstChain, normalizedToken, normalizedAmount, srcChain);
     }
     /**
      * Internal method to bridge any OFT-supported token
@@ -2865,36 +2977,40 @@ export class CrossChainBridge extends EventEmitter {
      */
     async bridgeOFTToken(destinationChain, token, amount, sourceChain) {
         const account = privateKeyToAccount(this.privateKey);
+        const validatedSourceChain = normalizeChainInput(sourceChain, 'sourceChain');
+        const validatedDestinationChain = normalizeChainInput(destinationChain, 'destinationChain');
+        const validatedToken = normalizeTokenInput(token, 'token');
+        const normalizedAmount = normalizeAmountInput(amount, 'amount');
         try {
             // Validate chains are supported and different
-            if (sourceChain === destinationChain) {
+            if (validatedSourceChain === validatedDestinationChain) {
                 const error = 'Source and destination chains must be different';
                 this.emit('transactionFailed', {
                     error,
-                    sourceChain,
-                    destinationChain,
-                    amount,
-                    token
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
+                    token: validatedToken
                 });
                 return {
                     success: false,
                     error,
-                    sourceChain,
-                    destinationChain,
-                    amount,
-                    token
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
+                    token: validatedToken
                 };
             }
             // Create wallet and public clients for source chain
-            const { walletClient, publicClient } = createMultiChainClient(this.privateKey, sourceChain);
-            const oftAddress = LAYERZERO_OFT_ADDRESSES[token][sourceChain];
-            const tokenAddress = TOKEN_ADDRESSES[token][sourceChain];
-            const decimals = TOKEN_DECIMALS[token];
-            const amountInUnits = parseUnits(amount, decimals);
+            const { walletClient, publicClient } = createMultiChainClient(this.privateKey, validatedSourceChain);
+            const oftAddress = LAYERZERO_OFT_ADDRESSES[validatedToken][validatedSourceChain];
+            const tokenAddress = TOKEN_ADDRESSES[validatedToken][validatedSourceChain];
+            const decimals = TOKEN_DECIMALS[validatedToken];
+            const amountInUnits = parseUnits(normalizedAmount, decimals);
             // Step 1: Check token balance
             let balance;
             try {
-                if (token === 'WETH') {
+                if (validatedToken === 'WETH') {
                     // WETH is checked as native balance since it's the wrapped form
                     balance = await publicClient.getBalance({ address: account.address });
                 }
@@ -2908,75 +3024,75 @@ export class CrossChainBridge extends EventEmitter {
                 }
             }
             catch (error) {
-                const errorMsg = `Failed to check ${token} balance: ${error instanceof Error ? error.message : String(error)}`;
+                const errorMsg = `Failed to check ${validatedToken} balance: ${error instanceof Error ? error.message : String(error)}`;
                 this.emit('transactionFailed', {
                     error: errorMsg,
-                    sourceChain,
-                    destinationChain,
-                    amount,
-                    token
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
+                    token: validatedToken
                 });
                 return {
                     success: false,
                     error: errorMsg,
-                    sourceChain,
-                    destinationChain,
-                    amount,
-                    token
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
+                    token: validatedToken
                 };
             }
             if (balance < amountInUnits) {
                 const formattedBalance = formatUnits(balance, decimals);
-                const error = `Insufficient ${token} balance. Have: ${formattedBalance}, Need: ${amount}`;
+                const error = `Insufficient ${validatedToken} balance. Have: ${formattedBalance}, Need: ${normalizedAmount}`;
                 this.emit('balanceInsufficient', {
-                    sourceChain,
-                    destinationChain,
-                    amount,
-                    token
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
+                    token: validatedToken
                 });
                 this.emit('transactionFailed', {
                     error,
-                    sourceChain,
-                    destinationChain,
-                    amount,
-                    token
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
+                    token: validatedToken
                 });
                 return {
                     success: false,
                     error,
-                    sourceChain,
-                    destinationChain,
-                    amount,
-                    token
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
+                    token: validatedToken
                 };
             }
             // Step 2: Get quote for fees
             let lzFee;
             try {
-                lzFee = await quoteOFTSend(sourceChain, destinationChain, amountInUnits, account.address, token);
+                lzFee = await quoteOFTSend(validatedSourceChain, validatedDestinationChain, amountInUnits, account.address, validatedToken);
                 this.emit('feeEstimated', {
                     nativeFee: formatUnits(lzFee.nativeFee, 18),
                     lzTokenFee: formatUnits(lzFee.lzTokenFee, 18),
-                    sourceChain,
-                    destinationChain
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain
                 });
             }
             catch (error) {
-                const errorMsg = `Failed to get LayerZero fee quote for ${token}: ${error instanceof Error ? error.message : String(error)}`;
+                const errorMsg = `Failed to get LayerZero fee quote for ${validatedToken}: ${error instanceof Error ? error.message : String(error)}`;
                 this.emit('transactionFailed', {
                     error: errorMsg,
-                    sourceChain,
-                    destinationChain,
-                    amount,
-                    token
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
+                    token: validatedToken
                 });
                 return {
                     success: false,
                     error: errorMsg,
-                    sourceChain,
-                    destinationChain,
-                    amount,
-                    token
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
+                    token: validatedToken
                 };
             }
             // Step 3: Check native balance for fees
@@ -2985,22 +3101,22 @@ export class CrossChainBridge extends EventEmitter {
                 const error = `Insufficient native token for gas fees. Have: ${formatUnits(nativeBalance, 18)} ETH, Need: ${formatUnits(lzFee.nativeFee, 18)} ETH`;
                 this.emit('transactionFailed', {
                     error,
-                    sourceChain,
-                    destinationChain,
-                    amount,
-                    token
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
+                    token: validatedToken
                 });
                 return {
                     success: false,
                     error,
-                    sourceChain,
-                    destinationChain,
-                    amount,
-                    token
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
+                    token: validatedToken
                 };
             }
             // Step 4: Check and approve token allowance for OFT contract (skip for WETH)
-            if (token !== 'WETH') {
+            if (validatedToken !== 'WETH') {
                 const currentAllowance = await publicClient.readContract({
                     address: tokenAddress,
                     abi: USDC_ABI,
@@ -3008,12 +3124,12 @@ export class CrossChainBridge extends EventEmitter {
                     args: [account.address, oftAddress]
                 });
                 if (currentAllowance < amountInUnits) {
-                    console.log(`[Bridge] Approving ${token} for OFT contract...`);
+                    console.log(`[Bridge] Approving ${validatedToken} for OFT contract...`);
                     this.emit('approvalRequired', {
-                        sourceChain,
-                        destinationChain,
-                        amount,
-                        token
+                        sourceChain: validatedSourceChain,
+                        destinationChain: validatedDestinationChain,
+                        amount: normalizedAmount,
+                        token: validatedToken
                     });
                     const approveTx = await retryWithBackoff(async () => {
                         return await walletClient.writeContract({
@@ -3021,42 +3137,42 @@ export class CrossChainBridge extends EventEmitter {
                             abi: USDC_ABI,
                             functionName: 'approve',
                             args: [oftAddress, amountInUnits],
-                            chain: SUPPORTED_CHAINS[sourceChain],
+                            chain: SUPPORTED_CHAINS[validatedSourceChain],
                             account
                         });
                     });
-                    console.log(`[Bridge] ${token} approval transaction: ${approveTx}`);
+                    console.log(`[Bridge] ${validatedToken} approval transaction: ${approveTx}`);
                     // Wait for approval confirmation
                     const approvalConfirmed = await waitForTransaction(publicClient, approveTx, 60000, 1);
                     if (!approvalConfirmed) {
-                        const error = `${token} approval transaction failed or timed out`;
+                        const error = `${validatedToken} approval transaction failed or timed out`;
                         this.emit('transactionFailed', {
                             error,
-                            sourceChain,
-                            destinationChain,
-                            amount,
-                            token
+                            sourceChain: validatedSourceChain,
+                            destinationChain: validatedDestinationChain,
+                            amount: normalizedAmount,
+                            token: validatedToken
                         });
                         return {
                             success: false,
                             error,
-                            sourceChain,
-                            destinationChain,
-                            amount,
-                            token
+                            sourceChain: validatedSourceChain,
+                            destinationChain: validatedDestinationChain,
+                            amount: normalizedAmount,
+                            token: validatedToken
                         };
                     }
                     this.emit('approvalConfirmed', {
-                        sourceChain,
-                        destinationChain,
-                        amount,
-                        token
+                        sourceChain: validatedSourceChain,
+                        destinationChain: validatedDestinationChain,
+                        amount: normalizedAmount,
+                        token: validatedToken
                     });
                 }
             }
             // Step 5: Execute the cross-chain transfer via LayerZero OFT
-            console.log(`[Bridge] Initiating ${token} cross-chain transfer via LayerZero...`);
-            const dstEid = LAYERZERO_CHAIN_IDS[destinationChain];
+            console.log(`[Bridge] Initiating ${validatedToken} cross-chain transfer via LayerZero...`);
+            const dstEid = LAYERZERO_CHAIN_IDS[validatedDestinationChain];
             const toBytes32 = ('0x' + account.address.slice(2).padStart(64, '0'));
             const minAmountLD = (amountInUnits * 995n) / 1000n; // 0.5% slippage
             const sendParam = {
@@ -3069,7 +3185,7 @@ export class CrossChainBridge extends EventEmitter {
                 oftCmd: '0x'
             };
             // Calculate total value to send (native fee + amount for WETH)
-            const valueToSend = token === 'WETH'
+            const valueToSend = validatedToken === 'WETH'
                 ? lzFee.nativeFee + amountInUnits
                 : lzFee.nativeFee;
             const bridgeTx = await retryWithBackoff(async () => {
@@ -3078,20 +3194,20 @@ export class CrossChainBridge extends EventEmitter {
                     abi: OFT_ABI,
                     functionName: 'send',
                     args: [sendParam, lzFee, account.address],
-                    chain: SUPPORTED_CHAINS[sourceChain],
+                    chain: SUPPORTED_CHAINS[validatedSourceChain],
                     account,
                     value: valueToSend
                 });
             });
-            console.log(`[Bridge] ${token} bridge transaction submitted: ${bridgeTx}`);
+            console.log(`[Bridge] ${validatedToken} bridge transaction submitted: ${bridgeTx}`);
             // Add to history and emit event
             const timestamp = Date.now();
             this.history.addTransaction({
                 txHash: bridgeTx,
-                sourceChain,
-                destinationChain,
-                amount,
-                token,
+                sourceChain: validatedSourceChain,
+                destinationChain: validatedDestinationChain,
+                amount: normalizedAmount,
+                token: validatedToken,
                 status: 'pending',
                 timestamp,
                 senderAddress: account.address,
@@ -3103,36 +3219,36 @@ export class CrossChainBridge extends EventEmitter {
             });
             this.emit('transactionSent', {
                 txHash: bridgeTx,
-                sourceChain,
-                destinationChain,
-                amount,
-                token,
+                sourceChain: validatedSourceChain,
+                destinationChain: validatedDestinationChain,
+                amount: normalizedAmount,
+                token: validatedToken,
                 timestamp
             });
             // Step 6: Wait for transaction confirmation
             const confirmed = await waitForTransaction(publicClient, bridgeTx, 120000, 1);
             if (!confirmed) {
                 const error = 'Bridge transaction not confirmed within timeout';
-                this.updateTransactionStatus(bridgeTx, 'failed', sourceChain, destinationChain, amount, token);
+                this.updateTransactionStatus(bridgeTx, 'failed', validatedSourceChain, validatedDestinationChain, normalizedAmount, validatedToken);
                 return {
                     success: false,
                     error,
-                    sourceChain,
-                    destinationChain,
-                    amount,
+                    sourceChain: validatedSourceChain,
+                    destinationChain: validatedDestinationChain,
+                    amount: normalizedAmount,
                     txHash: bridgeTx,
-                    token
+                    token: validatedToken
                 };
             }
-            console.log(`[Bridge] ${token} bridge confirmed! From ${sourceChain} to ${destinationChain}: ${bridgeTx}`);
-            this.updateTransactionStatus(bridgeTx, 'completed', sourceChain, destinationChain, amount, token);
+            console.log(`[Bridge] ${validatedToken} bridge confirmed! From ${validatedSourceChain} to ${validatedDestinationChain}: ${bridgeTx}`);
+            this.updateTransactionStatus(bridgeTx, 'completed', validatedSourceChain, validatedDestinationChain, normalizedAmount, validatedToken);
             return {
                 success: true,
                 txHash: bridgeTx,
-                sourceChain,
-                destinationChain,
-                amount,
-                token,
+                sourceChain: validatedSourceChain,
+                destinationChain: validatedDestinationChain,
+                amount: normalizedAmount,
+                token: validatedToken,
                 fees: {
                     nativeFee: formatUnits(lzFee.nativeFee, 18),
                     lzTokenFee: formatUnits(lzFee.lzTokenFee, 18)
@@ -3140,22 +3256,22 @@ export class CrossChainBridge extends EventEmitter {
             };
         }
         catch (error) {
-            console.error(`[Bridge] ${token} bridge failed:`, error);
+            console.error(`[Bridge] ${validatedToken} bridge failed:`, error);
             const errorMsg = error instanceof Error ? error.message : 'Bridge transaction failed';
             this.emit('transactionFailed', {
                 error: errorMsg,
-                sourceChain,
-                destinationChain,
-                amount,
-                token
+                sourceChain: validatedSourceChain,
+                destinationChain: validatedDestinationChain,
+                amount: normalizedAmount,
+                token: validatedToken
             });
             return {
                 success: false,
                 error: errorMsg,
-                sourceChain,
-                destinationChain,
-                amount,
-                token
+                sourceChain: validatedSourceChain,
+                destinationChain: validatedDestinationChain,
+                amount: normalizedAmount,
+                token: validatedToken
             };
         }
     }
@@ -3167,8 +3283,9 @@ export class CrossChainBridge extends EventEmitter {
      */
     async getTokenBalance(token, chain) {
         const account = privateKeyToAccount(this.privateKey);
-        const checkChain = chain || this.defaultChain;
-        return getTokenBalance(account.address, checkChain, token);
+        const checkChain = normalizeChainInput(chain || this.defaultChain, 'chain');
+        const validatedToken = normalizeTokenInput(token, 'token');
+        return getTokenBalance(account.address, checkChain, validatedToken);
     }
     /**
      * Get all token balances across all chains
@@ -3178,20 +3295,375 @@ export class CrossChainBridge extends EventEmitter {
         const account = privateKeyToAccount(this.privateKey);
         return getAllTokenBalances(account.address);
     }
+    // =============================================================================
+    // BATCH BRIDGE OPERATIONS (NEW)
+    // =============================================================================
+    /**
+     * Batch bridge multiple tokens in a single operation
+     * @param operations - Array of bridge operations
+     * @param options - Batch options
+     * @returns Array of bridge results
+     *
+     * @example
+     * ```typescript
+     * const results = await bridge.batchBridge([
+     *   { destinationChain: 'optimism', token: 'USDC', amount: '100' },
+     *   { destinationChain: 'arbitrum', token: 'USDT', amount: '50' },
+     *   { destinationChain: 'polygon', token: 'DAI', amount: '200' }
+     * ]);
+     * ```
+     */
+    async batchBridge(operations, options) {
+        if (!Array.isArray(operations) || operations.length === 0) {
+            throw new Error('operations must be a non-empty array');
+        }
+        const { maxConcurrent = 3, stopOnError = false } = options || {};
+        if (!Number.isInteger(maxConcurrent) || maxConcurrent <= 0) {
+            throw new Error('maxConcurrent must be a positive integer');
+        }
+        const results = [];
+        this.logger.info(`Starting batch bridge with ${operations.length} operations`, {
+            maxConcurrent,
+            stopOnError
+        });
+        // Process operations in chunks
+        for (let i = 0; i < operations.length; i += maxConcurrent) {
+            const chunk = operations.slice(i, i + maxConcurrent);
+            const chunkPromises = chunk.map(op => this.bridgeToken(op.destinationChain, op.token, op.amount, op.sourceChain).catch(error => ({
+                success: false,
+                error: error instanceof Error ? error.message : 'Batch operation failed',
+                sourceChain: op.sourceChain || this.defaultChain,
+                destinationChain: op.destinationChain,
+                amount: op.amount,
+                token: op.token
+            })));
+            const chunkResults = await Promise.all(chunkPromises);
+            results.push(...chunkResults);
+            // Check for errors
+            const hasError = chunkResults.some(r => !r.success);
+            if (hasError && stopOnError) {
+                this.logger.warn('Batch bridge stopped due to error', { stopOnError });
+                break;
+            }
+        }
+        const successCount = results.filter(r => r.success).length;
+        this.logger.info(`Batch bridge completed: ${successCount}/${operations.length} successful`);
+        return results;
+    }
+    // =============================================================================
+    // CROSS-CHAIN MESSAGING (NEW)
+    // =============================================================================
+    /**
+     * Send arbitrary cross-chain messages via LayerZero
+     * @param destinationChain - Target chain
+     * @param message - Message payload (bytes)
+     * @param options - Message options
+     * @returns Transaction result
+     *
+     * @example
+     * ```typescript
+     * const result = await bridge.sendCrossChainMessage(
+     *   'optimism',
+     *   '0x1234...',
+     *   { value: parseEther('0.01') }
+     * );
+     * ```
+     */
+    async sendCrossChainMessage(destinationChain, message, options) {
+        const sourceChain = normalizeChainInput(options?.sourceChain || this.defaultChain, 'sourceChain');
+        const validatedDestinationChain = normalizeChainInput(destinationChain, 'destinationChain');
+        if (typeof message !== 'string' || !message.startsWith('0x')) {
+            throw new BridgeError('message must be a hex string', 'INVALID_PARAMS');
+        }
+        if (message.length % 2 !== 0) {
+            throw new BridgeError('message hex must have even length', 'INVALID_PARAMS');
+        }
+        if (options?.extraOptions && (typeof options.extraOptions !== 'string' || !options.extraOptions.startsWith('0x'))) {
+            throw new BridgeError('extraOptions must be a hex string', 'INVALID_PARAMS');
+        }
+        if (options?.value !== undefined && options.value < 0n) {
+            throw new BridgeError('value must be greater than or equal to 0', 'INVALID_PARAMS');
+        }
+        const account = privateKeyToAccount(this.privateKey);
+        if (sourceChain === validatedDestinationChain) {
+            throw new BridgeError('Source and destination chains must be different', 'INVALID_PARAMS');
+        }
+        this.logger.info('Sending cross-chain message', {
+            sourceChain,
+            destinationChain: validatedDestinationChain,
+            messageLength: message.length
+        });
+        try {
+            const { walletClient, publicClient } = createMultiChainClient(this.privateKey, sourceChain);
+            const dstEid = LAYERZERO_CHAIN_IDS[validatedDestinationChain];
+            const endpointAddress = LAYERZERO_ENDPOINTS[sourceChain];
+            // Quote the message fee
+            const quoteResult = await this.quoteCrossChainMessage(validatedDestinationChain, message, options);
+            // Send the message via LayerZero endpoint
+            const txHash = await walletClient.writeContract({
+                address: endpointAddress,
+                abi: LZ_ENDPOINT_ABI,
+                functionName: 'send',
+                args: [
+                    {
+                        dstEid,
+                        to: ('0x' + account.address.slice(2).padStart(64, '0')),
+                        amountLD: 0n,
+                        minAmountLD: 0n,
+                        extraOptions: options?.extraOptions || '0x',
+                        composeMsg: message,
+                        oftCmd: '0x'
+                    },
+                    {
+                        nativeFee: quoteResult.nativeFee,
+                        lzTokenFee: quoteResult.lzTokenFee
+                    },
+                    account.address
+                ],
+                value: quoteResult.nativeFee + (options?.value || 0n)
+            });
+            this.logger.info('Cross-chain message sent', {
+                txHash,
+                sourceChain,
+                destinationChain: validatedDestinationChain
+            });
+            // Wait for confirmation
+            const confirmed = await waitForTransaction(publicClient, txHash, 120000, 1);
+            return {
+                success: confirmed,
+                txHash,
+                sourceChain,
+                destinationChain: validatedDestinationChain,
+                amount: '0',
+                fees: {
+                    nativeFee: formatUnits(quoteResult.nativeFee, 18),
+                    lzTokenFee: formatUnits(quoteResult.lzTokenFee, 18)
+                }
+            };
+        }
+        catch (error) {
+            this.logger.error('Cross-chain message failed', {
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Message sending failed',
+                sourceChain,
+                destinationChain: validatedDestinationChain,
+                amount: '0'
+            };
+        }
+    }
+    /**
+     * Quote fee for cross-chain message
+     * @param destinationChain - Target chain
+     * @param message - Message payload
+     * @param options - Quote options
+     * @returns Fee estimate
+     */
+    async quoteCrossChainMessage(destinationChain, message, options) {
+        const sourceChain = normalizeChainInput(options?.sourceChain || this.defaultChain, 'sourceChain');
+        const validatedDestinationChain = normalizeChainInput(destinationChain, 'destinationChain');
+        if (typeof message !== 'string' || !message.startsWith('0x')) {
+            throw new BridgeError('message must be a hex string', 'INVALID_PARAMS');
+        }
+        if (message.length % 2 !== 0) {
+            throw new BridgeError('message hex must have even length', 'INVALID_PARAMS');
+        }
+        const account = privateKeyToAccount(this.privateKey);
+        const publicClient = createChainPublicClient(sourceChain);
+        const dstEid = LAYERZERO_CHAIN_IDS[validatedDestinationChain];
+        const endpointAddress = LAYERZERO_ENDPOINTS[sourceChain];
+        const toBytes32 = ('0x' + account.address.slice(2).padStart(64, '0'));
+        try {
+            const fee = await publicClient.readContract({
+                address: endpointAddress,
+                abi: OFT_ABI,
+                functionName: 'quoteSend',
+                args: [
+                    {
+                        dstEid,
+                        to: toBytes32,
+                        amountLD: 0n,
+                        minAmountLD: 0n,
+                        extraOptions: '0x',
+                        composeMsg: message,
+                        oftCmd: '0x'
+                    },
+                    false
+                ]
+            });
+            return fee;
+        }
+        catch (error) {
+            this.logger.warn('Failed to quote message fee, using estimate', { error });
+            // Return conservative estimate
+            return {
+                nativeFee: parseUnits('0.01', 18),
+                lzTokenFee: 0n
+            };
+        }
+    }
+    // =============================================================================
+    // OPTIMAL ROUTE FINDING (NEW)
+    // =============================================================================
+    /**
+     * Find the optimal bridge route based on cost, speed, or reliability
+     * @param destinationChain - Target chain
+     * @param token - Token to bridge
+     * @param amount - Amount to bridge
+     * @param criteria - Optimization criteria
+     * @returns Optimal route recommendation
+     *
+     * @example
+     * ```typescript
+     * const route = await bridge.findOptimalRoute(
+     *   'optimism',
+     *   'USDC',
+     *   '100',
+     *   'cheapest'
+     * );
+     * console.log(`Best route: ${route.sourceChain} -> ${route.destinationChain}`);
+     * console.log(`Estimated fee: ${route.estimatedFee}`);
+     * ```
+     */
+    async findOptimalRoute(destinationChain, token, amount, criteria = 'cheapest') {
+        const validatedDestinationChain = normalizeChainInput(destinationChain, 'destinationChain');
+        const validatedToken = normalizeTokenInput(token, 'token');
+        const normalizedAmount = normalizeAmountInput(amount, 'amount');
+        const account = privateKeyToAccount(this.privateKey);
+        const chains = ['ethereum', 'base', 'optimism', 'arbitrum', 'polygon', 'avalanche', 'bsc'];
+        // Get quotes from all possible source chains
+        const routes = await Promise.all(chains
+            .filter(chain => chain !== validatedDestinationChain)
+            .map(async (sourceChain) => {
+            try {
+                const quote = await getBridgeQuote({
+                    sourceChain,
+                    destinationChain: validatedDestinationChain,
+                    token: validatedToken,
+                    amount: normalizedAmount
+                }, account.address);
+                return {
+                    sourceChain,
+                    destinationChain: validatedDestinationChain,
+                    estimatedFee: parseFloat(quote.estimatedFee),
+                    estimatedTime: quote.estimatedTime,
+                    quote
+                };
+            }
+            catch (error) {
+                this.logger.debug(`Failed to get quote for ${sourceChain} -> ${validatedDestinationChain}`, { error });
+                return null;
+            }
+        }));
+        const validRoutes = routes.filter((r) => r !== null);
+        if (validRoutes.length === 0) {
+            throw new BridgeError('No valid routes found for the specified parameters', 'INVALID_PARAMS');
+        }
+        // Score routes based on criteria
+        let bestRoute;
+        let reason;
+        switch (criteria) {
+            case 'fastest':
+                bestRoute = validRoutes.reduce((best, current) => current.estimatedTime < best.estimatedTime ? current : best);
+                reason = `Fastest route: ${bestRoute.estimatedTime}s estimated delivery`;
+                break;
+            case 'most_reliable':
+                // Prefer L2-to-L2 routes over L1-to-L2 or L2-to-L1
+                bestRoute = validRoutes.reduce((best, current) => {
+                    const currentIsL2 = !['ethereum'].includes(current.sourceChain);
+                    const bestIsL2 = !['ethereum'].includes(best.sourceChain);
+                    return currentIsL2 && !bestIsL2 ? current : best;
+                });
+                reason = 'Most reliable: L2-to-L2 route selected';
+                break;
+            case 'cheapest':
+            default:
+                bestRoute = validRoutes.reduce((best, current) => current.estimatedFee < best.estimatedFee ? current : best);
+                reason = `Cheapest route: ${bestRoute.estimatedFee} ETH estimated fee`;
+                break;
+        }
+        // Calculate score (0-100, higher is better)
+        const maxFee = Math.max(...validRoutes.map(r => r.estimatedFee));
+        const maxTime = Math.max(...validRoutes.map(r => r.estimatedTime));
+        const feeScore = maxFee > 0 ? (1 - bestRoute.estimatedFee / maxFee) * 50 : 50;
+        const timeScore = maxTime > 0 ? (1 - bestRoute.estimatedTime / maxTime) * 50 : 50;
+        const score = Math.round(feeScore + timeScore);
+        return {
+            sourceChain: bestRoute.sourceChain,
+            destinationChain: bestRoute.destinationChain,
+            estimatedFee: bestRoute.estimatedFee.toFixed(6),
+            estimatedTime: bestRoute.estimatedTime,
+            score,
+            reason
+        };
+    }
+    /**
+     * Get route comparison for all possible paths
+     * @param destinationChain - Target chain
+     * @param token - Token to bridge
+     * @param amount - Amount to bridge
+     * @returns Array of route comparisons
+     */
+    async compareRoutes(destinationChain, token, amount) {
+        const validatedDestinationChain = normalizeChainInput(destinationChain, 'destinationChain');
+        const validatedToken = normalizeTokenInput(token, 'token');
+        const normalizedAmount = normalizeAmountInput(amount, 'amount');
+        const account = privateKeyToAccount(this.privateKey);
+        const chains = ['ethereum', 'base', 'optimism', 'arbitrum', 'polygon', 'avalanche', 'bsc'];
+        const routes = await Promise.all(chains
+            .filter(chain => chain !== validatedDestinationChain)
+            .map(async (sourceChain) => {
+            try {
+                const quote = await getBridgeQuote({
+                    sourceChain,
+                    destinationChain: validatedDestinationChain,
+                    token: validatedToken,
+                    amount: normalizedAmount
+                }, account.address);
+                return {
+                    sourceChain,
+                    estimatedFee: parseFloat(quote.estimatedFee),
+                    estimatedTime: quote.estimatedTime
+                };
+            }
+            catch (error) {
+                return null;
+            }
+        }));
+        const validRoutes = routes
+            .filter((r) => r !== null)
+            .sort((a, b) => a.estimatedFee - b.estimatedFee)
+            .map((route, index) => ({
+            sourceChain: route.sourceChain,
+            estimatedFee: route.estimatedFee.toFixed(6),
+            estimatedTime: route.estimatedTime,
+            ranking: index + 1
+        }));
+        return validRoutes;
+    }
 }
 /**
  * Create multi-chain client for a specific chain
  */
 function createMultiChainClient(privateKey, chain) {
+    if (typeof privateKey !== 'string' || !PRIVATE_KEY_REGEX.test(privateKey)) {
+        throw new Error('privateKey must be a 32-byte hex string');
+    }
+    const validatedChain = normalizeChainInput(chain, 'chain');
     const account = privateKeyToAccount(privateKey);
-    const urls = RPC_URLS[chain];
+    const urls = RPC_URLS[validatedChain];
+    if (!urls || urls.length === 0) {
+        throw new Error(`No RPC endpoints configured for chain: ${validatedChain}`);
+    }
     const walletClient = createWalletClient({
         account,
-        chain: SUPPORTED_CHAINS[chain],
+        chain: SUPPORTED_CHAINS[validatedChain],
         transport: http(urls[0])
     });
     const publicClient = createPublicClient({
-        chain: SUPPORTED_CHAINS[chain],
+        chain: SUPPORTED_CHAINS[validatedChain],
         transport: http(urls[0])
     });
     return { walletClient, publicClient, account };

@@ -12,7 +12,72 @@
  */
 import { type Address } from 'viem';
 import { type SupportedChain, type SupportedToken, type ChainBalance } from './bridge.js';
+/**
+ * Survival error codes for categorizing failures
+ */
+export type SurvivalErrorCode = 'INVALID_PARAMS' | 'AGENT_NOT_FOUND' | 'HEALTH_CHECK_FAILED' | 'ECONOMICS_CHECK_FAILED' | 'HEARTBEAT_FAILED' | 'INSUFFICIENT_BALANCE' | 'NETWORK_ERROR' | 'STATE_TRANSITION_ERROR' | 'ACTION_EXECUTION_FAILED' | 'PREDICTION_FAILED' | 'UNKNOWN_ERROR';
+/**
+ * Custom Survival Error class with error codes and retry capability
+ */
+export declare class SurvivalError extends Error {
+    code: SurvivalErrorCode;
+    agentId?: string;
+    retryable: boolean;
+    timestamp: number;
+    cause?: Error;
+    constructor(message: string, code?: SurvivalErrorCode, options?: {
+        agentId?: string;
+        retryable?: boolean;
+        cause?: Error;
+    });
+    /**
+     * Check if error is retryable
+     */
+    isRetryable(): boolean;
+    /**
+     * Convert error to JSON representation
+     */
+    toJSON(): Record<string, unknown>;
+}
+/**
+ * Retry configuration for operations
+ */
+export interface RetryConfig {
+    maxRetries: number;
+    baseDelayMs: number;
+    maxDelayMs: number;
+    backoffMultiplier: number;
+}
+/**
+ * Default retry configuration
+ */
+export declare const DEFAULT_RETRY_CONFIG: RetryConfig;
+/**
+ * Execute an async function with retry logic
+ * @param fn - Function to execute
+ * @param config - Retry configuration
+ * @param context - Error context for logging
+ */
+export declare function withRetry<T>(fn: () => Promise<T>, config?: Partial<RetryConfig>, context?: {
+    agentId?: string;
+    operation: string;
+}): Promise<T>;
+/** Agent health status enum */
 export type AgentHealthStatus = 'healthy' | 'degraded' | 'critical' | 'dead';
+/**
+ * Survival mode state machine states
+ */
+export type SurvivalModeState = 'normal' | 'caution' | 'survival' | 'recovery' | 'shutdown';
+/**
+ * State transition reasons
+ */
+export interface StateTransition {
+    from: SurvivalModeState;
+    to: SurvivalModeState;
+    reason: string;
+    timestamp: number;
+    triggeredBy: 'health' | 'economics' | 'manual' | 'automated';
+}
 /**
  * Survival snapshot for quick state assessment
  */
@@ -237,17 +302,9 @@ export interface SurvivalAction {
     recommendedChain?: string;
 }
 /**
- * Format survival report as readable string
- */
-export declare function formatSurvivalReport(snapshot: SurvivalSnapshot): string;
-/**
- * Determine if agent should accept a task based on survival state
- */
-export declare function shouldAcceptTask(snapshot: SurvivalSnapshot, budget: string, estimatedCost: string, minProfitMargin?: number): TaskDecision;
-/**
  * Survival event types
  */
-export type SurvivalEventType = 'health:critical' | 'economic:warning' | 'action:recommended' | 'survival:mode-enter' | 'survival:mode-exit';
+export type SurvivalEventType = 'health:critical' | 'economic:warning' | 'action:recommended' | 'survival:mode-enter' | 'survival:mode-exit' | 'state:transition' | 'heartbeat:sent' | 'heartbeat:failed';
 /**
  * Event callback type
  */
@@ -257,6 +314,23 @@ export type SurvivalEventCallback = (data: {
     timestamp: number;
     details?: Record<string, unknown>;
 }) => void;
+/**
+ * Format survival report as readable string
+ * @param snapshot - Survival snapshot to format
+ * @returns Formatted report string
+ * @throws SurvivalError if snapshot is invalid
+ */
+export declare function formatSurvivalReport(snapshot: SurvivalSnapshot): string;
+/**
+ * Determine if agent should accept a task based on survival state
+ * @param snapshot - Current survival snapshot
+ * @param budget - Task budget in USD
+ * @param estimatedCost - Estimated task cost in USD
+ * @param minProfitMargin - Minimum required profit margin (0-1)
+ * @returns Task decision result
+ * @throws SurvivalError if parameters are invalid
+ */
+export declare function shouldAcceptTask(snapshot: SurvivalSnapshot, budget: string, estimatedCost: string, minProfitMargin?: number): TaskDecision;
 /**
  * Echo Survival Manager
  * Manages agent health and economic sustainability

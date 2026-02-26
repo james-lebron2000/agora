@@ -25,7 +25,23 @@ export { CrossChainBridge, createChainPublicClient, getUSDCBalance, getNativeBal
 // Bridge Client (v1.0) - High-level client for cross-chain bridging
 export { BridgeClient, createBridgeClient, quickBridge, quickQuote, checkBalances, } from './bridge-client.js';
 // Performance Optimization module (v2.0) - Enhanced with analytics & monitoring
-export { PerformanceMonitor, createPerformanceMonitor, createEnhancedPerformanceMonitor, benchmark, measureLatency, measureLatencyAsync, withLatencyTracking, withLatencyTrackingAsync, trackMemory, generateOptimizationReport, } from './performance.js';
+export { 
+// Core monitoring
+PerformanceMonitor, createPerformanceMonitor, createEnhancedPerformanceMonitor, benchmark, measureLatency, measureLatencyAsync, withLatencyTracking, withLatencyTrackingAsync, trackMemory, generateOptimizationReport, 
+// Caching
+OperationCache, createCache, withCache as withPerformanceCache, 
+// Batch processing
+BatchProcessor, createBatchProcessor, 
+// WebSocket pooling
+WebSocketPool, createWebSocketPool, 
+// Lazy loading
+LazyLoader, createLazyLoader, 
+// Rate limiting
+AdaptiveRateLimiter, createRateLimiter, 
+// Request deduplication
+RequestDeduplicator, createDeduplicator, withDeduplication, 
+// Bundle optimization
+BundleOptimizer, createBundleOptimizer, dynamicImport, prefetchModule, } from './performance.js';
 // API Cache Layer (v1.0)
 export { ApiCache, getGlobalCache, setGlobalCache, cachedFetch, withCache, } from './cache.js';
 // Agent Profile module (v1.1) - with frontend optimizations

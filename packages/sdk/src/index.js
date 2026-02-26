@@ -22,8 +22,26 @@ export { generateWallet, loadOrCreateWallet, loadWallet, saveEncryptedWallet, ge
 export { createMultiChainClient, createMultiChainWallet, loadOrCreateMultiChainWallet, refreshBalances, getTotalUSDCBalance, getChainWithHighestBalance, getCheapestChainForOperations, hasSufficientBalance, selectOptimalChain, MultiChainWalletManager } from './wallet-manager.js';
 // Cross-chain bridge (v1.3) - Multi-token support
 export { CrossChainBridge, createChainPublicClient, getUSDCBalance, getNativeBalance, getAllBalances, getTokenBalance, getAllTokenBalances, getBridgeQuote, findCheapestChain, estimateBridgeFee, SUPPORTED_CHAINS, SUPPORTED_TOKENS, USDC_ADDRESSES, USDT_ADDRESSES, DAI_ADDRESSES, WETH_ADDRESSES, TOKEN_ADDRESSES, TOKEN_DECIMALS, LAYERZERO_ENDPOINTS, LAYERZERO_CHAIN_IDS, LAYERZERO_USDC_OFT, RPC_URLS, BridgeTransactionHistory, BridgeTransactionMonitor, BridgeError, defaultLogger, listenLayerZeroMessages, getBridgeHistory } from './bridge.js';
+// Bridge Client (v1.0) - High-level client for cross-chain bridging
+export { BridgeClient, createBridgeClient, quickBridge, quickQuote, checkBalances, } from './bridge-client.js';
 // Performance Optimization module (v2.0) - Enhanced with analytics & monitoring
-export { PerformanceMonitor, createPerformanceMonitor, createEnhancedPerformanceMonitor, benchmark, measureLatency, measureLatencyAsync, withLatencyTracking, withLatencyTrackingAsync, trackMemory, generateOptimizationReport, } from './performance.js';
+export { 
+// Core monitoring
+PerformanceMonitor, createPerformanceMonitor, createEnhancedPerformanceMonitor, benchmark, measureLatency, measureLatencyAsync, withLatencyTracking, withLatencyTrackingAsync, trackMemory, generateOptimizationReport, 
+// Caching
+OperationCache, createCache, withCache as withPerformanceCache, 
+// Batch processing
+BatchProcessor, createBatchProcessor, 
+// WebSocket pooling
+WebSocketPool, createWebSocketPool, 
+// Lazy loading
+LazyLoader, createLazyLoader, 
+// Rate limiting
+AdaptiveRateLimiter, createRateLimiter, 
+// Request deduplication
+RequestDeduplicator, createDeduplicator, withDeduplication, 
+// Bundle optimization
+BundleOptimizer, createBundleOptimizer, dynamicImport, prefetchModule, } from './performance.js';
 // API Cache Layer (v1.0)
 export { ApiCache, getGlobalCache, setGlobalCache, cachedFetch, withCache, } from './cache.js';
 // Agent Profile module (v1.1) - with frontend optimizations
@@ -56,4 +74,14 @@ export { PerformanceTracker, MemoryMonitor, MetricCollector, createPerformanceTr
 export { formatDate, formatTime, formatDuration, timeAgo, } from './utils/formatters.js';
 // Mobile module (v1.0) - Device detection, optimization, and gesture handling
 export { DeviceDetector, MobileOptimizer, TouchGestureHandler, isMobile, isTablet, getOptimizedConfig, DEFAULT_GESTURE_CONFIG, } from './mobile.js';
+// Profile Components (v1.0) - React components for Agent Profile UI
+export { 
+// Theme
+lightTheme, darkTheme, useTheme, ThemeProvider, 
+// Responsive
+breakpoints, useResponsive, 
+// Utilities
+formatCurrency, formatRelativeTime, getInitials, stringToColor, 
+// Components
+ProfileCard, AchievementBadge, ProfileAvatar, LevelProgressBar, StatsGrid, } from './profile-components.js';
 //# sourceMappingURL=index.js.map
