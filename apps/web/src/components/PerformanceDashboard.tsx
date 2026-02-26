@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity,
@@ -16,18 +16,16 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
-  Filter,
   Download,
   Trash2,
 } from 'lucide-react';
 import {
   onPerformanceMetric,
   measureCustomMetric,
-  getPerformanceEntries,
   clearPerformanceMetrics,
   THRESHOLDS,
   type PerformanceMetric,
-} from '../../utils/performance';
+} from '../utils/performance';
 
 // ============================================================================
 // Types
@@ -541,15 +539,15 @@ export function PerformanceDashboard({
                     <div className="space-y-1 text-sm">
                       <div className="flex justify-between">
                         <span className="text-emerald-400">Good</span>
-                        <span className="text-white/60">≤ {threshold.good}</span>
+                        <span className="text-white/60">≤ {(threshold as { good: number }).good}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-amber-400">Needs Improvement</span>
-                        <span className="text-white/60">≤ {threshold.poor}</span>
+                        <span className="text-white/60">≤ {(threshold as { poor: number }).poor}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-red-400">Poor</span>
-                        <span className="text-white/60">> {threshold.poor}</span>
+                        <span className="text-white/60">{'>'} {(threshold as { poor: number }).poor}</span>
                       </div>
                     </div>
                   </div>
@@ -570,7 +568,7 @@ export function PerformanceDashboard({
           {(() => {
             const memory = (performance as any).memory
             const used = memory.usedJSHeapSize
-            const total = memory.totalJSHeapSize
+            // const total = memory.totalJSHeapSize // Unused
             const limit = memory.jsHeapSizeLimit
             const percent = (used / limit) * 100
 

@@ -346,10 +346,10 @@ export class ApiCache {
   }
 
   private loadFromStorage(): void {
-    if (typeof localStorage === 'undefined') return;
+    if (!this.isBrowserEnvironment()) return;
     
     try {
-      const stored = localStorage.getItem(this.config.storageKey!);
+      const stored = (globalThis as any).localStorage.getItem(this.config.storageKey!);
       if (stored) {
         const parsed = JSON.parse(stored);
         this.cache = new Map(parsed.entries);
@@ -362,7 +362,7 @@ export class ApiCache {
   }
 
   private saveToStorage(): void {
-    if (typeof localStorage === 'undefined') return;
+    if (!this.isBrowserEnvironment()) return;
     
     try {
       const data = {
@@ -370,20 +370,25 @@ export class ApiCache {
         size: this.currentSize,
         timestamp: Date.now(),
       };
-      localStorage.setItem(this.config.storageKey!, JSON.stringify(data));
+      (globalThis as any).localStorage.setItem(this.config.storageKey!, JSON.stringify(data));
     } catch (e) {
       console.warn('[ApiCache] Failed to save to storage:', e);
     }
   }
 
   private clearStorage(): void {
-    if (typeof localStorage === 'undefined') return;
+    if (!this.isBrowserEnvironment()) return;
     
     try {
-      localStorage.removeItem(this.config.storageKey!);
+      (globalThis as any).localStorage.removeItem(this.config.storageKey!);
     } catch (e) {
       console.warn('[ApiCache] Failed to clear storage:', e);
     }
+  }
+
+  private isBrowserEnvironment(): boolean {
+    return typeof globalThis !== 'undefined' && 
+           (globalThis as any).localStorage !== undefined;
   }
 }
 

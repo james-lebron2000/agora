@@ -7,7 +7,6 @@ import React, {
   forwardRef,
   useImperativeHandle,
 } from 'react';
-import { motion, useScroll, useSpring, useTransform } from 'framer-motion';
 
 // ============================================================================
 // TYPES
@@ -76,7 +75,7 @@ export const VirtualList = forwardRef<VirtualListRef, VirtualListProps<any>>(
       isLoading = false,
       scrollToIndex,
     }: VirtualListProps<T>,
-    ref
+    ref: React.Ref<VirtualListRef>
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [scrollTop, setScrollTop] = useState(0);
@@ -362,7 +361,7 @@ export const VirtualGrid = forwardRef<VirtualListRef, VirtualGridProps<any>>(
         onScroll={handleScroll}
       >
         <div style={{ height: totalHeight, position: 'relative' }}>
-          {visibleItems.map(({ item, index, style: itemStyle }) => (
+          {visibleItems.map(({ item, index }) => (
             <React.Fragment key={index}>
               {renderItem(item, index)}
             </React.Fragment>
@@ -528,7 +527,7 @@ export const WindowScroller: React.FC<WindowScrollerProps> = ({
 }) => {
   const [scrollTop, setScrollTop] = useState(0);
   const [isScrolling, setIsScrolling] = useState(false);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout>();
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | undefined>();
 
   useEffect(() => {
     const element = scrollElement || window;
@@ -586,7 +585,7 @@ export const DynamicVirtualList = forwardRef<VirtualListRef, DynamicVirtualListP
       style = {},
       onScroll,
     }: DynamicVirtualListProps<T>,
-    ref
+    ref: React.Ref<VirtualListRef>
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [scrollTop, setScrollTop] = useState(0);

@@ -269,10 +269,10 @@ export class ApiCache {
         this.stats.hitRate = total > 0 ? this.stats.hits / total : 0;
     }
     loadFromStorage() {
-        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined')
+        if (!this.isBrowserEnvironment())
             return;
         try {
-            const stored = window.localStorage.getItem(this.config.storageKey);
+            const stored = globalThis.localStorage.getItem(this.config.storageKey);
             if (stored) {
                 const parsed = JSON.parse(stored);
                 this.cache = new Map(parsed.entries);
@@ -285,7 +285,7 @@ export class ApiCache {
         }
     }
     saveToStorage() {
-        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined')
+        if (!this.isBrowserEnvironment())
             return;
         try {
             const data = {
@@ -293,21 +293,25 @@ export class ApiCache {
                 size: this.currentSize,
                 timestamp: Date.now(),
             };
-            window.localStorage.setItem(this.config.storageKey, JSON.stringify(data));
+            globalThis.localStorage.setItem(this.config.storageKey, JSON.stringify(data));
         }
         catch (e) {
             console.warn('[ApiCache] Failed to save to storage:', e);
         }
     }
     clearStorage() {
-        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined')
+        if (!this.isBrowserEnvironment())
             return;
         try {
-            window.localStorage.removeItem(this.config.storageKey);
+            globalThis.localStorage.removeItem(this.config.storageKey);
         }
         catch (e) {
             console.warn('[ApiCache] Failed to clear storage:', e);
         }
+    }
+    isBrowserEnvironment() {
+        return typeof globalThis !== 'undefined' &&
+            globalThis.localStorage !== undefined;
     }
 }
 // ============================================================================

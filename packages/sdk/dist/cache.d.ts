@@ -105,6 +105,7 @@ export declare class ApiCache {
     private loadFromStorage;
     private saveToStorage;
     private clearStorage;
+    private isBrowserEnvironment;
 }
 export declare function getGlobalCache(): ApiCache;
 export declare function setGlobalCache(cache: ApiCache): void;

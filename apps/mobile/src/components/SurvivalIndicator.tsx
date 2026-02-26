@@ -10,8 +10,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   useColorScheme,
-  ViewStyle,
-  TextStyle,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -280,7 +278,7 @@ export const SurvivalIndicator = React.memo(function SurvivalIndicator({
       )}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
