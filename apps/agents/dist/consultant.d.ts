@@ -53,11 +53,38 @@ export declare class ConsultantAgent {
     private multiChainWallet;
     private walletManager;
     private bridge;
+    private survivalManager;
+    private lastSurvivalSnapshot;
     private portfolio;
     private activeTasks;
     private completedTasks;
     private readonly MARGIN_RATE;
-    constructor(wallet: AgentWallet, multiChainWallet: MultiChainWallet);
+    private readonly agentId;
+    constructor(wallet: AgentWallet, multiChainWallet: MultiChainWallet, agentId?: string);
+    /**
+     * Set up survival event listeners
+     */
+    private setupSurvivalListeners;
+    /**
+     * Start survival monitoring
+     */
+    startSurvivalMonitoring(): void;
+    /**
+     * Stop survival monitoring
+     */
+    stopSurvivalMonitoring(): void;
+    /**
+     * Get current survival report
+     */
+    getSurvivalReport(): string;
+    /**
+     * Check if agent is in survival mode
+     */
+    isInSurvivalMode(): boolean;
+    /**
+     * Get current runway days
+     */
+    getRunwayDays(): number;
     /**
      * Get the consultant's wallet address
      */
@@ -90,6 +117,7 @@ export declare class ConsultantAgent {
      * Receive a task from a human client
      * Analyzes the task and delegates to appropriate worker agent(s)
      * Auto-selects the cheapest chain for execution
+     * Includes Echo Survival check before accepting
      */
     receiveTask(taskRequest: TaskRequest): Promise<AgentTask>;
     /**
@@ -106,6 +134,10 @@ export declare class ConsultantAgent {
      */
     bridgeUSDCIfNeeded(destinationChain: SupportedChain, amount: string): Promise<boolean>;
     /**
+     * Estimate cost for a task based on complexity
+     */
+    private estimateTaskCost;
+    /**
      * Get current portfolio of available agents
      */
     getPortfolio(): import("./agent-portfolio.js").AgentPortfolio;
@@ -121,6 +153,11 @@ export declare class ConsultantAgent {
         profitMargin: number;
         workers: number;
         chainUsage: Record<string, number>;
+        survival: {
+            inSurvivalMode: boolean;
+            runwayDays: number;
+            hasSurvivalData: boolean;
+        };
     };
     /**
      * List available capabilities
@@ -134,7 +171,7 @@ export declare class ConsultantAgent {
 /**
  * Factory function to create and initialize Consultant Agent
  */
-export declare function createConsultantAgent(): Promise<ConsultantAgent>;
+export declare function createConsultantAgent(agentId?: string): Promise<ConsultantAgent>;
 /**
  * Demo function to showcase A2A economy with multi-chain support
  */

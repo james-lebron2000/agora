@@ -23,10 +23,14 @@ import {
   getCheapestChainForOperations,
   MultiChainWalletManager,
   CrossChainBridge,
+  EchoSurvivalManager,
+  formatSurvivalReport,
+  shouldAcceptTask,
   type AgentWallet,
   type MultiChainWallet,
   type SupportedChain,
-  type ChainBalance
+  type ChainBalance,
+  type SurvivalSnapshot
 } from '@agora/sdk';
 
 // Agora protocol types
@@ -100,19 +104,106 @@ export class ConsultantAgent {
   private multiChainWallet: MultiChainWallet;
   private walletManager: MultiChainWalletManager;
   private bridge: CrossChainBridge;
+  private survivalManager: EchoSurvivalManager;
+  private lastSurvivalSnapshot: SurvivalSnapshot | null = null;
   private portfolio = loadAgentPortfolio();
   private activeTasks: Map<string, AgentTask> = new Map();
   private completedTasks: Map<string, AgentTask> = new Map();
   private readonly MARGIN_RATE = 0.20; // 20% consultant margin
+  private readonly agentId: string;
   
-  constructor(wallet: AgentWallet, multiChainWallet: MultiChainWallet) {
+  constructor(wallet: AgentWallet, multiChainWallet: MultiChainWallet, agentId: string = 'consultant-agent') {
     this.wallet = wallet;
     this.multiChainWallet = multiChainWallet;
+    this.agentId = agentId;
     this.walletManager = new MultiChainWalletManager();
     this.bridge = new CrossChainBridge(wallet.privateKey);
+    
+    // Initialize Echo Survival Manager
+    this.survivalManager = new EchoSurvivalManager(agentId, wallet.address as `0x${string}`, {
+      minSurvivalBalance: '5',    // $5 minimum for consultant
+      dailyBurnRate: '0.5',       // $0.50 daily operational cost
+      healthCheckInterval: 60000,  // 1 minute
+      heartbeatInterval: 30000,    // 30 seconds
+      healthySuccessRate: 0.8,
+      criticalSuccessRate: 0.5,
+      maxResponseTime: 10000,      // 10s for consultant tasks
+      alertThreshold: 50
+    });
+    
+    this.setupSurvivalListeners();
     console.log(`[Consultant] Initialized with wallet: ${wallet.address}`);
   }
-  
+
+  /**
+   * Set up survival event listeners
+   */
+  private setupSurvivalListeners(): void {
+    // Listen for critical health events
+    this.survivalManager.on('health:critical', (data) => {
+      console.warn(`⚠️ [Survival] CRITICAL: Agent health is critical (${data.details?.status})`);
+    });
+
+    // Listen for economic warnings
+    this.survivalManager.on('economic:warning', (data) => {
+      console.warn(`⚠️ [Survival] Low balance or runway:`, data.details);
+    });
+
+    // Listen for survival mode changes
+    this.survivalManager.on('survival:mode-enter', () => {
+      console.warn('🚨 [Survival] ENTERING SURVIVAL MODE - Prioritizing revenue generation');
+    });
+
+    this.survivalManager.on('survival:mode-exit', () => {
+      console.log('✅ [Survival] EXITING SURVIVAL MODE - Back to normal operations');
+    });
+
+    // Listen for recommended actions
+    this.survivalManager.on('action:recommended', (data) => {
+      console.log(`📋 [Survival] Action recommended:`, data.details);
+    });
+  }
+
+  /**
+   * Start survival monitoring
+   */
+  startSurvivalMonitoring(): void {
+    this.survivalManager.start();
+    console.log('[Consultant] Echo Survival monitoring started');
+  }
+
+  /**
+   * Stop survival monitoring
+   */
+  stopSurvivalMonitoring(): void {
+    this.survivalManager.stop();
+    console.log('[Consultant] Echo Survival monitoring stopped');
+  }
+
+  /**
+   * Get current survival report
+   */
+  getSurvivalReport(): string {
+    if (!this.lastSurvivalSnapshot) {
+      return 'No survival data available yet';
+    }
+    return formatSurvivalReport(this.lastSurvivalSnapshot);
+  }
+
+  /**
+   * Check if agent is in survival mode
+   */
+  isInSurvivalMode(): boolean {
+    return this.survivalManager.isInSurvivalMode();
+  }
+
+  /**
+   * Get current runway days
+   */
+  getRunwayDays(): number {
+    return this.lastSurvivalSnapshot?.economics.runwayDays || 0;
+  }
+
   /**
    * Get the consultant's wallet address
    */
@@ -251,6 +342,7 @@ export class ConsultantAgent {
    * Receive a task from a human client
    * Analyzes the task and delegates to appropriate worker agent(s)
    * Auto-selects the cheapest chain for execution
+   * Includes Echo Survival check before accepting
    */
   async receiveTask(taskRequest: TaskRequest): Promise<AgentTask> {
     console.log(`\n[Consultant] Received task from ${taskRequest.humanClient}`);
@@ -260,6 +352,40 @@ export class ConsultantAgent {
     if (taskRequest.preferredChain) {
       console.log(`  Preferred chain: ${taskRequest.preferredChain}`);
     }
+
+    // Update survival snapshot before making decision
+    const wallet = this.walletManager.getWallet();
+    this.lastSurvivalSnapshot = await this.survivalManager.performSurvivalCheck(wallet.balances);
+
+    // Check if we should accept this task
+    const estimatedCost = this.estimateTaskCost(taskRequest);
+    const taskDecision = shouldAcceptTask(
+      this.lastSurvivalSnapshot,
+      taskRequest.budget.toString(),
+      estimatedCost,
+      0.15 // 15% minimum profit margin
+    );
+
+    if (!taskDecision.accept) {
+      console.log(`[Consultant] ❌ Task rejected: ${taskDecision.reason}`);
+      
+      // Return a failed task record
+      const rejectedTask: AgentTask = {
+        id: taskRequest.id,
+        status: 'failed',
+        taskRequest,
+        paymentToWorker: 0,
+        margin: 0,
+        executionChain: taskRequest.preferredChain || 'base',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      
+      this.completedTasks.set(rejectedTask.id, rejectedTask);
+      return rejectedTask;
+    }
+
+    console.log(`[Consultant] ✅ Task accepted: ${taskDecision.reason}`);
     
     // Calculate payment split
     const margin = taskRequest.budget * this.MARGIN_RATE;
@@ -475,6 +601,33 @@ export class ConsultantAgent {
   }
   
   /**
+   * Estimate cost for a task based on complexity
+   */
+  private estimateTaskCost(taskRequest: TaskRequest): string {
+    // Base cost estimation
+    const baseCost = 0.05; // $0.05 base
+    
+    // Factor in capability complexity
+    const complexityMultipliers: Record<string, number> = {
+      'text-translation': 1.0,
+      'code-review': 2.0,
+      'deep-research': 3.0,
+      'image-generation': 4.0,
+      'market-sentiment': 2.0,
+      'smart-contract-audit': 8.0,
+      'echo': 0.5
+    };
+
+    const multiplier = complexityMultipliers[taskRequest.capability] || 1.5;
+    const estimatedCost = baseCost * multiplier;
+
+    // Add chain operation costs (small gas estimate)
+    const chainCost = 0.001; // ~$0.001 for L2 operations
+
+    return (estimatedCost + chainCost).toFixed(4);
+  }
+
+  /**
    * Get current portfolio of available agents
    */
   getPortfolio() {
@@ -499,6 +652,13 @@ export class ConsultantAgent {
       return acc;
     }, {} as Record<string, number>);
     
+    // Survival stats
+    const survivalStats = {
+      inSurvivalMode: this.isInSurvivalMode(),
+      runwayDays: this.getRunwayDays(),
+      hasSurvivalData: this.lastSurvivalSnapshot !== null
+    };
+    
     return {
       activeTasks: active.length,
       completedTasks: completed.length,
@@ -507,7 +667,8 @@ export class ConsultantAgent {
       totalPayouts,
       profitMargin: totalRevenue,
       workers: this.portfolio.workers.length,
-      chainUsage
+      chainUsage,
+      survival: survivalStats
     };
   }
   
@@ -533,7 +694,7 @@ export class ConsultantAgent {
 /**
  * Factory function to create and initialize Consultant Agent
  */
-export async function createConsultantAgent(): Promise<ConsultantAgent> {
+export async function createConsultantAgent(agentId?: string): Promise<ConsultantAgent> {
   console.log('[Consultant] Initializing Consultant Agent with Multi-Chain Support...\n');
   
   // Ensure wallet exists
@@ -544,13 +705,17 @@ export async function createConsultantAgent(): Promise<ConsultantAgent> {
   console.log('[Consultant] Fetching balances across chains...');
   const updatedWallet = await refreshBalances(multiChainWallet);
   
-  const agent = new ConsultantAgent(wallet, updatedWallet);
+  const agent = new ConsultantAgent(wallet, updatedWallet, agentId);
+  
+  // Start Echo Survival monitoring
+  agent.startSurvivalMonitoring();
   
   console.log(`\n[Consultant] ✅ Agent ready`);
   console.log(`  Address: ${agent.getAddress()}`);
   console.log(`  Available workers: ${agent.getPortfolio().workers.length}`);
   console.log(`  Capabilities: ${agent.listCapabilities().join(', ')}`);
-  console.log(`  Multi-chain support: Base, Optimism, Arbitrum\n`);
+  console.log(`  Multi-chain support: Base, Optimism, Arbitrum`);
+  console.log(`  Echo Survival: Active\n`);
   
   return agent;
 }
@@ -641,7 +806,16 @@ export async function runDemo(): Promise<void> {
   Object.entries(stats.chainUsage || {}).forEach(([chain, count]) => {
     console.log(`║  ${chain.toUpperCase().padEnd(10)}: ${count.toString().padEnd(45)}║`);
   });
+  console.log('╠════════════════════════════════════════════════════════════╣');
+  console.log('║                    Survival Status                         ║');
+  console.log('╠════════════════════════════════════════════════════════════╣');
+  console.log(`║  Survival Mode: ${stats.survival?.inSurvivalMode ? 'YES' : 'NO'}${''.padEnd(42)}║`);
+  console.log(`║  Runway Days: ${(stats.survival?.runwayDays || 0).toString().padEnd(44)}║`);
   console.log('╚════════════════════════════════════════════════════════════╝\n');
+
+  // Print survival report
+  console.log(consultant.getSurvivalReport());
+  console.log();
   
   console.log('[Consultant] Multi-Chain A2A Economy Demo Complete!');
   console.log('Features demonstrated:');
