@@ -11,7 +11,7 @@
  * @module survival
  */
 import { type Address } from 'viem';
-import { type SupportedChain, type ChainBalance } from './bridge.js';
+import { type SupportedChain, type SupportedToken, type ChainBalance } from './bridge.js';
 export type AgentHealthStatus = 'healthy' | 'degraded' | 'critical' | 'dead';
 /**
  * Survival snapshot for quick state assessment
@@ -54,7 +54,7 @@ export interface AgentEconomics {
     totalEarned: string;
     /** Total spent in USD */
     totalSpent: string;
-    /** Current balance in USD */
+    /** Current balance in USD (aggregate across all tokens) */
     currentBalance: string;
     /** Minimum balance needed for survival */
     minSurvivalBalance: string;
@@ -62,6 +62,67 @@ export interface AgentEconomics {
     dailyBurnRate: string;
     /** Days of runway remaining */
     daysOfRunway: number;
+    /** Multi-token balances by chain */
+    tokenBalances?: Record<SupportedChain, Record<SupportedToken, string>>;
+    /** Total value by token (USD) */
+    tokenValues?: Record<SupportedToken, string>;
+}
+/**
+ * Multi-token economics snapshot
+ */
+export interface MultiTokenEconomics {
+    /** Balances for each token on each chain */
+    balances: Record<SupportedChain, Record<SupportedToken, string>>;
+    /** USD value for each token (would need price oracle in production) */
+    estimatedValues: Record<SupportedToken, string>;
+    /** Total portfolio value in USD */
+    totalValueUSD: string;
+    /** Chain with highest total balance */
+    primaryChain: SupportedChain;
+    /** Token distribution percentages */
+    distribution: Record<SupportedToken, number>;
+}
+/**
+ * Predictive survival analytics
+ */
+export interface SurvivalPrediction {
+    /** Predicted runway in days based on trend */
+    predictedRunwayDays: number;
+    /** Confidence level (0-1) */
+    confidence: number;
+    /** Trend direction */
+    trend: 'improving' | 'stable' | 'declining';
+    /** Date when funds will be depleted (if trend continues) */
+    projectedDepletionDate?: Date;
+    /** Recommended daily earnings to maintain sustainability */
+    recommendedDailyEarnings: string;
+}
+/**
+ * Automated survival action
+ */
+export interface AutomatedSurvivalAction {
+    /** Unique action ID */
+    id: string;
+    /** Action type */
+    type: SurvivalActionType;
+    /** Action status */
+    status: 'pending' | 'executing' | 'completed' | 'failed';
+    /** Action description */
+    description: string;
+    /** Estimated impact on survival score */
+    estimatedImpact: string;
+    /** Chain involved (if applicable) */
+    chain?: SupportedChain;
+    /** Token involved (if applicable) */
+    token?: SupportedToken;
+    /** Amount (if applicable) */
+    amount?: string;
+    /** Timestamp when action was created */
+    createdAt: number;
+    /** Timestamp when action was executed */
+    executedAt?: number;
+    /** Error message if failed */
+    error?: string;
 }
 /**
  * Survival check result
@@ -91,6 +152,33 @@ export interface HeartbeatRecord {
     metadata?: Record<string, unknown>;
 }
 /**
+ * Survival history entry for trend analysis
+ */
+export interface SurvivalHistoryEntry {
+    timestamp: number;
+    survivalScore: number;
+    healthScore: number;
+    economicsScore: number;
+    balance: string;
+    runwayDays: number;
+    status: AgentHealthStatus;
+}
+/**
+ * Chain optimization result
+ */
+export interface ChainOptimizationResult {
+    /** Recommended chain for operation */
+    recommendedChain: SupportedChain;
+    /** Reason for recommendation */
+    reason: string;
+    /** Estimated gas cost in USD */
+    estimatedGasCost: string;
+    /** Current balance on recommended chain */
+    availableBalance: string;
+    /** Score (0-100) for this chain */
+    score: number;
+}
+/**
  * Configuration for survival manager
  */
 export interface SurvivalConfig {
@@ -110,6 +198,14 @@ export interface SurvivalConfig {
     maxResponseTime: number;
     /** Survival score threshold for alerts (default: 50) */
     alertThreshold: number;
+    /** Enable automated survival actions (default: false) */
+    enableAutomation: boolean;
+    /** Minimum balance threshold for auto-bridging (default: 5) */
+    autoBridgeThreshold: string;
+    /** Target token for auto-bridging (default: USDC) */
+    autoBridgeTargetToken: SupportedToken;
+    /** Preferred chain for operations (default: base) */
+    preferredChain: SupportedChain;
 }
 /**
  * Default survival configuration
@@ -289,6 +385,56 @@ export declare class EchoSurvivalManager {
      * Get current configuration
      */
     getConfig(): SurvivalConfig;
+    /**
+     * Check multi-token economics across all chains
+     * Fetches real-time balances for all supported tokens
+     */
+    checkMultiTokenEconomics(): Promise<MultiTokenEconomics>;
+    /**
+     * Get optimal chain for an operation based on multi-token balances and gas costs
+     * Considers: balance availability, gas costs, token requirements
+     */
+    getOptimalChainForOperation(operation: 'read' | 'write' | 'bridge' | 'swap', preferredToken?: SupportedToken): Promise<ChainOptimizationResult>;
+    /**
+     * Generate predictive survival analytics based on historical data
+     * Uses trend analysis to predict future runway
+     */
+    predictSurvivalTrend(): Promise<SurvivalPrediction>;
+    /**
+     * Calculate variance for confidence scoring
+     */
+    private calculateVariance;
+    /**
+     * Generate automated survival actions based on current state
+     * Creates actionable recommendations that can be auto-executed
+     */
+    generateAutomatedActions(): Promise<AutomatedSurvivalAction[]>;
+    /**
+     * Execute an automated survival action
+     */
+    executeAutomatedAction(actionId: string): Promise<boolean>;
+    /**
+     * Get all pending automated actions
+     */
+    getPendingActions(): AutomatedSurvivalAction[];
+    /**
+     * Record survival history entry
+     */
+    private recordSurvivalHistory;
+    /**
+     * Get survival history for trend analysis
+     */
+    getSurvivalHistory(limit?: number): SurvivalHistoryEntry[];
+    /**
+     * Perform enhanced survival check with multi-token support and predictions
+     */
+    performEnhancedSurvivalCheck(): Promise<{
+        snapshot: SurvivalSnapshot;
+        multiToken: MultiTokenEconomics;
+        prediction: SurvivalPrediction;
+        actions: AutomatedSurvivalAction[];
+        chainOptimization: ChainOptimizationResult;
+    }>;
 }
 /**
  * Create or get survival manager for an agent

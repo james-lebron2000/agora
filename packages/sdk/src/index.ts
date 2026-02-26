@@ -40,7 +40,7 @@ export {
   type BatchEscrowOptions
 } from './escrow.js';
 
-// Echo Survival mechanism (v1.4)
+// Echo Survival mechanism (v1.5) - Enhanced with multi-token & predictive analytics
 export {
   EchoSurvivalManager,
   getOrCreateSurvivalManager,
@@ -61,7 +61,13 @@ export {
   type SurvivalEventCallback,
   type SurvivalAction,
   type SurvivalActionType,
-  type SurvivalActionPriority
+  type SurvivalActionPriority,
+  // New enhanced types
+  type MultiTokenEconomics,
+  type SurvivalPrediction,
+  type AutomatedSurvivalAction,
+  type SurvivalHistoryEntry,
+  type ChainOptimizationResult
 } from './survival.js';
 
 // Wallet management (v1.1)

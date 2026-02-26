@@ -10,7 +10,7 @@ export * from './crypto.js';
 export { AdAuctionManager, getOrCreateAdAuctionManager, getAdAuctionManager, removeAdAuctionManager, getAuctionStats, getAllActiveBids, calculateVickreyPrice, calculateDecayedPrice, validateAdContent, formatBidAmount, getRecommendedBid, DEFAULT_AUCTION_CONFIG, SLOT_BASE_PRICES } from './ad-auction.js';
 // Batch escrow operations
 export { batchRelease, batchRefund } from './escrow.js';
-// Echo Survival mechanism (v1.4)
+// Echo Survival mechanism (v1.5) - Enhanced with multi-token & predictive analytics
 export { EchoSurvivalManager, getOrCreateSurvivalManager, getSurvivalManager, removeSurvivalManager, DEFAULT_SURVIVAL_CONFIG, formatSurvivalReport, shouldAcceptTask } from './survival.js';
 // Wallet management (v1.1)
 export { generateWallet, loadOrCreateWallet, loadWallet, saveEncryptedWallet, getWalletAddress, walletExists, getWalletPath, AGORA_DIR, WALLET_FILE } from './wallet-manager.js';

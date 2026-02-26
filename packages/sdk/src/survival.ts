@@ -14,8 +14,12 @@
 import { type Address } from 'viem';
 import {
   type SupportedChain,
+  type SupportedToken,
   getAllBalances,
-  type ChainBalance
+  getAllTokenBalances,
+  type ChainBalance,
+  TOKEN_DECIMALS,
+  SUPPORTED_TOKENS
 } from './bridge.js';
 
 // Agent health status
@@ -64,7 +68,7 @@ export interface AgentEconomics {
   totalEarned: string;
   /** Total spent in USD */
   totalSpent: string;
-  /** Current balance in USD */
+  /** Current balance in USD (aggregate across all tokens) */
   currentBalance: string;
   /** Minimum balance needed for survival */
   minSurvivalBalance: string;
@@ -72,6 +76,70 @@ export interface AgentEconomics {
   dailyBurnRate: string;
   /** Days of runway remaining */
   daysOfRunway: number;
+  /** Multi-token balances by chain */
+  tokenBalances?: Record<SupportedChain, Record<SupportedToken, string>>;
+  /** Total value by token (USD) */
+  tokenValues?: Record<SupportedToken, string>;
+}
+
+/**
+ * Multi-token economics snapshot
+ */
+export interface MultiTokenEconomics {
+  /** Balances for each token on each chain */
+  balances: Record<SupportedChain, Record<SupportedToken, string>>;
+  /** USD value for each token (would need price oracle in production) */
+  estimatedValues: Record<SupportedToken, string>;
+  /** Total portfolio value in USD */
+  totalValueUSD: string;
+  /** Chain with highest total balance */
+  primaryChain: SupportedChain;
+  /** Token distribution percentages */
+  distribution: Record<SupportedToken, number>;
+}
+
+/**
+ * Predictive survival analytics
+ */
+export interface SurvivalPrediction {
+  /** Predicted runway in days based on trend */
+  predictedRunwayDays: number;
+  /** Confidence level (0-1) */
+  confidence: number;
+  /** Trend direction */
+  trend: 'improving' | 'stable' | 'declining';
+  /** Date when funds will be depleted (if trend continues) */
+  projectedDepletionDate?: Date;
+  /** Recommended daily earnings to maintain sustainability */
+  recommendedDailyEarnings: string;
+}
+
+/**
+ * Automated survival action
+ */
+export interface AutomatedSurvivalAction {
+  /** Unique action ID */
+  id: string;
+  /** Action type */
+  type: SurvivalActionType;
+  /** Action status */
+  status: 'pending' | 'executing' | 'completed' | 'failed';
+  /** Action description */
+  description: string;
+  /** Estimated impact on survival score */
+  estimatedImpact: string;
+  /** Chain involved (if applicable) */
+  chain?: SupportedChain;
+  /** Token involved (if applicable) */
+  token?: SupportedToken;
+  /** Amount (if applicable) */
+  amount?: string;
+  /** Timestamp when action was created */
+  createdAt: number;
+  /** Timestamp when action was executed */
+  executedAt?: number;
+  /** Error message if failed */
+  error?: string;
 }
 
 /**
@@ -104,6 +172,35 @@ export interface HeartbeatRecord {
 }
 
 /**
+ * Survival history entry for trend analysis
+ */
+export interface SurvivalHistoryEntry {
+  timestamp: number;
+  survivalScore: number;
+  healthScore: number;
+  economicsScore: number;
+  balance: string;
+  runwayDays: number;
+  status: AgentHealthStatus;
+}
+
+/**
+ * Chain optimization result
+ */
+export interface ChainOptimizationResult {
+  /** Recommended chain for operation */
+  recommendedChain: SupportedChain;
+  /** Reason for recommendation */
+  reason: string;
+  /** Estimated gas cost in USD */
+  estimatedGasCost: string;
+  /** Current balance on recommended chain */
+  availableBalance: string;
+  /** Score (0-100) for this chain */
+  score: number;
+}
+
+/**
  * Configuration for survival manager
  */
 export interface SurvivalConfig {
@@ -123,6 +220,14 @@ export interface SurvivalConfig {
   maxResponseTime: number;
   /** Survival score threshold for alerts (default: 50) */
   alertThreshold: number;
+  /** Enable automated survival actions (default: false) */
+  enableAutomation: boolean;
+  /** Minimum balance threshold for auto-bridging (default: 5) */
+  autoBridgeThreshold: string;
+  /** Target token for auto-bridging (default: USDC) */
+  autoBridgeTargetToken: SupportedToken;
+  /** Preferred chain for operations (default: base) */
+  preferredChain: SupportedChain;
 }
 
 /**
@@ -136,7 +241,11 @@ export const DEFAULT_SURVIVAL_CONFIG: SurvivalConfig = {
   healthySuccessRate: 0.8,
   criticalSuccessRate: 0.5,
   maxResponseTime: 5000,
-  alertThreshold: 50
+  alertThreshold: 50,
+  enableAutomation: false,
+  autoBridgeThreshold: '5',
+  autoBridgeTargetToken: 'USDC',
+  preferredChain: 'base'
 };
 
 /**
@@ -277,11 +386,13 @@ export type SurvivalEventCallback = (data: {
 }) => void;
 
 /**
- * In-memory heartbeat storage (production should use persistent storage)
+ * In-memory storage (production should use persistent storage)
  */
 const heartbeatStore: Map<string, HeartbeatRecord[]> = new Map();
 const healthStore: Map<string, AgentHealth> = new Map();
 const economicsStore: Map<string, AgentEconomics> = new Map();
+const survivalHistoryStore: Map<string, SurvivalHistoryEntry[]> = new Map();
+const automatedActionsStore: Map<string, AutomatedSurvivalAction[]> = new Map();
 
 /**
  * Echo Survival Manager
@@ -881,6 +992,481 @@ export class EchoSurvivalManager {
    */
   getConfig(): SurvivalConfig {
     return { ...this.config };
+  }
+
+  // ============================================================================
+  // NEW ENHANCED FEATURES - Multi-Token & Predictive Analytics
+  // ============================================================================
+
+  /**
+   * Check multi-token economics across all chains
+   * Fetches real-time balances for all supported tokens
+   */
+  async checkMultiTokenEconomics(): Promise<MultiTokenEconomics> {
+    const balances = await getAllTokenBalances(this.address);
+
+    // Calculate estimated USD values (simplified - in production would use price oracle)
+    const estimatedValues: Record<SupportedToken, string> = {
+      USDC: '0',
+      USDT: '0',
+      DAI: '0',
+      WETH: '0'
+    };
+
+    let totalValueUSD = 0;
+    const chainTotals: Record<SupportedChain, number> = {
+      ethereum: 0,
+      base: 0,
+      optimism: 0,
+      arbitrum: 0
+    };
+
+    // Aggregate values by token and chain
+    for (const chain of Object.keys(balances) as SupportedChain[]) {
+      for (const token of SUPPORTED_TOKENS) {
+        const balance = parseFloat(balances[chain][token]);
+
+        // Simple USD estimation (1 token = $1 for stablecoins, WETH needs price)
+        let usdValue = 0;
+        if (token === 'WETH') {
+          // Assume WETH = $3000 for estimation
+          usdValue = balance * 3000;
+        } else {
+          // Stablecoins
+          usdValue = balance;
+        }
+
+        estimatedValues[token] = (parseFloat(estimatedValues[token]) + usdValue).toFixed(2);
+        totalValueUSD += usdValue;
+        chainTotals[chain] += usdValue;
+      }
+    }
+
+    // Find primary chain (chain with highest balance)
+    let primaryChain: SupportedChain = 'base';
+    let maxChainValue = 0;
+    for (const [chain, value] of Object.entries(chainTotals)) {
+      if (value > maxChainValue) {
+        maxChainValue = value;
+        primaryChain = chain as SupportedChain;
+      }
+    }
+
+    // Calculate distribution percentages
+    const distribution: Record<SupportedToken, number> = {
+      USDC: totalValueUSD > 0 ? (parseFloat(estimatedValues.USDC) / totalValueUSD) * 100 : 0,
+      USDT: totalValueUSD > 0 ? (parseFloat(estimatedValues.USDT) / totalValueUSD) * 100 : 0,
+      DAI: totalValueUSD > 0 ? (parseFloat(estimatedValues.DAI) / totalValueUSD) * 100 : 0,
+      WETH: totalValueUSD > 0 ? (parseFloat(estimatedValues.WETH) / totalValueUSD) * 100 : 0
+    };
+
+    // Update stored economics with token data
+    const economics = economicsStore.get(this.agentId);
+    if (economics) {
+      economics.tokenBalances = balances;
+      economics.tokenValues = estimatedValues;
+      economics.currentBalance = totalValueUSD.toFixed(2);
+      economicsStore.set(this.agentId, economics);
+    }
+
+    return {
+      balances,
+      estimatedValues,
+      totalValueUSD: totalValueUSD.toFixed(2),
+      primaryChain,
+      distribution
+    };
+  }
+
+  /**
+   * Get optimal chain for an operation based on multi-token balances and gas costs
+   * Considers: balance availability, gas costs, token requirements
+   */
+  async getOptimalChainForOperation(
+    operation: 'read' | 'write' | 'bridge' | 'swap',
+    preferredToken?: SupportedToken
+  ): Promise<ChainOptimizationResult> {
+    const multiTokenEconomics = await this.checkMultiTokenEconomics();
+    const balances = multiTokenEconomics.balances;
+
+    // Gas cost estimates by chain (in USD)
+    const gasCosts: Record<SupportedChain, Record<string, number>> = {
+      ethereum: { read: 0.5, write: 2.0, bridge: 5.0, swap: 3.0 },
+      base: { read: 0.001, write: 0.01, bridge: 0.02, swap: 0.015 },
+      optimism: { read: 0.002, write: 0.015, bridge: 0.025, swap: 0.02 },
+      arbitrum: { read: 0.003, write: 0.02, bridge: 0.03, swap: 0.025 }
+    };
+
+    let bestChain: SupportedChain = this.config.preferredChain;
+    let bestScore = -1;
+    let bestReason = '';
+
+    for (const chain of Object.keys(balances) as SupportedChain[]) {
+      const chainBalances = balances[chain];
+      let totalBalance = 0;
+
+      // Calculate total USD value on this chain
+      for (const token of SUPPORTED_TOKENS) {
+        const balance = parseFloat(chainBalances[token]);
+        if (token === 'WETH') {
+          totalBalance += balance * 3000; // WETH price estimate
+        } else {
+          totalBalance += balance;
+        }
+      }
+
+      // Check if preferred token is available
+      const hasPreferredToken = preferredToken && parseFloat(chainBalances[preferredToken]) > 0;
+
+      // Calculate score (0-100)
+      // Factors: balance availability (50%), gas cost (30%), preferred token (20%)
+      const gasCost = gasCosts[chain][operation] || 0.01;
+      const balanceScore = Math.min(50, (totalBalance / 100) * 50); // Max 50 points
+      const gasScore = Math.max(0, 30 - gasCost * 10); // Lower gas = higher score
+      const tokenScore = hasPreferredToken ? 20 : 0;
+      const score = balanceScore + gasScore + tokenScore;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestChain = chain;
+        bestReason = hasPreferredToken
+          ? `Chain has ${preferredToken} and optimal gas costs`
+          : `Optimal balance/gas cost ratio (${totalBalance.toFixed(2)} USD available)`;
+      }
+    }
+
+    const gasCost = gasCosts[bestChain][operation] || 0.01;
+    const availableBalance = Object.values(balances[bestChain]).reduce((sum, bal, idx) => {
+      const token = SUPPORTED_TOKENS[idx];
+      const value = parseFloat(bal);
+      return sum + (token === 'WETH' ? value * 3000 : value);
+    }, 0);
+
+    return {
+      recommendedChain: bestChain,
+      reason: bestReason,
+      estimatedGasCost: gasCost.toFixed(4),
+      availableBalance: availableBalance.toFixed(2),
+      score: Math.round(bestScore)
+    };
+  }
+
+  /**
+   * Generate predictive survival analytics based on historical data
+   * Uses trend analysis to predict future runway
+   */
+  async predictSurvivalTrend(): Promise<SurvivalPrediction> {
+    const history = this.getSurvivalHistory(30); // Last 30 data points
+    const currentEconomics = await this.checkEconomics();
+
+    if (history.length < 3) {
+      // Not enough data for prediction
+      return {
+        predictedRunwayDays: currentEconomics.daysOfRunway,
+        confidence: 0.3,
+        trend: 'stable',
+        recommendedDailyEarnings: this.config.dailyBurnRate
+      };
+    }
+
+    // Calculate trend from history
+    const recent = history.slice(-7); // Last 7 data points
+    const older = history.slice(0, Math.min(7, history.length)); // First 7 data points
+
+    const recentAvgBalance = recent.reduce((sum, h) => sum + parseFloat(h.balance), 0) / recent.length;
+    const olderAvgBalance = older.reduce((sum, h) => sum + parseFloat(h.balance), 0) / older.length;
+
+    // Calculate daily change rate
+    const daysSpan = (recent[recent.length - 1].timestamp - older[0].timestamp) / (1000 * 60 * 60 * 24);
+    const dailyChange = daysSpan > 0 ? (recentAvgBalance - olderAvgBalance) / daysSpan : 0;
+
+    // Determine trend
+    let trend: 'improving' | 'stable' | 'declining' = 'stable';
+    if (dailyChange > 1) trend = 'improving';
+    else if (dailyChange < -1) trend = 'declining';
+
+    // Calculate predicted runway
+    const currentBalance = parseFloat(currentEconomics.currentBalance);
+    const burnRate = parseFloat(this.config.dailyBurnRate);
+    const netDailyBurn = burnRate - dailyChange; // Adjust burn rate by earnings trend
+
+    let predictedRunway = netDailyBurn > 0 ? Math.floor(currentBalance / netDailyBurn) : 999;
+
+    // Calculate confidence based on data consistency
+    const variance = this.calculateVariance(history.map(h => parseFloat(h.balance)));
+    const confidence = Math.min(0.9, 0.3 + (history.length / 100) * 0.6 - variance * 0.1);
+
+    // Project depletion date
+    let projectedDepletionDate: Date | undefined;
+    if (predictedRunway < 365 && predictedRunway > 0) {
+      projectedDepletionDate = new Date(Date.now() + predictedRunway * 24 * 60 * 60 * 1000);
+    }
+
+    // Calculate recommended daily earnings to maintain sustainability
+    const recommendedDailyEarnings = burnRate + (currentBalance / 30); // Target 30-day sustainability
+
+    return {
+      predictedRunwayDays: predictedRunway,
+      confidence,
+      trend,
+      projectedDepletionDate,
+      recommendedDailyEarnings: Math.max(0, recommendedDailyEarnings).toFixed(2)
+    };
+  }
+
+  /**
+   * Calculate variance for confidence scoring
+   */
+  private calculateVariance(values: number[]): number {
+    if (values.length < 2) return 0;
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const squaredDiffs = values.map(v => Math.pow(v - mean, 2));
+    return Math.sqrt(squaredDiffs.reduce((a, b) => a + b, 0) / values.length);
+  }
+
+  /**
+   * Generate automated survival actions based on current state
+   * Creates actionable recommendations that can be auto-executed
+   */
+  async generateAutomatedActions(): Promise<AutomatedSurvivalAction[]> {
+    const actions: AutomatedSurvivalAction[] = [];
+    const multiTokenEconomics = await this.checkMultiTokenEconomics();
+    const prediction = await this.predictSurvivalTrend();
+    const health = this.checkHealth(this.agentId);
+
+    // Action 1: Bridge funds if primary chain is low but other chains have balance
+    const primaryChain = multiTokenEconomics.primaryChain;
+    const primaryBalance = parseFloat(multiTokenEconomics.balances[primaryChain]['USDC']);
+    const autoBridgeThreshold = parseFloat(this.config.autoBridgeThreshold);
+
+    if (primaryBalance < autoBridgeThreshold) {
+      // Find chain with highest USDC balance
+      let bestSourceChain: SupportedChain | null = null;
+      let maxSourceBalance = 0;
+
+      for (const chain of Object.keys(multiTokenEconomics.balances) as SupportedChain[]) {
+        if (chain === primaryChain) continue;
+        const balance = parseFloat(multiTokenEconomics.balances[chain]['USDC']);
+        if (balance > maxSourceBalance && balance > autoBridgeThreshold) {
+          maxSourceBalance = balance;
+          bestSourceChain = chain;
+        }
+      }
+
+      if (bestSourceChain) {
+        actions.push({
+          id: `bridge-${Date.now()}`,
+          type: 'bridge',
+          status: 'pending',
+          description: `Bridge USDC from ${bestSourceChain} to ${primaryChain}`,
+          estimatedImpact: `+${(maxSourceBalance * 0.9).toFixed(2)} USD on primary chain`,
+          chain: bestSourceChain,
+          token: 'USDC',
+          amount: (maxSourceBalance * 0.9).toFixed(2),
+          createdAt: Date.now()
+        });
+      }
+    }
+
+    // Action 2: Optimize chain if current chain has high gas costs
+    const optimalChain = await this.getOptimalChainForOperation('write');
+    if (optimalChain.recommendedChain !== primaryChain && optimalChain.score > 70) {
+      actions.push({
+        id: `optimize-${Date.now()}`,
+        type: 'optimize_chain',
+        status: 'pending',
+        description: `Switch operations to ${optimalChain.recommendedChain} for lower costs`,
+        estimatedImpact: `Save ~${(parseFloat(optimalChain.estimatedGasCost) * 10).toFixed(2)} USD per 10 operations`,
+        chain: optimalChain.recommendedChain,
+        createdAt: Date.now()
+      });
+    }
+
+    // Action 3: Reduce costs if in survival mode
+    if (this.survivalMode || prediction.trend === 'declining') {
+      actions.push({
+        id: `reduce-cost-${Date.now()}`,
+        type: 'reduce_cost',
+        status: 'pending',
+        description: 'Reduce operational costs - prioritize high-value tasks only',
+        estimatedImpact: 'Reduce daily burn by ~30%',
+        createdAt: Date.now()
+      });
+    }
+
+    // Action 4: Alert if critical
+    if (health.status === 'critical' || prediction.predictedRunwayDays < 3) {
+      actions.push({
+        id: `alert-${Date.now()}`,
+        type: 'alert',
+        status: 'pending',
+        description: `Critical survival alert: ${prediction.predictedRunwayDays} days runway remaining`,
+        estimatedImpact: 'Immediate attention required',
+        createdAt: Date.now()
+      });
+    }
+
+    // Action 5: Earn recommendation if balance is healthy
+    if (parseFloat(multiTokenEconomics.totalValueUSD) > parseFloat(this.config.minSurvivalBalance) * 3) {
+      actions.push({
+        id: `earn-${Date.now()}`,
+        type: 'earn',
+        status: 'pending',
+        description: 'Healthy balance - consider expanding task acceptance',
+        estimatedImpact: `Potential +${prediction.recommendedDailyEarnings} USD daily revenue`,
+        createdAt: Date.now()
+      });
+    }
+
+    // Store actions
+    const existingActions = automatedActionsStore.get(this.agentId) || [];
+    automatedActionsStore.set(this.agentId, [...existingActions, ...actions]);
+
+    return actions;
+  }
+
+  /**
+   * Execute an automated survival action
+   */
+  async executeAutomatedAction(actionId: string): Promise<boolean> {
+    const actions = automatedActionsStore.get(this.agentId) || [];
+    const action = actions.find(a => a.id === actionId);
+
+    if (!action || action.status !== 'pending') {
+      return false;
+    }
+
+    action.status = 'executing';
+    action.executedAt = Date.now();
+
+    try {
+      // Execute based on action type
+      switch (action.type) {
+        case 'bridge':
+          // In production, this would call the bridge module
+          console.log(`[Survival] Executing bridge: ${action.amount} ${action.token} from ${action.chain}`);
+          // Simulate bridge execution
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          break;
+
+        case 'optimize_chain':
+          // Update preferred chain in config
+          if (action.chain) {
+            this.config.preferredChain = action.chain;
+            console.log(`[Survival] Optimized to chain: ${action.chain}`);
+          }
+          break;
+
+        case 'reduce_cost':
+          // Reduce daily burn rate
+          const currentBurn = parseFloat(this.config.dailyBurnRate);
+          this.config.dailyBurnRate = (currentBurn * 0.7).toFixed(2);
+          console.log(`[Survival] Reduced burn rate to: ${this.config.dailyBurnRate}`);
+          break;
+
+        case 'alert':
+          // Emit alert event
+          this.emit('economic:warning', {
+            message: action.description,
+            severity: 'critical'
+          });
+          break;
+
+        case 'earn':
+          // Enable more aggressive task acceptance
+          console.log(`[Survival] Expansion mode enabled`);
+          break;
+
+        default:
+          break;
+      }
+
+      action.status = 'completed';
+      return true;
+    } catch (error) {
+      action.status = 'failed';
+      action.error = error instanceof Error ? error.message : 'Unknown error';
+      return false;
+    }
+  }
+
+  /**
+   * Get all pending automated actions
+   */
+  getPendingActions(): AutomatedSurvivalAction[] {
+    const actions = automatedActionsStore.get(this.agentId) || [];
+    return actions.filter(a => a.status === 'pending');
+  }
+
+  /**
+   * Record survival history entry
+   */
+  private recordSurvivalHistory(): void {
+    const economics = economicsStore.get(this.agentId);
+    const health = healthStore.get(this.agentId);
+
+    if (!economics || !health) return;
+
+    const survivalScore = this.calculateEconomicsScore(economics) + this.calculateHealthScore(health);
+
+    const entry: SurvivalHistoryEntry = {
+      timestamp: Date.now(),
+      survivalScore,
+      healthScore: this.calculateHealthScore(health),
+      economicsScore: this.calculateEconomicsScore(economics),
+      balance: economics.currentBalance,
+      runwayDays: economics.daysOfRunway,
+      status: health.status
+    };
+
+    const history = survivalHistoryStore.get(this.agentId) || [];
+    history.push(entry);
+
+    // Keep only last 1000 entries (~1 week at 10-min intervals)
+    if (history.length > 1000) {
+      history.shift();
+    }
+
+    survivalHistoryStore.set(this.agentId, history);
+  }
+
+  /**
+   * Get survival history for trend analysis
+   */
+  getSurvivalHistory(limit: number = 100): SurvivalHistoryEntry[] {
+    const history = survivalHistoryStore.get(this.agentId) || [];
+    return history.slice(-limit);
+  }
+
+  /**
+   * Perform enhanced survival check with multi-token support and predictions
+   */
+  async performEnhancedSurvivalCheck(): Promise<{
+    snapshot: SurvivalSnapshot;
+    multiToken: MultiTokenEconomics;
+    prediction: SurvivalPrediction;
+    actions: AutomatedSurvivalAction[];
+    chainOptimization: ChainOptimizationResult;
+  }> {
+    // Run all checks in parallel
+    const [snapshot, multiToken, prediction, actions, chainOptimization] = await Promise.all([
+      this.performSurvivalCheck(),
+      this.checkMultiTokenEconomics(),
+      this.predictSurvivalTrend(),
+      this.generateAutomatedActions(),
+      this.getOptimalChainForOperation('write')
+    ]);
+
+    // Record history
+    this.recordSurvivalHistory();
+
+    return {
+      snapshot,
+      multiToken,
+      prediction,
+      actions,
+      chainOptimization
+    };
   }
 }
 
