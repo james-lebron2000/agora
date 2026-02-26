@@ -1764,3 +1764,4 @@ function createMultiChainClient(privateKey, chain) {
     return { walletClient, publicClient, account };
 }
 export default CrossChainBridge;
+//# sourceMappingURL=bridge.js.map

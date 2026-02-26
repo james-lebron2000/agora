@@ -1,0 +1,41 @@
+project: stock_stalker
+type: INFRASTRUCTURE
+priority: P2
+description: 创建Docker配置和CI/CD流水线
+details: |
+  完成内容:
+  1. Dockerfile - Python 3.11 slim镜像
+     - 安装系统依赖
+     - 安装Python包
+     - 健康检查配置
+  
+  2. docker-compose.yml
+     - stock-stalker服务
+     - Redis缓存（可选）
+     - Prometheus监控（可选）
+     - 网络和卷配置
+  
+  3. GitHub Actions CI/CD (.github/workflows/ci-cd.yml)
+     - 多Python版本测试矩阵
+     - 代码质量检查 (flake8)
+     - 测试覆盖率报告
+     - Docker镜像构建和推送
+     - 自动部署到服务器
+  
+  4. Makefile
+     - install/test/lint/run命令
+     - Docker快捷命令
+     - 股票扫描快捷命令
+     - 备份和清理命令
+  
+  5. requirements.txt
+     - 核心依赖列表
+     - 可选依赖注释
+  
+  文件:
+  - Dockerfile
+  - docker-compose.yml
+  - .github/workflows/ci-cd.yml
+  - Makefile
+  - requirements.txt
+completed_at: $(date -Iseconds)

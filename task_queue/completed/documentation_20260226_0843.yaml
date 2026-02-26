@@ -1,0 +1,27 @@
+project: stock_stalker
+type: DOCUMENTATION
+priority: P2
+description: 创建完整使用文档和Jupyter Notebook示例
+details: |
+  完成内容:
+  1. README.md - 完整使用指南（6,690 lines）
+     - 快速开始
+     - 核心概念
+     - CLI命令详解
+     - API使用示例
+     - 策略回测教程
+     - 技术指标说明
+     - 通知系统配置
+     - 常见问题
+  
+  2. Jupyter Notebook示例（9,462 lines）
+     - 股票扫描示例
+     - 技术分析演示
+     - 策略回测对比
+     - 通知系统使用
+     - 数据导出示例
+  
+  文件:
+  - README.md
+  - examples/StockStalker_Demo.ipynb
+completed_at: $(date -Iseconds)
