@@ -210,6 +210,49 @@ export {
   type UseProfileOptions,
 } from './profile.js';
 
+// Agent Profile React Hooks (v1.0) - frontend integration
+export {
+  // Hooks
+  useProfile,
+  useMyProfile,
+  useUpdateProfile,
+  useProfileStats,
+  useAchievements,
+  useReputationHistory,
+  useSearchProfiles,
+  useLeaderboard,
+  useProfileCompleteness,
+  useUploadAvatar,
+  useLevelProgress,
+  useBatchProfiles,
+  useProfileCache,
+  // Initialization
+  initializeProfileManager,
+  setGlobalAuthToken,
+  getGlobalAuthToken,
+  getGlobalManager,
+  // Types
+  type ProfileContextValue,
+  type ProfileProviderProps,
+  type UseProfileOptions,
+  type UseProfileResult,
+  type UseMyProfileResult,
+  type UseUpdateProfileResult,
+  type UseProfileStatsResult,
+  type UseAchievementsResult,
+  type UseReputationHistoryResult,
+  type UseSearchProfilesOptions,
+  type UseSearchProfilesResult,
+  type LeaderboardCategory,
+  type UseLeaderboardOptions,
+  type UseLeaderboardResult,
+  type UseProfileCompletenessResult,
+  type UseUploadAvatarResult,
+  type UseLevelProgressResult,
+  type UseBatchProfilesResult,
+  type UseProfileCacheResult,
+} from './profile-hooks.js';
+
 // Reputation Oracle module (v1.0)
 export {
   ReputationOracle,
