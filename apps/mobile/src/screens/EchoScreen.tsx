@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRoute, type RouteProp } from '@react-navigation/native';
 import { useSurvivalSDK } from '../hooks/useSDK';
 import type { RootStackParamList } from '../types/navigation';
+import type { ChainBalance } from '@agora/sdk/bridge';
 import {
   COLORS,
   SPACING,
@@ -49,6 +50,18 @@ const formatTimeAgo = (timestamp: number): string => {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+};
+
+// Chain color helper
+const getChainColor = (chain: string): string => {
+  const chainColors: Record<string, string> = {
+    ethereum: '#627eea',
+    base: '#0052ff',
+    arbitrum: '#28a0f0',
+    optimism: '#ff0420',
+    polygon: '#8247e5',
+  };
+  return chainColors[chain.toLowerCase()] || COLORS.gray500;
 };
 
 export default function EchoScreen() {
@@ -614,7 +627,7 @@ export default function EchoScreen() {
             {economics.rawBalances && economics.rawBalances.length > 0 && (
               <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
                 <Text style={[styles.cardTitle, { color: theme.text }]}>Chain Distribution</Text>
-                {economics.rawBalances.map((balance) => (
+                {economics.rawBalances.map((balance: ChainBalance) => (
                   <View key={balance.chain} style={styles.chainItem}>
                     <View style={styles.chainHeader}>
                       <Text style={[styles.chainName, { color: theme.text }]}>
@@ -629,7 +642,7 @@ export default function EchoScreen() {
                         style={[
                           styles.chainBar,
                           {
-                            backgroundColor: COLORS[balance.chain] || COLORS.gray500,
+                            backgroundColor: getChainColor(balance.chain),
                             width: `${Math.min(
                               100,
                               (parseFloat(balance.usdcBalance) / (economics.totalUSDC || 1)) * 100
