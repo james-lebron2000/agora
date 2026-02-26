@@ -5,13 +5,17 @@
 
 import request from 'supertest';
 import app from '../index';
+import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
 import {
-  createTestRequest,
   generateTestToken,
   DEMO_API_KEY,
   expectSuccessResponse,
   expectErrorResponse,
 } from './helpers';
+
+// Test JWT secret
+const JWT_SECRET = process.env.JWT_SECRET || 'test-secret-key-for-testing-only';
 
 describe('Authentication Routes', () => {
   describe('POST /auth/token', () => {
@@ -97,7 +101,17 @@ describe('Authentication Routes', () => {
     });
 
     it('should reject expired token', async () => {
-      const expiredToken = generateTestToken({}, -3600); // Expired 1 hour ago
+      const expiredToken = jwt.sign(
+        {
+          sub: 'test-user',
+          tier: 'premium',
+          permissions: ['agents:read'],
+          jti: uuidv4(),
+          iat: Math.floor(Date.now() / 1000) - 7200, // 2 hours ago
+          exp: Math.floor(Date.now() / 1000) - 3600, // Expired 1 hour ago
+        },
+        JWT_SECRET
+      );
 
       const response = await request(app)
         .post('/auth/refresh')

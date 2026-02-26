@@ -59,7 +59,7 @@ export {
   useIsCellular,
   NetworkOfflineFallback,
   OfflineFallback,
-} from '../hooks/useNetwork.tsx';
+} from '../hooks/useNetwork';
 
 // Theme utilities
 export {

@@ -32,7 +32,7 @@ afterEach(async () => {
 });
 
 // Handle unhandled promise rejections in tests
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
   console.error('Unhandled Rejection during test:', reason);
   // Don't throw to prevent test suite from crashing
 });

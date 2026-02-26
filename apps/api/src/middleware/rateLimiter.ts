@@ -4,13 +4,6 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { RateLimitError } from './errorHandler';
 
-interface RateLimitInfo {
-  limit: number;
-  remaining: number;
-  reset: Date;
-  window: number;
-}
-
 export function createRateLimitMiddleware(tier: 'default' | 'premium' | 'internal' = 'default') {
   const rateLimitConfig = config.rateLimit[tier];
   

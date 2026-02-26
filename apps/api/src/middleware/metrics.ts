@@ -82,13 +82,13 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
     
     // Log slow requests
     if (durationMs > 1000) {
-      logger.warn({
+      logger.warn('Slow request detected', {
         method,
         route,
         durationMs,
         statusCode,
         requestId: req.requestId,
-      }, 'Slow request detected');
+      });
     }
     
     // Call original end
@@ -105,7 +105,7 @@ export function rateLimitMetricsMiddleware(
   tier: string,
   route: string
 ): (req: Request, res: Response, next: NextFunction) => void {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return (_req: Request, res: Response, next: NextFunction) => {
     // Check if response will be rate limited (429 status)
     const originalWriteHead = res.writeHead.bind(res);
     

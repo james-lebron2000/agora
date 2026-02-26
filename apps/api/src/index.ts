@@ -106,7 +106,7 @@ app.use('/profiles', profileRoutes);
 app.use('/notifications', notificationsRoutes);
 
 // API documentation endpoint
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.json({
     name: 'Agora API Gateway',
     version: '1.0.0',

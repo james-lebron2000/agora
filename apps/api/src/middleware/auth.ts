@@ -5,7 +5,7 @@ import { UnauthorizedError, ForbiddenError } from './errorHandler';
 
 export async function apiKeyAuthMiddleware(
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> {
   const apiKey = req.headers['x-api-key'] as string;
@@ -38,7 +38,7 @@ export async function apiKeyAuthMiddleware(
 
 export async function jwtAuthMiddleware(
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> {
   const authHeader = req.headers.authorization;
@@ -74,7 +74,7 @@ export async function jwtAuthMiddleware(
 export function requirePermission(...permissions: string[]) {
   return function permissionMiddleware(
     req: Request,
-    res: Response,
+    _res: Response,
     next: NextFunction
   ): void {
     const user = (req as any).user;
@@ -96,7 +96,7 @@ export function requirePermission(...permissions: string[]) {
 export function requireAllPermissions(...permissions: string[]) {
   return function allPermissionsMiddleware(
     req: Request,
-    res: Response,
+    _res: Response,
     next: NextFunction
   ): void {
     const user = (req as any).user;
@@ -120,7 +120,7 @@ export function requireAllPermissions(...permissions: string[]) {
 // Optional auth - doesn't fail if no auth, but attaches user if available
 export async function optionalAuthMiddleware(
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> {
   const apiKey = req.headers['x-api-key'] as string;

@@ -1,0 +1,31 @@
+project: stock_stalker
+type: UTILITY
+priority: P2
+description: 添加服务器监控和自动备份脚本
+details: |
+  新增工具:
+  1. monitor.sh - 服务器监控脚本
+     - 检查服务器连接
+     - 检查Docker服务状态
+     - 检查API健康
+     - 检查磁盘和内存使用
+     - 检查错误日志
+     - 生成监控报告
+  
+  2. backup.sh - 自动备份脚本
+     - 备份本地数据库
+     - 备份服务器数据库
+     - 备份代码（排除缓存）
+     - 备份观察列表
+     - 自动清理30天前旧备份
+  
+  3. QUICK_REFERENCE.md - 快速参考指南
+     - 常用命令速查
+     - Python API示例
+     - 故障排除指南
+  
+  文件:
+  - monitor.sh
+  - backup.sh
+  - QUICK_REFERENCE.md
+completed_at: $(date -Iseconds)

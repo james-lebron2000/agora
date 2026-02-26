@@ -8,6 +8,10 @@ import { AgentLevelProgress, calculateLevel } from '../components/AgentLevelProg
 import { ShareProfile } from '../components/ShareProfile'
 import { AgentLeaderboard } from '../components/AgentLeaderboard'
 import { useLeaderboard } from '../hooks/useLeaderboard'
+import { AgentPerformanceDashboard } from '../components/AgentPerformanceDashboard'
+import { ProfileSkeleton } from '../components/ProfileSkeleton'
+import { ThemeSelector } from '../components/ThemeSelector'
+import { AnimatedAchievementGrid, type Achievement as AnimatedAchievement } from '../components/AnimatedAchievementCard'
 import {
   Activity,
   Wallet,
@@ -37,7 +41,7 @@ import {
   Trophy,
 } from 'lucide-react'
 
-type Tab = 'overview' | 'economics' | 'capabilities' | 'history' | 'achievements' | 'leaderboard'
+type Tab = 'overview' | 'economics' | 'capabilities' | 'history' | 'achievements' | 'leaderboard' | 'analytics'
 
 // Default agent ID - in production this would come from URL params
 const DEFAULT_AGENT_ID = 'agent-echo-001'
@@ -132,22 +136,22 @@ function HealthCard({ label, value, icon: Icon, color }: { label: string; value:
 
   return (
     <motion.div 
-      className="bg-white/80 backdrop-blur-sm rounded-xl p-4 border border-agora-100 shadow-sm hover:shadow-md transition-shadow"
+      className="bg-white/80 backdrop-blur-sm rounded-xl p-2.5 sm:p-4 border border-agora-100 shadow-sm hover:shadow-md transition-shadow"
       whileHover={{ y: -2 }}
       transition={{ type: 'spring', stiffness: 400 }}
     >
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-agora-50">
-            <Icon className="w-4 h-4" style={{ color }} />
+      <div className="flex items-center justify-between mb-1.5 sm:mb-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="p-1 sm:p-1.5 rounded-lg bg-agora-50">
+            <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" style={{ color }} />
           </div>
-          <span className="text-xs font-medium text-agora-500 uppercase tracking-wider">{label}</span>
+          <span className="text-[10px] sm:text-xs font-medium text-agora-500 uppercase tracking-wider">{label}</span>
         </div>
-        <motion.span className={`text-lg font-bold ${getStatusColor(value)}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
+        <motion.span className={`text-sm sm:text-lg font-bold ${getStatusColor(value)}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
           {value}%
         </motion.span>
       </div>
-      <div className="h-2 bg-agora-100 rounded-full overflow-hidden">
+      <div className="h-1.5 sm:h-2 bg-agora-100 rounded-full overflow-hidden">
         <motion.div
           className={`h-full rounded-full ${getProgressColor(value)}`}
           initial={{ width: 0 }}
@@ -262,19 +266,8 @@ function SurvivalStatusIndicator({ status, score, lastHeartbeat, consecutiveFail
 }
 
 function LoadingState() {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-agora-50 to-agora-100/50 pt-20 lg:pt-6 pb-24 flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-        >
-          <Loader2 className="w-8 h-8 text-agora-600" />
-        </motion.div>
-        <p className="text-sm text-agora-600">Loading agent profile...</p>
-      </div>
-    </div>
-  )
+  // Use the new ProfileSkeleton component for better UX
+  return <ProfileSkeleton />
 }
 
 function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) {
@@ -330,13 +323,14 @@ export function AgentProfile() {
     return calculateLevel(xp)
   }, [agent])
 
-  const tabs: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { id: 'overview', label: 'Overview', icon: Activity },
-    { id: 'economics', label: 'Economics', icon: Wallet },
-    { id: 'capabilities', label: 'Skills', icon: Zap },
-    { id: 'achievements', label: 'Badges', icon: Award },
-    { id: 'leaderboard', label: 'Ranks', icon: Trophy },
-    { id: 'history', label: 'History', icon: History },
+  const tabs: { id: Tab; label: string; shortLabel: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { id: 'overview', label: 'Overview', shortLabel: 'Overview', icon: Activity },
+    { id: 'analytics', label: 'Analytics', shortLabel: 'Stats', icon: BarChart3 },
+    { id: 'economics', label: 'Economics', shortLabel: 'Econ', icon: Wallet },
+    { id: 'capabilities', label: 'Skills', shortLabel: 'Skills', icon: Zap },
+    { id: 'achievements', label: 'Badges', shortLabel: 'Badges', icon: Award },
+    { id: 'leaderboard', label: 'Ranks', shortLabel: 'Ranks', icon: Trophy },
+    { id: 'history', label: 'History', shortLabel: 'History', icon: History },
   ]
 
   if (isLoading && !agent) {
@@ -413,8 +407,8 @@ export function AgentProfile() {
         />
       </motion.div>
 
-      {/* Health Metrics Grid */}
-      <motion.div className="grid grid-cols-2 gap-3" variants={itemVariants}>
+      {/* Health Metrics Grid - Responsive */}
+      <motion.div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3" variants={itemVariants}>
         <HealthCard label="Compute" value={agent.health.compute} icon={Cpu} color="#0052FF" />
         <HealthCard label="Storage" value={agent.health.storage} icon={Database} color="#2775CA" />
         <HealthCard label="Network" value={agent.health.network} icon={Wifi} color="#10b981" />
@@ -426,30 +420,30 @@ export function AgentProfile() {
         <ActivityHeatmap data={activityData} title="Contribution Activity" />
       </motion.div>
 
-      {/* Quick Stats */}
-      <motion.div className="bg-white rounded-2xl p-5 border border-agora-100 shadow-sm" variants={itemVariants} whileHover={{ y: -2 }}>
-        <h3 className="font-semibold text-agora-900 mb-4 flex items-center gap-2">
-          <BarChart3 className="w-5 h-5 text-agora-500" />
+      {/* Quick Stats - Mobile Optimized */}
+      <motion.div className="bg-white rounded-2xl p-4 sm:p-5 border border-agora-100 shadow-sm" variants={itemVariants} whileHover={{ y: -2 }}>
+        <h3 className="font-semibold text-agora-900 mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
+          <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5 text-agora-500" />
           Performance Stats
         </h3>
-        <div className="grid grid-cols-3 gap-4">
-          <motion.div className="text-center p-3 rounded-xl bg-agora-50/50" whileHover={{ scale: 1.05 }}>
-            <motion.div className="text-2xl font-bold text-agora-900" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
+          <motion.div className="text-center p-2.5 sm:p-3 rounded-xl bg-agora-50/50 min-h-[70px] flex flex-col justify-center" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            <motion.div className="text-lg sm:text-2xl font-bold text-agora-900" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
               {agent.reputation.completedTasks}
             </motion.div>
-            <div className="text-xs text-agora-500 mt-1">Tasks Done</div>
+            <div className="text-[10px] sm:text-xs text-agora-500 mt-0.5">Tasks</div>
           </motion.div>
-          <motion.div className="text-center p-3 rounded-xl bg-agora-50/50 border-x border-agora-100" whileHover={{ scale: 1.05 }}>
-            <motion.div className="text-2xl font-bold text-agora-900" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <motion.div className="text-center p-2.5 sm:p-3 rounded-xl bg-agora-50/50 border-x border-agora-100 min-h-[70px] flex flex-col justify-center" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            <motion.div className="text-lg sm:text-2xl font-bold text-agora-900" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
               ${agent.reputation.totalEarnings.toLocaleString()}
             </motion.div>
-            <div className="text-xs text-agora-500 mt-1">Total Earned</div>
+            <div className="text-[10px] sm:text-xs text-agora-500 mt-0.5">Earned</div>
           </motion.div>
-          <motion.div className="text-center p-3 rounded-xl bg-agora-50/50" whileHover={{ scale: 1.05 }}>
-            <motion.div className="text-2xl font-bold text-agora-900" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+          <motion.div className="text-center p-2.5 sm:p-3 rounded-xl bg-agora-50/50 min-h-[70px] flex flex-col justify-center" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            <motion.div className="text-lg sm:text-2xl font-bold text-agora-900" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
               {agent.reputation.score.toFixed(1)}
             </motion.div>
-            <div className="text-xs text-agora-500 mt-1">Rating</div>
+            <div className="text-[10px] sm:text-xs text-agora-500 mt-0.5">Rating</div>
           </motion.div>
         </div>
       </motion.div>
@@ -614,6 +608,18 @@ export function AgentProfile() {
     </div>
   )
 
+  const renderAnalytics = () => (
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="show"
+    >
+      <motion.div variants={itemVariants}>
+        <AgentPerformanceDashboard agentId={agent.id} />
+      </motion.div>
+    </motion.div>
+  )
+
   const renderCapabilities = () => (
     <div className="space-y-4">
       {agent.capabilities.length > 0 ? (
@@ -682,28 +688,45 @@ export function AgentProfile() {
     </motion.div>
   )
 
-  const renderAchievements = () => (
-    <motion.div 
-      className="space-y-6"
-      variants={containerVariants}
-      initial="hidden"
-      animate="show"
-    >
-      <motion.div variants={itemVariants}>
-        <AchievementBadgeGrid badges={sampleBadges} title="Achievements" />
+  const renderAchievements = () => {
+    // Convert sample badges to achievements with rarity
+    const achievements: AnimatedAchievement[] = sampleBadges.map((badge, index) => ({
+      id: badge.id,
+      name: badge.name,
+      description: badge.description,
+      tier: badge.tier,
+      rarity: index < 2 ? 'common' : index < 5 ? 'rare' : index < 7 ? 'epic' : 'legendary',
+      icon: badge.icon,
+      earnedAt: badge.earnedAt,
+      progress: badge.progress || 0,
+      maxProgress: badge.maxProgress || 100,
+      xpReward: badge.tier === 'bronze' ? 100 : badge.tier === 'silver' ? 250 : badge.tier === 'gold' ? 500 : badge.tier === 'platinum' ? 1000 : 2000,
+      unlocked: !!badge.earnedAt,
+    }));
+
+    return (
+      <motion.div 
+        className="space-y-6"
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+      >
+        <motion.div variants={itemVariants}>
+          <AnimatedAchievementGrid achievements={achievements} title="Achievements" />
+        </motion.div>
+        
+        <motion.div variants={itemVariants}>
+          <div className="bg-white rounded-2xl p-5 border border-agora-100 shadow-sm">
+            <h3 className="font-semibold text-agora-900 mb-4 flex items-center gap-2">
+              <Target className="w-5 h-5 text-agora-500" />
+              Level Progression
+            </h3>
+            <AgentLevelProgress level={agentLevel} />
+          </div>
+        </motion.div>
       </motion.div>
-      
-      <motion.div variants={itemVariants}>
-        <div className="bg-white rounded-2xl p-5 border border-agora-100 shadow-sm">
-          <h3 className="font-semibold text-agora-900 mb-4 flex items-center gap-2">
-            <Target className="w-5 h-5 text-agora-500" />
-            Level Progression
-          </h3>
-          <AgentLevelProgress level={agentLevel} />
-        </div>
-      </motion.div>
-    </motion.div>
-  )
+    );
+  }
 
   const renderHistory = () => (
     <div className="bg-white rounded-2xl border border-agora-100 shadow-sm">
@@ -749,16 +772,16 @@ export function AgentProfile() {
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-agora-50 to-agora-100/50 pt-20 lg:pt-6 pb-24">
-      <div className="max-w-3xl mx-auto px-4">
-        {/* Agent Header with Avatar */}
+    <div className="min-h-screen bg-gradient-to-br from-agora-50 to-agora-100/50 pt-safe-top pb-safe-bottom">
+      <div className="max-w-3xl mx-auto px-3 sm:px-4 pt-16 sm:pt-20 lg:pt-6 pb-20 sm:pb-24">
+        {/* Agent Header with Avatar - Mobile Optimized */}
         <motion.div 
-          className="bg-white rounded-2xl p-5 border border-agora-100 shadow-sm mb-4"
+          className="bg-white rounded-2xl p-4 sm:p-5 border border-agora-100 shadow-sm mb-4"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <div className="flex items-center gap-4">
+          <div className="flex items-start sm:items-center gap-3 sm:gap-4">
             <AgentAvatar 
               agentId={agent.id}
               agentName={agent.name}
@@ -766,16 +789,16 @@ export function AgentProfile() {
               status={agent.status}
             />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-2xl font-bold text-agora-900 truncate">{agent.name}</h1>
-                  <p className="text-sm text-agora-500 truncate font-mono">{agent.id}</p>
+              <div className="flex items-start sm:items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h1 className="text-xl sm:text-2xl font-bold text-agora-900 truncate">{agent.name}</h1>
+                  <p className="text-xs sm:text-sm text-agora-500 truncate font-mono">{agent.id}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
                   <ShareProfile agentId={agent.id} agentName={agent.name} />
                   <motion.button 
                     onClick={() => refetch()}
-                    className="p-2 rounded-xl hover:bg-agora-50 transition-colors"
+                    className="p-2 rounded-xl hover:bg-agora-50 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
                     disabled={isLoading}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -785,35 +808,37 @@ export function AgentProfile() {
                 </div>
               </div>
               
-              <div className="flex items-center gap-4 mt-3">
-                <div className="flex items-center gap-2">
+              {/* Mobile: Stack badges, Desktop: Row */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3">
+                <div className="flex items-center gap-1.5">
                   <span className={`w-2 h-2 rounded-full ${
                     agent.status === 'online' ? 'bg-emerald-500 animate-pulse' : 
                     agent.status === 'busy' ? 'bg-amber-500' : 'bg-agora-400'
                   }`} />
-                  <span className="text-sm text-agora-600 capitalize font-medium">{agent.status}</span>
+                  <span className="text-xs sm:text-sm text-agora-600 capitalize font-medium">{agent.status}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amber-500" />
-                  <span className="text-sm text-agora-600 capitalize font-medium">{agent.reputation.tier} tier</span>
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500" />
+                  <span className="text-xs sm:text-sm text-agora-600 capitalize font-medium">{agent.reputation.tier}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-agora-500" />
-                  <span className="text-sm text-agora-600 font-medium">{agent.reputation.score.toFixed(1)} rating</span>
+                <div className="flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-agora-500" />
+                  <span className="text-xs sm:text-sm text-agora-600 font-medium">{agent.reputation.score.toFixed(1)}</span>
                 </div>
               </div>
             </div>
           </div>
         </motion.div>
 
-        {/* Tab Navigation */}
+        {/* Tab Navigation - Mobile Optimized */}
         <motion.div 
-          className="bg-white rounded-2xl p-1 border border-agora-100 shadow-sm mb-4"
+          className="bg-white rounded-2xl p-1.5 border border-agora-100 shadow-sm mb-4"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.1 }}
         >
-          <div className="grid grid-cols-5 gap-1">
+          {/* Desktop: Grid layout */}
+          <div className="hidden sm:grid sm:grid-cols-6 sm:gap-1">
             {tabs.map((tab) => {
               const Icon = tab.icon
               const isActive = activeTab === tab.id
@@ -821,7 +846,7 @@ export function AgentProfile() {
                 <motion.button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-all relative ${
+                  className={`flex flex-col items-center justify-center py-2.5 px-2 rounded-xl transition-all relative min-h-[60px] ${
                     isActive 
                       ? 'bg-gradient-to-r from-agora-900 to-agora-800 text-white shadow-lg' 
                       : 'text-agora-500 hover:bg-agora-50 hover:text-agora-700'
@@ -829,8 +854,8 @@ export function AgentProfile() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
-                  <Icon className="w-4 h-4 mb-1" />
-                  <span className="text-[10px] font-medium">{tab.label}</span>
+                  <Icon className="w-5 h-5 mb-1" />
+                  <span className="text-xs font-medium">{tab.label}</span>
                   {isActive && (
                     <motion.div
                       className="absolute inset-0 rounded-xl bg-white/10"
@@ -842,6 +867,40 @@ export function AgentProfile() {
                 </motion.button>
               )
             })}
+          </div>
+          
+          {/* Mobile: Horizontal scroll */}
+          <div className="sm:hidden overflow-x-auto scrollbar-hide -mx-1 px-1">
+            <div className="flex gap-1.5 min-w-max">
+              {tabs.map((tab) => {
+                const Icon = tab.icon
+                const isActive = activeTab === tab.id
+                return (
+                  <motion.button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex flex-col items-center justify-center py-2.5 px-3 rounded-xl transition-all relative min-w-[72px] min-h-[64px] ${
+                      isActive 
+                        ? 'bg-gradient-to-r from-agora-900 to-agora-800 text-white shadow-lg' 
+                        : 'text-agora-500 hover:bg-agora-50 hover:text-agora-700'
+                    }`}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <Icon className="w-5 h-5 mb-1.5" />
+                    <span className="text-[11px] font-medium whitespace-nowrap">{tab.shortLabel}</span>
+                    {isActive && (
+                      <motion.div
+                        className="absolute inset-0 rounded-xl bg-white/10"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ duration: 0.2 }}
+                      />
+                    )}
+                  </motion.button>
+                )
+              })}
+            </div>
           </div>
         </motion.div>
 
@@ -856,6 +915,7 @@ export function AgentProfile() {
             transition={{ duration: 0.2 }}
           >
             {activeTab === 'overview' && renderOverview()}
+            {activeTab === 'analytics' && renderAnalytics()}
             {activeTab === 'economics' && renderEconomics()}
             {activeTab === 'capabilities' && renderCapabilities()}
             {activeTab === 'achievements' && renderAchievements()}

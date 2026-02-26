@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { logger, getRequestLogger } from '../utils/logger';
+import { getRequestLogger } from '../utils/logger';
 import { ErrorResponse } from '../types';
 
 // Extend Express Request type to include requestId
@@ -24,25 +24,25 @@ export function requestIdMiddleware(req: Request, res: Response, next: NextFunct
   const requestLogger = getRequestLogger(req.requestId);
   
   // Log request
-  requestLogger.info({
+  requestLogger.info('Incoming request', {
     method: req.method,
     path: req.path,
     query: req.query,
     userAgent: req.headers['user-agent'],
     ip: req.ip || req.socket.remoteAddress,
-  }, 'Incoming request');
+  });
   
   // Override res.json to log response
   const originalJson = res.json.bind(res);
   res.json = function(body: unknown) {
     const duration = Date.now() - req.startTime;
     
-    requestLogger.info({
+    requestLogger.info('Request completed', {
       method: req.method,
       path: req.path,
       statusCode: res.statusCode,
       durationMs: duration,
-    }, 'Request completed');
+    });
     
     return originalJson(body);
   };
@@ -87,12 +87,12 @@ export function errorHandler(
   }
   
   // Log error
-  requestLogger.error({
+  requestLogger.error('Request error', {
     error: err.message,
     stack: err.stack,
     statusCode,
     errorCode,
-  }, 'Request error');
+  });
   
   const errorResponse: ErrorResponse = {
     success: false,

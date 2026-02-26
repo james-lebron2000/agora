@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { authService } from '../services/auth';
-import { apiKeyAuthMiddleware, jwtAuthMiddleware } from '../middleware/auth';
+import { jwtAuthMiddleware } from '../middleware/auth';
 import { ValidationError } from '../middleware/errorHandler';
 import { SuccessResponse } from '../types';
 
@@ -10,10 +10,6 @@ const router = Router();
 // Validation schemas
 const tokenRequestSchema = z.object({
   apiKey: z.string().min(1, 'API key is required'),
-});
-
-const refreshTokenSchema = z.object({
-  refreshToken: z.string().min(1, 'Refresh token is required'),
 });
 
 /**

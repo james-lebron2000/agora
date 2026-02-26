@@ -1,0 +1,38 @@
+project: stock_stalker
+type: AUTOMATION
+priority: P2
+description: 创建定时任务配置和系统状态看板
+details: |
+  新增自动化工具:
+  1. crontab.config - 定时任务配置模板
+     - 每30分钟监控服务器
+     - 每天3点自动备份
+     - 每周清理旧日志
+     - 每周系统报告
+  
+  2. install_cron.sh - 定时任务安装脚本
+     - 一键安装所有定时任务
+     - 避免重复安装检查
+     - 显示安装状态
+  
+  3. status.sh - 系统状态看板
+     - 本地项目状态（代码统计）
+     - 测试状态
+     - 数据库状态
+     - 观察列表
+     - Treatbot服务器状态
+     - 定时任务状态
+     - 备份状态
+     - 系统资源
+     
+  看板运行结果:
+  - 服务器运行10小时+ ✅
+  - 所有Docker容器健康 ✅
+  - API健康检查通过 ✅
+  - 3只股票在观察列表
+  
+  文件:
+  - crontab.config
+  - install_cron.sh
+  - status.sh
+completed_at: $(date -Iseconds)

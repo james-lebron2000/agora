@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config';
 import { redisService } from './redis';
-import { ApiKey, AuthenticatedRequest } from '../types';
+import { ApiKey } from '../types';
 import { logger } from '../utils/logger';
 
 // In-memory store for demo (replace with database in production)
@@ -65,11 +65,12 @@ class AuthService {
       tier: apiKey.tier,
       permissions: apiKey.permissions,
       jti,
+      iat: Math.floor(Date.now() / 1000),
     };
 
     const token = jwt.sign(payload, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
-    });
+    } as jwt.SignOptions);
 
     // Store session in Redis
     const ttl = this.parseExpiryToSeconds(config.jwt.expiresIn);

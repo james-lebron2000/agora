@@ -25,7 +25,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAgents } from '../hooks/useApi';
 import { useTasks } from '../hooks/useApi';
 import { useWalletStore } from '../store/walletStore';
-import { useIsOffline } from '../hooks/useNetwork.tsx';
+import { useIsOffline } from '../hooks/useNetwork';
 import { SurvivalMonitor, PerformanceMonitor } from '../components';
 import { createTheme } from '../constants/theme';
 import type { RootStackParamList, MainTabParamList, Agent, Task } from '../types/navigation';

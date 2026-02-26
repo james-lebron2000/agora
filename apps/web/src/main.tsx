@@ -2,9 +2,11 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@rainbow-me/rainbowkit/styles.css'
 import './index.css'
+import './styles/globals.css'
 import App from './App.tsx'
 import { initPerformanceMonitoring } from './utils/performance'
 import { registerSW } from 'virtual:pwa-register'
+import { ProfileThemeProvider } from './contexts/ProfileThemeContext'
 
 // Initialize performance monitoring
 initPerformanceMonitoring()
@@ -38,6 +40,8 @@ registerSW({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ProfileThemeProvider>
+      <App />
+    </ProfileThemeProvider>
   </StrictMode>,
 )

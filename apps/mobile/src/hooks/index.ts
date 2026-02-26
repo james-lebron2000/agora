@@ -5,21 +5,22 @@ export {
   useTasks, 
   useTask,
   useWalletBalance,
-  useAgentAnalytics,
-  useLeaderboard,
-  type UseAgentsOptions,
-  type UseTasksOptions,
-  type UseLeaderboardOptions,
+  useBridge,
+  useApiHealth,
+  useProfileApi,
+  updateProfile,
+  uploadAvatar,
+  getUserStats,
+  type UserProfile,
+  type UserStats,
+  type UserAchievement,
+  type UserStatsPoint,
 } from './useApi';
 
-// Bridge & SDK Hooks
+// Survival Hooks
 export {
-  useBridge,
-  useWalletConnection,
-  type BridgeTransaction,
-  type BridgeStatus,
-  type BridgeError,
-} from './useBridge';
+  useSurvival,
+} from './useSurvival';
 
 // Network Hooks
 export {
@@ -46,37 +47,24 @@ export {
 // Push Notifications
 export {
   usePushNotifications,
-  type PushNotificationPermission,
 } from './usePushNotifications';
 
 // Profile Hooks
 export {
   useProfile,
-  useAgentProfile,
-  useProfileStats,
-  type UseProfileOptions,
+  useMyProfile,
+  useProfileSearch,
+  useLeaderboard,
 } from './useProfile';
 
 // SDK Hooks
 export {
   useSDK,
-  useSDKInitialization,
-  useContractRead,
-  useContractWrite,
-  useTokenBalance,
-  type SDKConfig,
-  type SDKState,
+  useSurvivalSDK,
+  useBridgeSDK,
+  type AgentStatus,
+  type AgentTier,
 } from './useSDK';
-
-// Survival Hooks
-export {
-  useSurvival,
-  useAgentSurvival,
-  useSurvivalHistory,
-  type SurvivalStatus,
-  type SurvivalEvent,
-  type SurvivalMetrics,
-} from './useSurvival';
 
 // Cache Hooks
 export {
