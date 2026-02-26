@@ -61,6 +61,14 @@ export const config: GatewayConfig = {
       healthCheckPath: '/health',
     },
   },
+  
+  notifications: {
+    expoAccessToken: process.env.EXPO_ACCESS_TOKEN || '',
+    queuePrefix: process.env.NOTIFICATION_QUEUE_PREFIX || 'notification:queue',
+    batchSize: parseIntEnv(process.env.NOTIFICATION_BATCH_SIZE, 100),
+    maxRetries: parseIntEnv(process.env.NOTIFICATION_MAX_RETRIES, 3),
+    retryDelayMs: parseIntEnv(process.env.NOTIFICATION_RETRY_DELAY_MS, 5000),
+  },
 };
 
 export default config;
