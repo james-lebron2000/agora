@@ -428,7 +428,12 @@ export function useAchievements(agentId: string): UseAchievementsResult {
       setAchievements(data);
     } catch (err) {
       // Fallback to default achievements on error
-      setAchievements(getDefaultAchievements());
+      const defaults = getDefaultAchievements().map(a => ({
+        ...a,
+        unlocked: false,
+        progress: 0,
+      }));
+      setAchievements(defaults);
       setError(err instanceof Error ? err : new Error('Failed to fetch achievements'));
     } finally {
       setIsLoading(false);
@@ -624,7 +629,7 @@ export function useSearchProfiles(options: UseSearchProfilesOptions): UseSearchP
 // Hook: useLeaderboard
 // ============================================================================
 
-export type LeaderboardCategory = 'reputation' | 'earnings' | 'tasks' | 'level';
+export type LeaderboardCategory = 'reputation' | 'earnings' | 'tasks';
 
 export interface UseLeaderboardOptions {
   /** Leaderboard category */

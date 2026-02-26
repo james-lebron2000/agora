@@ -88,13 +88,14 @@ export interface E2EEConfig {
 }
 
 /** E2EE Manager events */
-export type E2EEEventType = 
+export type E2EEEventType =
   | 'session:created'
   | 'session:expired'
   | 'session:rotated'
   | 'message:encrypted'
   | 'message:decrypted'
-  | 'error';
+  | 'error'
+  | '*';
 
 export interface E2EEEvent {
   type: E2EEEventType;

@@ -1,5 +1,8 @@
 import { Envelope, EnvelopeBuilder, MessageType, Sender } from './envelope.js';
 
+// Re-export types from envelope.js for convenience
+export type { Sender, MessageType, Envelope };
+
 export interface RequestPayload {
   request_id: string;
   intent: string;

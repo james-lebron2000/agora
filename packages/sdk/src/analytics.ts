@@ -58,6 +58,7 @@ export interface MetricValue {
   timestamp: number;
   description?: string;
   unit?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TimeSeriesData {
