@@ -492,3 +492,11 @@ export {
   type MetricStats,
   type MetricReport,
 } from './performance-monitor.js';
+
+// DateTime Formatter utilities (v1.0) - Internationalized date/time formatting
+export {
+  formatDate,
+  formatTime,
+  formatDuration,
+  timeAgo,
+} from './utils/formatters.js';
