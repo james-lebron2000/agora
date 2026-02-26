@@ -292,4 +292,206 @@ export function getGlobalPredictor() {
     return globalPredictor;
 }
 export default SurvivalPredictor;
+/**
+ * Calculate multi-factor risk score based on economic, reputation,
+ * task performance, and engagement metrics.
+ *
+ * @param input - Risk factor inputs
+ * @returns Risk score (0-100, higher = more risk)
+ */
+export function calculateMultiFactorRiskScore(input) {
+    const { economicHealth, reputationScore, taskSuccessRate, onlineHours, volatilityFactor = 0.5, networkDiversity = 50, } = input;
+    // Normalize inputs to 0-100 scale
+    const normalizedTaskSuccess = Math.max(0, Math.min(100, taskSuccessRate * 100));
+    const normalizedOnlineHours = Math.max(0, Math.min(100, onlineHours * 4)); // 25 hours = max
+    // Calculate individual risk components (inverse of health metrics)
+    const economicRisk = Math.max(0, Math.min(100, 100 - economicHealth));
+    const reputationRisk = Math.max(0, Math.min(100, 100 - reputationScore));
+    const taskRisk = Math.max(0, Math.min(100, 100 - normalizedTaskSuccess));
+    const engagementRisk = Math.max(0, Math.min(100, 100 - normalizedOnlineHours));
+    const volatilityRisk = volatilityFactor * 100;
+    const networkRisk = Math.max(0, Math.min(100, 100 - networkDiversity));
+    // Weighted risk calculation
+    const weights = {
+        economic: 0.30,
+        reputation: 0.25,
+        tasks: 0.20,
+        engagement: 0.10,
+        volatility: 0.10,
+        network: 0.05,
+    };
+    const weightedRisk = economicRisk * weights.economic +
+        reputationRisk * weights.reputation +
+        taskRisk * weights.tasks +
+        engagementRisk * weights.engagement +
+        volatilityRisk * weights.volatility +
+        networkRisk * weights.network;
+    // Apply non-linear scaling to emphasize high-risk scenarios
+    const finalRisk = Math.min(100, weightedRisk * (1 + weightedRisk / 200));
+    return Math.round(finalRisk);
+}
+/**
+ * Predict survival probability based on risk score.
+ *
+ * Uses exponential decay model where higher risk scores
+ * result in lower survival probabilities over time.
+ *
+ * @param riskScore - Risk score (0-100)
+ * @returns Survival probability for 7 and 30 days
+ */
+export function predictSurvivalProbability(riskScore) {
+    // Normalize risk score to 0-1
+    const normalizedRisk = Math.max(0, Math.min(100, riskScore)) / 100;
+    // Exponential decay parameters
+    // Low risk (< 30): high survival probability
+    // Medium risk (30-60): declining probability
+    // High risk (> 60): rapid decline
+    const baseDecayRate = 0.02; // 2% daily baseline decay
+    const riskMultiplier = normalizedRisk * 2; // Risk amplifies decay
+    const dailyDecay = baseDecayRate + riskMultiplier * 0.05;
+    // Calculate survival probabilities
+    const days7Prob = Math.exp(-dailyDecay * 7);
+    const days30Prob = Math.exp(-dailyDecay * 30);
+    // Calculate confidence based on risk score reliability
+    // Medium risk has higher uncertainty
+    const confidence = normalizedRisk < 0.2 || normalizedRisk > 0.8 ? 0.85 : 0.70;
+    return {
+        days7: Math.round(days7Prob * 100) / 100,
+        days30: Math.round(days30Prob * 100) / 100,
+        confidence,
+    };
+}
+/**
+ * Generate a list of risk factors based on input metrics.
+ *
+ * Identifies specific risk sources and provides actionable
+ * recommendations for each identified risk.
+ *
+ * @param input - Risk factor inputs
+ * @returns Array of identified risk factors
+ */
+export function generateRiskFactors(input) {
+    const factors = [];
+    const { economicHealth, reputationScore, taskSuccessRate, onlineHours, volatilityFactor = 0.5, networkDiversity = 50, } = input;
+    // Economic risk factors
+    if (economicHealth < 30) {
+        factors.push({
+            id: 'economic-critical',
+            name: 'Critical Economic Health',
+            severity: 'critical',
+            score: 100 - economicHealth,
+            description: 'Economic health is critically low, indicating severe sustainability issues.',
+            recommendation: 'Immediate action required: reduce burn rate, seek additional funding, or increase revenue.',
+        });
+    }
+    else if (economicHealth < 50) {
+        factors.push({
+            id: 'economic-warning',
+            name: 'Low Economic Health',
+            severity: 'high',
+            score: 100 - economicHealth,
+            description: 'Economic health is below sustainable levels.',
+            recommendation: 'Review expenses and optimize resource allocation to improve runway.',
+        });
+    }
+    else if (economicHealth < 70) {
+        factors.push({
+            id: 'economic-watch',
+            name: 'Moderate Economic Risk',
+            severity: 'medium',
+            score: 100 - economicHealth,
+            description: 'Economic health shows signs of strain.',
+            recommendation: 'Monitor cash flow closely and prepare contingency plans.',
+        });
+    }
+    // Reputation risk factors
+    if (reputationScore < 40) {
+        factors.push({
+            id: 'reputation-critical',
+            name: 'Damaged Reputation',
+            severity: 'high',
+            score: 100 - reputationScore,
+            description: 'Reputation score is critically low, affecting trust and opportunities.',
+            recommendation: 'Engage in reputation recovery: deliver quality work, communicate transparently.',
+        });
+    }
+    else if (reputationScore < 60) {
+        factors.push({
+            id: 'reputation-warning',
+            name: 'Declining Reputation',
+            severity: 'medium',
+            score: 100 - reputationScore,
+            description: 'Reputation shows concerning decline.',
+            recommendation: 'Focus on consistent delivery and community engagement.',
+        });
+    }
+    // Task performance risk factors
+    if (taskSuccessRate < 0.5) {
+        factors.push({
+            id: 'task-failure',
+            name: 'Low Task Success Rate',
+            severity: 'high',
+            score: (1 - taskSuccessRate) * 100,
+            description: `Task success rate of ${(taskSuccessRate * 100).toFixed(1)}% is below acceptable threshold.`,
+            recommendation: 'Analyze failed tasks for patterns, improve skills or tools, adjust task selection.',
+        });
+    }
+    else if (taskSuccessRate < 0.75) {
+        factors.push({
+            id: 'task-warning',
+            name: 'Suboptimal Task Performance',
+            severity: 'medium',
+            score: (1 - taskSuccessRate) * 100,
+            description: `Task success rate of ${(taskSuccessRate * 100).toFixed(1)}% has room for improvement.`,
+            recommendation: 'Review task acceptance criteria and focus on higher-confidence opportunities.',
+        });
+    }
+    // Engagement risk factors
+    if (onlineHours < 2) {
+        factors.push({
+            id: 'engagement-critical',
+            name: 'Critical Low Engagement',
+            severity: 'high',
+            score: 100 - onlineHours * 20,
+            description: 'Very low online presence reduces visibility and opportunity capture.',
+            recommendation: 'Increase online presence to remain competitive and visible to clients.',
+        });
+    }
+    else if (onlineHours < 6) {
+        factors.push({
+            id: 'engagement-warning',
+            name: 'Low Engagement',
+            severity: 'medium',
+            score: 100 - onlineHours * 10,
+            description: 'Limited online hours may miss key opportunities.',
+            recommendation: 'Consider increasing availability during peak hours.',
+        });
+    }
+    // Volatility risk
+    if (volatilityFactor > 0.7) {
+        factors.push({
+            id: 'volatility-high',
+            name: 'High Performance Volatility',
+            severity: 'medium',
+            score: volatilityFactor * 100,
+            description: 'Unstable performance patterns indicate inconsistent delivery.',
+            recommendation: 'Identify root causes of volatility and establish stabilization processes.',
+        });
+    }
+    // Network diversity risk
+    if (networkDiversity < 30) {
+        factors.push({
+            id: 'network-concentrated',
+            name: 'Network Concentration Risk',
+            severity: 'medium',
+            score: 100 - networkDiversity,
+            description: 'Over-reliance on limited network connections increases vulnerability.',
+            recommendation: 'Diversify network connections and reduce single points of failure.',
+        });
+    }
+    // Sort by severity (critical > high > medium > low)
+    const severityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+    factors.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+    return factors;
+}
 //# sourceMappingURL=survival-prediction.js.map

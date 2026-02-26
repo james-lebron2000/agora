@@ -410,6 +410,252 @@ export interface UseProfileCacheResult {
  * ```
  */
 export declare function useProfileCache(): UseProfileCacheResult;
+export interface UseProfileRealtimeOptions {
+    /** Agent ID to watch */
+    agentId: string;
+    /** WebSocket URL (optional, defaults to API URL with ws://) */
+    wsUrl?: string;
+    /** Auto-reconnect on disconnect (default: true) */
+    autoReconnect?: boolean;
+    /** Reconnect delay in ms (default: 5000) */
+    reconnectDelay?: number;
+}
+export interface UseProfileRealtimeResult {
+    /** Real-time profile data */
+    profile: AgentProfile | null;
+    /** Connection status */
+    isConnected: boolean;
+    /** Loading state */
+    isLoading: boolean;
+    /** Error if any */
+    error: Error | null;
+    /** Last update timestamp */
+    lastUpdateAt: number | null;
+    /** Manual reconnect function */
+    reconnect: () => void;
+    /** Disconnect function */
+    disconnect: () => void;
+}
+/**
+ * Hook to subscribe to real-time profile updates via WebSocket
+ *
+ * @example
+ * ```tsx
+ * const { profile, isConnected } = useProfileRealtime({ agentId: 'agent-123' });
+ *
+ * return (
+ *   <div>
+ *     <ConnectionStatus connected={isConnected} />
+ *     <ProfileCard profile={profile} />
+ *   </div>
+ * );
+ * ```
+ */
+export declare function useProfileRealtime(options: UseProfileRealtimeOptions): UseProfileRealtimeResult;
+export interface UseAchievementProgressOptions {
+    /** Agent ID */
+    agentId: string;
+    /** Polling interval in ms (default: 10000) */
+    pollInterval?: number;
+}
+export interface UseAchievementProgressResult {
+    /** All achievements with progress */
+    achievements: Achievement[];
+    /** Recently unlocked achievements */
+    recentlyUnlocked: Achievement[];
+    /** Loading state */
+    isLoading: boolean;
+    /** Error if any */
+    error: Error | null;
+    /** Total XP from unlocked achievements */
+    totalXpEarned: number;
+    /** Refetch function */
+    refetch: () => Promise<void>;
+    /** Acknowledge an achievement (mark as seen) */
+    acknowledge: (achievementId: string) => void;
+}
+/**
+ * Hook to track achievement progress with notifications for new unlocks
+ *
+ * @example
+ * ```tsx
+ * const { achievements, recentlyUnlocked, acknowledge } = useAchievementProgress({
+ *   agentId: 'agent-123'
+ * });
+ *
+ * useEffect(() => {
+ *   if (recentlyUnlocked.length > 0) {
+ *     toast.success(`Unlocked: ${recentlyUnlocked[0].name}!`);
+ *     acknowledge(recentlyUnlocked[0].id);
+ *   }
+ * }, [recentlyUnlocked]);
+ * ```
+ */
+export declare function useAchievementProgress(options: UseAchievementProgressOptions): UseAchievementProgressResult;
+export interface UseProfileSearchFilters {
+    /** Minimum reputation score */
+    minReputation?: number;
+    /** Minimum level */
+    minLevel?: number;
+    /** Required skills */
+    skills?: string[];
+    /** Skill match mode */
+    skillMatchMode?: 'all' | 'any';
+    /** Verification status */
+    isVerified?: boolean;
+    /** Premium status */
+    isPremium?: boolean;
+    /** Member since (timestamp) */
+    memberSinceAfter?: number;
+    /** Maximum tasks completed */
+    maxTasks?: number;
+    /** Minimum tasks completed */
+    minTasks?: number;
+}
+export interface UseProfileSearchOptions {
+    /** Search query */
+    query: string;
+    /** Filters */
+    filters?: UseProfileSearchFilters;
+    /** Sort field */
+    sortBy?: 'reputation' | 'level' | 'tasksCompleted' | 'memberSince' | 'relevance';
+    /** Sort direction */
+    sortOrder?: 'asc' | 'desc';
+    /** Results limit (default: 20) */
+    limit?: number;
+    /** Debounce delay in ms (default: 300) */
+    debounceMs?: number;
+    /** Enabled state */
+    enabled?: boolean;
+}
+export interface UseProfileSearchResult {
+    /** Search results */
+    results: AgentProfile[];
+    /** Total count (before limit) */
+    totalCount: number;
+    /** Loading state */
+    isLoading: boolean;
+    /** Error if any */
+    error: Error | null;
+    /** Whether search is active */
+    hasQuery: boolean;
+    /** Current page */
+    page: number;
+    /** Set page */
+    setPage: (page: number) => void;
+    /** Total pages */
+    totalPages: number;
+    /** Update filters */
+    setFilters: (filters: UseProfileSearchFilters) => void;
+}
+/**
+ * Hook to search profiles with advanced filtering and sorting
+ *
+ * @example
+ * ```tsx
+ * const { results, isLoading, setFilters } = useProfileSearch({
+ *   query: 'developer',
+ *   filters: { minReputation: 70, skills: ['react', 'typescript'] },
+ *   sortBy: 'reputation',
+ *   sortOrder: 'desc'
+ * });
+ * ```
+ */
+export declare function useProfileSearch(options: UseProfileSearchOptions): UseProfileSearchResult;
+export interface UseProfileComparisonResult {
+    /** Profiles being compared */
+    profiles: AgentProfile[];
+    /** Comparison metrics */
+    metrics: {
+        /** Best performer per metric */
+        best: Record<string, string>;
+        /** Percentage differences */
+        differences: Record<string, Record<string, number>>;
+        /** Rankings per metric */
+        rankings: Record<string, string[]>;
+    };
+    /** Loading state */
+    isLoading: boolean;
+    /** Error if any */
+    error: Error | null;
+    /** Add profile to comparison */
+    addProfile: (agentId: string) => void;
+    /** Remove profile from comparison */
+    removeProfile: (agentId: string) => void;
+    /** Clear all profiles */
+    clearProfiles: () => void;
+}
+/**
+ * Hook to compare multiple agent profiles side by side
+ *
+ * @example
+ * ```tsx
+ * const { profiles, metrics, addProfile, removeProfile } = useProfileComparison();
+ *
+ * return (
+ *   <ComparisonTable
+ *     profiles={profiles}
+ *     metrics={metrics}
+ *     onRemove={removeProfile}
+ *   />
+ * );
+ * ```
+ */
+export declare function useProfileComparison(): UseProfileComparisonResult;
+export interface UseProfileRecommendationsOptions {
+    /** Agent ID to base recommendations on (defaults to current user) */
+    agentId?: string;
+    /** Number of recommendations (default: 5) */
+    limit?: number;
+    /** Recommendation type */
+    type?: 'similar' | 'complementary' | 'trending';
+    /** Include skills filter */
+    skills?: string[];
+}
+export interface ProfileRecommendation {
+    /** Recommended profile */
+    profile: AgentProfile;
+    /** Recommendation score (0-100) */
+    score: number;
+    /** Reason for recommendation */
+    reason: string;
+    /** Common skills */
+    commonSkills: string[];
+    /** Similarity factors */
+    factors: {
+        skillMatch: number;
+        reputationSimilarity: number;
+        activitySimilarity: number;
+    };
+}
+export interface UseProfileRecommendationsResult {
+    /** Recommendations list */
+    recommendations: ProfileRecommendation[];
+    /** Loading state */
+    isLoading: boolean;
+    /** Error if any */
+    error: Error | null;
+    /** Refetch function */
+    refetch: () => Promise<void>;
+    /** Refresh recommendations (clears cache) */
+    refresh: () => Promise<void>;
+}
+/**
+ * Hook to get agent profile recommendations
+ *
+ * @example
+ * ```tsx
+ * const { recommendations } = useProfileRecommendations({
+ *   limit: 10,
+ *   type: 'similar'
+ * });
+ *
+ * return (
+ *   <RecommendationList items={recommendations} />
+ * );
+ * ```
+ */
+export declare function useProfileRecommendations(options?: UseProfileRecommendationsOptions): UseProfileRecommendationsResult;
 export { calculateLevel, xpForNextLevel, levelProgress, getTierColor, getDefaultAchievements, type AgentProfile, type Achievement, type ProfileStats, type UpdateProfileRequest, type ReputationHistoryEntry, type ProfileCompleteness, type AvatarUploadResult, };
 declare const _default: {
     useProfile: typeof useProfile;
@@ -425,6 +671,11 @@ declare const _default: {
     useLevelProgress: typeof useLevelProgress;
     useBatchProfiles: typeof useBatchProfiles;
     useProfileCache: typeof useProfileCache;
+    useProfileRealtime: typeof useProfileRealtime;
+    useAchievementProgress: typeof useAchievementProgress;
+    useProfileSearch: typeof useProfileSearch;
+    useProfileComparison: typeof useProfileComparison;
+    useProfileRecommendations: typeof useProfileRecommendations;
     initializeProfileManager: typeof initializeProfileManager;
     setGlobalAuthToken: typeof setGlobalAuthToken;
     getGlobalAuthToken: typeof getGlobalAuthToken;

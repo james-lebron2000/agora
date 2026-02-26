@@ -659,6 +659,495 @@ export function useProfileCache() {
     const clear = useCallback(() => cache.clear(), [cache]);
     return { get, set, has, invalidate, clear };
 }
+/**
+ * Hook to subscribe to real-time profile updates via WebSocket
+ *
+ * @example
+ * ```tsx
+ * const { profile, isConnected } = useProfileRealtime({ agentId: 'agent-123' });
+ *
+ * return (
+ *   <div>
+ *     <ConnectionStatus connected={isConnected} />
+ *     <ProfileCard profile={profile} />
+ *   </div>
+ * );
+ * ```
+ */
+export function useProfileRealtime(options) {
+    const { agentId, wsUrl, autoReconnect = true, reconnectDelay = 5000 } = options;
+    const [profile, setProfile] = useState(null);
+    const [isConnected, setIsConnected] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [lastUpdateAt, setLastUpdateAt] = useState(null);
+    const wsRef = useRef(null);
+    const reconnectTimeoutRef = useRef(null);
+    const connect = useCallback(() => {
+        if (!agentId)
+            return;
+        try {
+            const url = wsUrl || globalApiUrl.replace(/^http/, 'ws');
+            const ws = new WebSocket(`${url}/profiles/${agentId}/realtime`);
+            ws.onopen = () => {
+                setIsConnected(true);
+                setError(null);
+                setIsLoading(false);
+            };
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'profile_update' && data.profile) {
+                        setProfile(data.profile);
+                        setLastUpdateAt(Date.now());
+                        // Cache to localStorage
+                        saveProfileToLocalStorage(data.profile);
+                    }
+                }
+                catch (err) {
+                    console.error('Failed to parse WebSocket message:', err);
+                }
+            };
+            ws.onerror = (err) => {
+                setError(new Error('WebSocket connection error'));
+                setIsConnected(false);
+            };
+            ws.onclose = () => {
+                setIsConnected(false);
+                if (autoReconnect) {
+                    reconnectTimeoutRef.current = setTimeout(connect, reconnectDelay);
+                }
+            };
+            wsRef.current = ws;
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error('Failed to connect'));
+            setIsLoading(false);
+        }
+    }, [agentId, wsUrl, autoReconnect, reconnectDelay]);
+    const disconnect = useCallback(() => {
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+        }
+        if (wsRef.current) {
+            wsRef.current.close();
+        }
+    }, []);
+    const reconnect = useCallback(() => {
+        disconnect();
+        setIsLoading(true);
+        connect();
+    }, [disconnect, connect]);
+    useEffect(() => {
+        // Load initial data from cache
+        const cached = loadProfileFromLocalStorage(agentId);
+        if (cached) {
+            setProfile(cached);
+            setIsLoading(false);
+        }
+        connect();
+        return () => {
+            disconnect();
+        };
+    }, [agentId, connect, disconnect]);
+    return { profile, isConnected, isLoading, error, lastUpdateAt, reconnect, disconnect };
+}
+/**
+ * Hook to track achievement progress with notifications for new unlocks
+ *
+ * @example
+ * ```tsx
+ * const { achievements, recentlyUnlocked, acknowledge } = useAchievementProgress({
+ *   agentId: 'agent-123'
+ * });
+ *
+ * useEffect(() => {
+ *   if (recentlyUnlocked.length > 0) {
+ *     toast.success(`Unlocked: ${recentlyUnlocked[0].name}!`);
+ *     acknowledge(recentlyUnlocked[0].id);
+ *   }
+ * }, [recentlyUnlocked]);
+ * ```
+ */
+export function useAchievementProgress(options) {
+    const { agentId, pollInterval = 10000 } = options;
+    const [achievements, setAchievements] = useState([]);
+    const [seenUnlocks, setSeenUnlocks] = useState(new Set());
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const lastFetchRef = useRef([]);
+    const fetchAchievements = useCallback(async () => {
+        if (!agentId)
+            return;
+        try {
+            const manager = getGlobalManager();
+            const data = await manager.getAchievements(agentId);
+            // Detect newly unlocked achievements
+            const previouslyUnlocked = new Set(lastFetchRef.current.filter(a => a.unlockedAt || a.completedAt).map(a => a.id));
+            lastFetchRef.current = data;
+            setAchievements(data);
+            setIsLoading(false);
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error('Failed to fetch achievements'));
+            setIsLoading(false);
+        }
+    }, [agentId]);
+    useEffect(() => {
+        fetchAchievements();
+        const interval = setInterval(fetchAchievements, pollInterval);
+        return () => clearInterval(interval);
+    }, [fetchAchievements, pollInterval]);
+    const recentlyUnlocked = useMemo(() => {
+        return achievements.filter(a => (a.unlockedAt || a.completedAt) && !seenUnlocks.has(a.id));
+    }, [achievements, seenUnlocks]);
+    const totalXpEarned = useMemo(() => {
+        return achievements
+            .filter(a => a.unlockedAt || a.completedAt)
+            .reduce((sum, a) => sum + (a.xpReward || 0), 0);
+    }, [achievements]);
+    const acknowledge = useCallback((achievementId) => {
+        setSeenUnlocks(prev => new Set([...prev, achievementId]));
+    }, []);
+    return {
+        achievements,
+        recentlyUnlocked,
+        isLoading,
+        error,
+        totalXpEarned,
+        refetch: fetchAchievements,
+        acknowledge,
+    };
+}
+/**
+ * Hook to search profiles with advanced filtering and sorting
+ *
+ * @example
+ * ```tsx
+ * const { results, isLoading, setFilters } = useProfileSearch({
+ *   query: 'developer',
+ *   filters: { minReputation: 70, skills: ['react', 'typescript'] },
+ *   sortBy: 'reputation',
+ *   sortOrder: 'desc'
+ * });
+ * ```
+ */
+export function useProfileSearch(options) {
+    const { query, filters = {}, sortBy = 'relevance', sortOrder = 'desc', limit = 20, debounceMs = 300, enabled = true } = options;
+    const [results, setResults] = useState([]);
+    const [totalCount, setTotalCount] = useState(0);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [page, setPage] = useState(1);
+    const [activeFilters, setActiveFilters] = useState(filters);
+    const timeoutRef = useRef(null);
+    const search = useCallback(async () => {
+        if (!enabled || (!query.trim() && Object.keys(activeFilters).length === 0)) {
+            setResults([]);
+            setTotalCount(0);
+            return;
+        }
+        try {
+            setIsLoading(true);
+            setError(null);
+            const manager = getGlobalManager();
+            const offset = (page - 1) * limit;
+            // Use the manager's searchProfiles with additional filtering
+            const searchResults = await manager.searchProfiles(query, limit * 5);
+            // Apply client-side filtering
+            let filtered = searchResults.filter(profile => {
+                if (activeFilters.minReputation !== undefined && profile.reputation < activeFilters.minReputation)
+                    return false;
+                if (activeFilters.minLevel !== undefined && profile.level < activeFilters.minLevel)
+                    return false;
+                if (activeFilters.isVerified !== undefined && profile.isVerified !== activeFilters.isVerified)
+                    return false;
+                if (activeFilters.isPremium !== undefined && profile.isPremium !== activeFilters.isPremium)
+                    return false;
+                if (activeFilters.minTasks !== undefined && profile.tasksCompleted < activeFilters.minTasks)
+                    return false;
+                if (activeFilters.maxTasks !== undefined && profile.tasksCompleted > activeFilters.maxTasks)
+                    return false;
+                if (activeFilters.memberSinceAfter !== undefined && profile.memberSince < activeFilters.memberSinceAfter)
+                    return false;
+                if (activeFilters.skills?.length) {
+                    const profileSkills = profile.skills || [];
+                    const matchMode = activeFilters.skillMatchMode || 'any';
+                    if (matchMode === 'all') {
+                        if (!activeFilters.skills.every(s => profileSkills.includes(s)))
+                            return false;
+                    }
+                    else {
+                        if (!activeFilters.skills.some(s => profileSkills.includes(s)))
+                            return false;
+                    }
+                }
+                return true;
+            });
+            // Apply sorting
+            filtered.sort((a, b) => {
+                let comparison = 0;
+                switch (sortBy) {
+                    case 'reputation':
+                        comparison = a.reputation - b.reputation;
+                        break;
+                    case 'level':
+                        comparison = a.level - b.level;
+                        break;
+                    case 'tasksCompleted':
+                        comparison = a.tasksCompleted - b.tasksCompleted;
+                        break;
+                    case 'memberSince':
+                        comparison = a.memberSince - b.memberSince;
+                        break;
+                    default:
+                        comparison = 0;
+                }
+                return sortOrder === 'desc' ? -comparison : comparison;
+            });
+            setTotalCount(filtered.length);
+            setResults(filtered.slice(offset, offset + limit));
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error('Search failed'));
+        }
+        finally {
+            setIsLoading(false);
+        }
+    }, [query, activeFilters, sortBy, sortOrder, limit, page, enabled]);
+    useEffect(() => {
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+        }
+        timeoutRef.current = setTimeout(search, debounceMs);
+        return () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+            }
+        };
+    }, [search, debounceMs]);
+    const totalPages = Math.ceil(totalCount / limit);
+    return {
+        results,
+        totalCount,
+        isLoading,
+        error,
+        hasQuery: query.trim().length > 0 || Object.keys(activeFilters).length > 0,
+        page,
+        setPage,
+        totalPages,
+        setFilters: setActiveFilters,
+    };
+}
+/**
+ * Hook to compare multiple agent profiles side by side
+ *
+ * @example
+ * ```tsx
+ * const { profiles, metrics, addProfile, removeProfile } = useProfileComparison();
+ *
+ * return (
+ *   <ComparisonTable
+ *     profiles={profiles}
+ *     metrics={metrics}
+ *     onRemove={removeProfile}
+ *   />
+ * );
+ * ```
+ */
+export function useProfileComparison() {
+    const [profileIds, setProfileIds] = useState([]);
+    const [profiles, setProfiles] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const fetchProfiles = useCallback(async () => {
+        if (profileIds.length < 2) {
+            setProfiles([]);
+            return;
+        }
+        try {
+            setIsLoading(true);
+            setError(null);
+            const token = getGlobalAuthToken();
+            const result = await batchGetProfiles(globalApiUrl, profileIds, token || undefined);
+            const fetchedProfiles = profileIds.map(id => result.get(id)).filter(Boolean);
+            setProfiles(fetchedProfiles);
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error('Failed to fetch profiles'));
+        }
+        finally {
+            setIsLoading(false);
+        }
+    }, [profileIds]);
+    useEffect(() => {
+        fetchProfiles();
+    }, [fetchProfiles]);
+    const metrics = useMemo(() => {
+        if (profiles.length < 2) {
+            return { best: {}, differences: {}, rankings: {} };
+        }
+        const metricKeys = ['reputation', 'level', 'tasksCompleted', 'totalEarned'];
+        const best = {};
+        const differences = {};
+        const rankings = {};
+        metricKeys.forEach(key => {
+            const sorted = [...profiles].sort((a, b) => {
+                const valA = key === 'totalEarned' ? parseFloat(a[key] || '0') : a[key] || 0;
+                const valB = key === 'totalEarned' ? parseFloat(b[key] || '0') : b[key] || 0;
+                return valB - valA;
+            });
+            best[key] = sorted[0]?.id || '';
+            rankings[key] = sorted.map(p => p.id);
+            const baseValue = key === 'totalEarned'
+                ? parseFloat(sorted[0]?.[key] || '0')
+                : sorted[0][key] || 0;
+            differences[key] = {};
+            sorted.forEach(p => {
+                const value = key === 'totalEarned' ? parseFloat(p[key] || '0') : p[key] || 0;
+                differences[key][p.id] = baseValue > 0 ? ((value - baseValue) / baseValue) * 100 : 0;
+            });
+        });
+        return { best, differences, rankings };
+    }, [profiles]);
+    const addProfile = useCallback((agentId) => {
+        setProfileIds(prev => {
+            if (prev.includes(agentId))
+                return prev;
+            if (prev.length >= 4)
+                return [...prev.slice(1), agentId]; // Max 4 profiles
+            return [...prev, agentId];
+        });
+    }, []);
+    const removeProfile = useCallback((agentId) => {
+        setProfileIds(prev => prev.filter(id => id !== agentId));
+    }, []);
+    const clearProfiles = useCallback(() => {
+        setProfileIds([]);
+    }, []);
+    return {
+        profiles,
+        metrics,
+        isLoading,
+        error,
+        addProfile,
+        removeProfile,
+        clearProfiles,
+    };
+}
+/**
+ * Hook to get agent profile recommendations
+ *
+ * @example
+ * ```tsx
+ * const { recommendations } = useProfileRecommendations({
+ *   limit: 10,
+ *   type: 'similar'
+ * });
+ *
+ * return (
+ *   <RecommendationList items={recommendations} />
+ * );
+ * ```
+ */
+export function useProfileRecommendations(options = {}) {
+    const { agentId, limit = 5, type = 'similar', skills } = options;
+    const [recommendations, setRecommendations] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const cacheRef = useRef(new Map());
+    const fetchRecommendations = useCallback(async (skipCache = false) => {
+        try {
+            setIsLoading(true);
+            setError(null);
+            const targetAgentId = agentId || 'me';
+            const cacheKey = `${targetAgentId}:${type}:${limit}`;
+            // Check cache
+            if (!skipCache && cacheRef.current.has(cacheKey)) {
+                setRecommendations(cacheRef.current.get(cacheKey));
+                setIsLoading(false);
+                return;
+            }
+            const manager = getGlobalManager();
+            // Get base profile
+            const baseProfile = targetAgentId === 'me'
+                ? await manager.getMyProfile()
+                : await manager.getProfile(targetAgentId);
+            // Search for candidates based on skills
+            const searchQuery = skills?.join(' ') || baseProfile.skills?.slice(0, 3).join(' ') || '';
+            const candidates = await manager.searchProfiles(searchQuery, limit * 3);
+            // Filter out self and calculate scores
+            const scored = candidates
+                .filter(p => p.id !== baseProfile.id)
+                .slice(0, limit * 2)
+                .map(profile => {
+                const baseSkills = new Set(baseProfile.skills || []);
+                const profileSkills = new Set(profile.skills || []);
+                const commonSkills = [...baseSkills].filter(s => profileSkills.has(s));
+                const skillMatch = commonSkills.length / Math.max(baseSkills.size, profileSkills.size, 1);
+                const reputationDiff = Math.abs(baseProfile.reputation - profile.reputation);
+                const reputationSimilarity = Math.max(0, 1 - reputationDiff / 100);
+                const baseActivity = baseProfile.tasksCompleted;
+                const profileActivity = profile.tasksCompleted;
+                const activityDiff = Math.abs(baseActivity - profileActivity);
+                const activitySimilarity = Math.max(0, 1 - activityDiff / Math.max(baseActivity, profileActivity, 1));
+                let score = 0;
+                let reason = '';
+                switch (type) {
+                    case 'similar':
+                        score = (skillMatch * 0.5 + reputationSimilarity * 0.3 + activitySimilarity * 0.2) * 100;
+                        reason = commonSkills.length > 0
+                            ? `Similar skills: ${commonSkills.slice(0, 3).join(', ')}`
+                            : 'Similar activity level';
+                        break;
+                    case 'complementary':
+                        score = ((1 - skillMatch) * 0.5 + reputationSimilarity * 0.3 + activitySimilarity * 0.2) * 100;
+                        reason = 'Complementary skill set';
+                        break;
+                    case 'trending':
+                        score = (profile.reputation + profile.tasksCompleted / 10) / 2;
+                        score = Math.min(100, score);
+                        reason = 'Trending agent this week';
+                        break;
+                }
+                return {
+                    profile,
+                    score,
+                    reason,
+                    commonSkills,
+                    factors: {
+                        skillMatch: skillMatch * 100,
+                        reputationSimilarity: reputationSimilarity * 100,
+                        activitySimilarity: activitySimilarity * 100,
+                    },
+                };
+            });
+            // Sort by score and take top limit
+            const sorted = scored.sort((a, b) => b.score - a.score).slice(0, limit);
+            // Cache results
+            cacheRef.current.set(cacheKey, sorted);
+            setRecommendations(sorted);
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error('Failed to get recommendations'));
+        }
+        finally {
+            setIsLoading(false);
+        }
+    }, [agentId, limit, type, skills]);
+    useEffect(() => {
+        fetchRecommendations();
+    }, [fetchRecommendations]);
+    const refetch = useCallback(() => fetchRecommendations(false), [fetchRecommendations]);
+    const refresh = useCallback(() => fetchRecommendations(true), [fetchRecommendations]);
+    return {
+        recommendations,
+        isLoading,
+        error,
+        refetch,
+        refresh,
+    };
+}
 // ============================================================================
 // Re-exports from profile.js for convenience
 // ============================================================================
@@ -678,6 +1167,11 @@ export default {
     useLevelProgress,
     useBatchProfiles,
     useProfileCache,
+    useProfileRealtime,
+    useAchievementProgress,
+    useProfileSearch,
+    useProfileComparison,
+    useProfileRecommendations,
     initializeProfileManager,
     setGlobalAuthToken,
     getGlobalAuthToken,
