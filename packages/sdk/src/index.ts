@@ -290,3 +290,20 @@ export {
   type ReputationCalcOptions,
   type ReputationUpdateResult,
 } from './reputation.js';
+
+// End-to-End Encryption (E2EE) module (v1.0)
+export {
+  E2EESessionManager,
+  getOrCreateE2EEManager,
+  getE2EEManager,
+  resetE2EEManager,
+  createEncryptedEnvelope,
+  decryptEnvelope,
+  DEFAULT_E2EE_CONFIG,
+  type E2EESession,
+  type EncryptedPayload,
+  type E2EEConfig,
+  type E2EEEvent,
+  type E2EEEventType,
+  type E2EEEventHandler,
+} from './e2ee.js';
