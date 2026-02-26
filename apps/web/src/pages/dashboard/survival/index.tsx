@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Heart, 
@@ -10,99 +10,18 @@ import {
   Battery,
   Clock,
   Zap,
-  Shield,
   AlertTriangle,
-  CheckCircle2,
-  XCircle,
   BarChart3
 } from 'lucide-react'
 import { useWallet } from '../../../hooks/useWallet'
+import { useSurvival } from '../../../hooks/useSurvival'
 import { SurvivalScoreCard } from '../../../components/survival/SurvivalScoreCard'
 import { HealthStatusPanel } from '../../../components/survival/HealthStatusPanel'
 import { EconomicsChart } from '../../../components/survival/EconomicsChart'
 import { RecoveryActions } from '../../../components/survival/RecoveryActions'
 import { SurvivalHistoryChart } from '../../../components/survival/SurvivalHistoryChart'
 
-// Survival data types
-interface SurvivalData {
-  score: number
-  healthScore: number
-  economicsScore: number
-  status: 'healthy' | 'degraded' | 'critical' | 'dead'
-  balance: string
-  runwayDays: number
-  dailyBurnRate: string
-  lastHeartbeat: number
-  recommendations: string[]
-  needsEmergencyFunding: boolean
-}
-
-interface HealthMetrics {
-  status: 'healthy' | 'degraded' | 'critical' | 'dead'
-  lastHeartbeat: number
-  consecutiveFailures: number
-  totalTasksCompleted: number
-  totalTasksFailed: number
-  successRate: number
-  averageResponseTime: number
-}
-
-interface EconomicMetrics {
-  totalEarned: string
-  totalSpent: string
-  currentBalance: string
-  minSurvivalBalance: string
-  dailyBurnRate: string
-  daysOfRunway: number
-}
-
-// Mock data generator for demo
-const generateMockData = (address: string): { survival: SurvivalData; health: HealthMetrics; economics: EconomicMetrics } => {
-  const score = Math.floor(Math.random() * 40) + 60 // 60-100
-  const status = score > 80 ? 'healthy' : score > 50 ? 'degraded' : score > 20 ? 'critical' : 'dead'
-  
-  return {
-    survival: {
-      score,
-      healthScore: Math.floor(Math.random() * 30) + 70,
-      economicsScore: Math.floor(Math.random() * 40) + 50,
-      status,
-      balance: (Math.random() * 1000 + 100).toFixed(2),
-      runwayDays: Math.floor(Math.random() * 60) + 10,
-      dailyBurnRate: (Math.random() * 50 + 5).toFixed(2),
-      lastHeartbeat: Date.now() - Math.floor(Math.random() * 300000),
-      recommendations: score < 70 ? [
-        'Increase task completion rate to improve earnings',
-        'Reduce gas costs by batching operations',
-        'Consider requesting emergency funding'
-      ] : [
-        'Maintain current performance level',
-        'Explore high-value task opportunities',
-        'Build reserve buffer for market volatility'
-      ],
-      needsEmergencyFunding: score < 40
-    },
-    health: {
-      status,
-      lastHeartbeat: Date.now() - Math.floor(Math.random() * 300000),
-      consecutiveFailures: Math.floor(Math.random() * 5),
-      totalTasksCompleted: Math.floor(Math.random() * 1000) + 100,
-      totalTasksFailed: Math.floor(Math.random() * 50),
-      successRate: 0.85 + Math.random() * 0.14,
-      averageResponseTime: Math.floor(Math.random() * 2000) + 500
-    },
-    economics: {
-      totalEarned: (Math.random() * 5000 + 1000).toFixed(2),
-      totalSpent: (Math.random() * 3000 + 500).toFixed(2),
-      currentBalance: (Math.random() * 1000 + 100).toFixed(2),
-      minSurvivalBalance: '50.00',
-      dailyBurnRate: (Math.random() * 50 + 5).toFixed(2),
-      daysOfRunway: Math.floor(Math.random() * 60) + 10
-    }
-  }
-}
-
-// History data generator
+// History data generator (will be replaced with real history API)
 const generateHistoryData = () => {
   const data = []
   for (let i = 30; i >= 0; i--) {
@@ -117,58 +36,30 @@ const generateHistoryData = () => {
 
 export default function SurvivalDashboard() {
   const { address, isConnected } = useWallet()
-  const [isLoading, setIsLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [survivalData, setSurvivalData] = useState<SurvivalData | null>(null)
-  const [healthMetrics, setHealthMetrics] = useState<HealthMetrics | null>(null)
-  const [economicMetrics, setEconomicMetrics] = useState<EconomicMetrics | null>(null)
+  const { 
+    survivalData, 
+    healthMetrics, 
+    economicMetrics, 
+    isLoading, 
+    isRefreshing, 
+    error,
+    refresh 
+  } = useSurvival({ autoRefresh: true, refreshInterval: 30000 })
+  
   const [historyData, setHistoryData] = useState(generateHistoryData())
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
 
-  const fetchData = useCallback(async () => {
-    if (!address) return
-    
-    setIsLoading(true)
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    const data = generateMockData(address)
-    setSurvivalData(data.survival)
-    setHealthMetrics(data.health)
-    setEconomicMetrics(data.economics)
-    setLastUpdated(new Date())
-    setIsLoading(false)
-  }, [address])
-
-  const refreshData = useCallback(async () => {
-    setIsRefreshing(true)
-    await new Promise(resolve => setTimeout(resolve, 800))
-    
-    const data = generateMockData(address || '')
-    setSurvivalData(data.survival)
-    setHealthMetrics(data.health)
-    setEconomicMetrics(data.economics)
-    setHistoryData(generateHistoryData())
-    setLastUpdated(new Date())
-    setIsRefreshing(false)
-  }, [address])
-
+  // Update last updated time when data changes
   useEffect(() => {
-    if (isConnected && address) {
-      fetchData()
+    if (survivalData) {
+      setLastUpdated(new Date())
     }
-  }, [isConnected, address, fetchData])
+  }, [survivalData])
 
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    if (!isConnected) return
-    
-    const interval = setInterval(() => {
-      refreshData()
-    }, 30000)
-    
-    return () => clearInterval(interval)
-  }, [isConnected, refreshData])
+  const handleRefresh = async () => {
+    await refresh()
+    setHistoryData(generateHistoryData())
+  }
 
   if (!isConnected) {
     return (
@@ -218,7 +109,7 @@ export default function SurvivalDashboard() {
                 <span>Updated {lastUpdated.toLocaleTimeString()}</span>
               </div>
               <button
-                onClick={refreshData}
+                onClick={handleRefresh}
                 disabled={isRefreshing}
                 className="p-2 rounded-lg hover:bg-agora-100 transition-colors disabled:opacity-50"
               >
@@ -231,8 +122,29 @@ export default function SurvivalDashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Error Display */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3"
+          >
+            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-red-900">Error loading survival data</h3>
+              <p className="text-sm text-red-700 mt-1">{error.message}</p>
+              <button 
+                onClick={handleRefresh}
+                className="mt-2 text-sm text-red-600 hover:text-red-800 font-medium"
+              >
+                Try again
+              </button>
+            </div>
+          </motion.div>
+        )}
+
         <AnimatePresence mode="wait">
-          {isLoading ? (
+          {isLoading && !survivalData ? (
             <motion.div
               key="loading"
               initial={{ opacity: 0 }}
@@ -405,15 +317,17 @@ export default function SurvivalDashboard() {
                       Performance Metrics
                     </h3>
                     <div className="space-y-4">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-agora-600">Success Rate</span>
-                        <span className="font-medium text-agora-900">{(healthMetrics.successRate * 100).toFixed(1)}%</span>
-                      </div>
-                      <div className="h-2 bg-agora-100 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-success rounded-full transition-all duration-500"
-                          style={{ width: `${healthMetrics.successRate * 100}%` }}
-                        />
+                      <div>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-agora-500">Success Rate</span>
+                          <span className="font-medium text-agora-900">{(healthMetrics.successRate * 100).toFixed(1)}%</span>
+                        </div>
+                        <div className="h-2 bg-agora-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-success rounded-full transition-all duration-500"
+                            style={{ width: `${healthMetrics.successRate * 100}%` }}
+                          />
+                        </div>
                       </div>
                       
                       <div className="flex justify-between items-center">

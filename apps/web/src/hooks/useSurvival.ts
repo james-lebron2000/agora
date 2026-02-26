@@ -1,233 +1,182 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { resolveRelayUrl } from '../lib/relayUrl';
+import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  EchoSurvivalManager,
+  getOrCreateSurvivalManager,
+  type AgentHealth,
+  type AgentEconomics,
+  type SurvivalCheckResult,
+  type SurvivalSnapshot,
+  type AgentHealthStatus,
+} from '@agora/sdk'
+import { useWallet } from './useWallet'
 
-export type HealthStatus = 'healthy' | 'stable' | 'degraded' | 'critical' | 'dying';
-export type ActionType = 'bridge' | 'reduce_cost' | 'optimize_chain' | 'earn' | 'alert' | 'shutdown';
-export type Priority = 'low' | 'medium' | 'high' | 'critical';
-export type TrendDirection = 'improving' | 'stable' | 'declining';
-
-export interface SurvivalAction {
-  type: ActionType;
-  priority: Priority;
-  description: string;
-  estimatedImpact: string;
-  recommendedChain?: string;
+interface SurvivalData {
+  score: number
+  healthScore: number
+  economicsScore: number
+  status: AgentHealthStatus
+  balance: string
+  runwayDays: number
+  dailyBurnRate: string
+  lastHeartbeat: number
+  recommendations: string[]
+  needsEmergencyFunding: boolean
 }
 
-export interface HealthMetrics {
-  overall: number;
-  compute: number;
-  storage: number;
-  network: number;
-  economic: number;
-  status: HealthStatus;
-  lastCheck: string;
+interface UseSurvivalOptions {
+  autoRefresh?: boolean
+  refreshInterval?: number // in milliseconds
 }
 
-export interface EconomicData {
-  totalUSDC: number;
-  netWorthUSD: number;
-  runwayDays: number;
-  dailyBurnRateUSD: number;
-  efficiencyScore: number;
+interface UseSurvivalReturn {
+  survivalData: SurvivalData | null
+  healthMetrics: AgentHealth | null
+  economicMetrics: AgentEconomics | null
+  isLoading: boolean
+  isRefreshing: boolean
+  error: Error | null
+  refresh: () => Promise<void>
+  survivalManager: EchoSurvivalManager | null
 }
 
-export interface HealthTrend {
-  direction: TrendDirection;
-  rateOfChange: number;
-  predictedHealth: number;
-  predictedRunway: number;
-}
-
-export interface SurvivalData {
-  health: HealthMetrics;
-  economics: EconomicData;
-  trend: HealthTrend;
-  pendingActions: SurvivalAction[];
-  survivalMode: boolean;
-}
-
-export interface SurvivalResponse {
-  success: boolean;
-  data: SurvivalData;
-  timestamp: string;
-  requestId: string;
-}
-
-// API configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-const DEFAULT_REFRESH_INTERVAL = 60000; // 60 seconds
-
-/**
- * Fetch survival data for an agent
- */
-async function fetchSurvivalData(agentId: string): Promise<SurvivalData> {
-  // Try the main API first
-  try {
-    const response = await fetch(`${API_BASE_URL}/survival/${agentId}?address=${agentId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      credentials: 'include',
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result: SurvivalResponse = await response.json();
-    
-    if (!result.success) {
-      throw new Error('API returned unsuccessful response');
-    }
-
-    return result.data;
-  } catch (apiError) {
-    console.warn('[useSurvival] API fetch failed, falling back to relay:', apiError);
-    
-    // Fallback to relay
-    return fetchSurvivalFromRelay(agentId);
+// Convert SDK SurvivalSnapshot to UI SurvivalData
+const convertSurvivalData = (
+  result: SurvivalCheckResult,
+  snapshot: SurvivalSnapshot,
+  economics: AgentEconomics
+): SurvivalData => {
+  return {
+    score: result.survivalScore,
+    healthScore: result.healthScore,
+    economicsScore: result.economicsScore,
+    status: snapshot.health.status,
+    balance: snapshot.economics.balance,
+    runwayDays: snapshot.economics.runwayDays,
+    dailyBurnRate: economics.dailyBurnRate,
+    lastHeartbeat: snapshot.health.status === 'dead' ? 0 : Date.now() - 60000, // Approximate
+    recommendations: result.recommendations,
+    needsEmergencyFunding: result.needsEmergencyFunding,
   }
 }
 
-/**
- * Fetch survival data from relay as fallback
- */
-async function fetchSurvivalFromRelay(agentId: string): Promise<SurvivalData> {
-  const relayUrl = resolveRelayUrl();
+export function useSurvival(options: UseSurvivalOptions = {}): UseSurvivalReturn {
+  const { autoRefresh = true, refreshInterval = 30000 } = options
+  const { address, isConnected } = useWallet()
   
-  try {
-    const response = await fetch(`${relayUrl}/v1/agents/${agentId}/survival`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+  const [survivalData, setSurvivalData] = useState<SurvivalData | null>(null)
+  const [healthMetrics, setHealthMetrics] = useState<AgentHealth | null>(null)
+  const [economicMetrics, setEconomicMetrics] = useState<AgentEconomics | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+  
+  const managerRef = useRef<EchoSurvivalManager | null>(null)
 
-    if (!response.ok) {
-      throw new Error(`Relay HTTP error! status: ${response.status}`);
+  // Initialize survival manager
+  useEffect(() => {
+    if (!address) {
+      managerRef.current = null
+      return
     }
-
-    const result: SurvivalResponse = await response.json();
-    
-    if (!result.success) {
-      throw new Error('Relay returned unsuccessful response');
-    }
-
-    return result.data;
-  } catch (relayError) {
-    console.error('[useSurvival] Both API and relay failed:', relayError);
-    throw relayError;
-  }
-}
-
-/**
- * Hook for fetching and managing agent survival data
- * 
- * Features:
- * - Automatic data fetching on mount
- * - Auto-refresh every 60 seconds
- * - Manual refresh capability
- * - Loading and error states
- * - Fallback to relay if API fails
- * 
- * @param agentId - The ID of the agent to fetch survival data for
- * @param refreshInterval - Auto-refresh interval in milliseconds (default: 60000)
- * @returns Survival data, loading state, error state, and refresh function
- * 
- * @example
- * ```tsx
- * function SurvivalMonitor({ agentId }: { agentId: string }) {
- *   const { data, isLoading, error, refetch } = useSurvival(agentId);
- *   
- *   if (isLoading) return <div>Loading...</div>;
- *   if (error) return <div>Error: {error}</div>;
- *   
- *   return (
- *     <div>
- *       <h1>Health: {data.health.overall}/100</h1>
- *       <p>Runway: {data.economics.runwayDays} days</p>
- *       <button onClick={refetch}>Refresh</button>
- *     </div>
- *   );
- * }
- * ```
- */
-export function useSurvival(agentId: string | null | undefined, refreshInterval = DEFAULT_REFRESH_INTERVAL) {
-  const [data, setData] = useState<SurvivalData | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const isMountedRef = useRef<boolean>(true);
-
-  const fetchData = useCallback(async () => {
-    if (!agentId || agentId === '') {
-      setError('Agent ID is required');
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
 
     try {
-      const survivalData = await fetchSurvivalData(agentId);
-      
-      // Only update state if component is still mounted
-      if (isMountedRef.current) {
-        setData(survivalData);
-        setError(null);
-      }
+      managerRef.current = getOrCreateSurvivalManager(address)
     } catch (err) {
-      console.error('[useSurvival] Failed to fetch survival data:', err);
-      
-      if (isMountedRef.current) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch survival data');
-        // Don't clear existing data on error, just show the error state
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setIsLoading(false);
-      }
+      setError(err instanceof Error ? err : new Error('Failed to initialize survival manager'))
     }
-  }, [agentId]);
 
-  // Initial fetch and setup auto-refresh
-  useEffect(() => {
-    isMountedRef.current = true;
-    
-    // Initial fetch
-    fetchData();
-
-    // Setup auto-refresh interval
-    intervalRef.current = setInterval(() => {
-      fetchData();
-    }, refreshInterval);
-
-    // Cleanup on unmount
     return () => {
-      isMountedRef.current = false;
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [fetchData, refreshInterval]);
+      // Cleanup if needed
+    }
+  }, [address])
 
-  // Reset data when agentId changes
+  // Fetch survival data
+  const fetchData = useCallback(async (showRefreshing = false) => {
+    if (!managerRef.current || !address) {
+      setSurvivalData(null)
+      setHealthMetrics(null)
+      setEconomicMetrics(null)
+      return
+    }
+
+    if (showRefreshing) {
+      setIsRefreshing(true)
+    } else {
+      setIsLoading(true)
+    }
+    setError(null)
+
+    try {
+      const manager = managerRef.current
+      
+      // Get all survival data from SDK
+      const checkResult = await manager.checkSurvival()
+      const snapshot = manager.getSnapshot()
+      const health = manager.getHealth()
+      const economics = manager.getEconomics()
+      
+      // Convert to UI format
+      const convertedData = convertSurvivalData(checkResult, snapshot, economics)
+      
+      setSurvivalData(convertedData)
+      setHealthMetrics(health)
+      setEconomicMetrics(economics)
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to fetch survival data'))
+      console.error('Survival data fetch error:', err)
+    } finally {
+      setIsLoading(false)
+      setIsRefreshing(false)
+    }
+  }, [address])
+
+  // Initial fetch
   useEffect(() => {
-    setData(null);
-    setError(null);
-    setIsLoading(true);
-  }, [agentId]);
+    if (isConnected && address && managerRef.current) {
+      fetchData(false)
+    }
+  }, [isConnected, address, fetchData])
+
+  // Auto-refresh
+  useEffect(() => {
+    if (!autoRefresh || !isConnected) return
+
+    const interval = setInterval(() => {
+      fetchData(true)
+    }, refreshInterval)
+
+    return () => clearInterval(interval)
+  }, [autoRefresh, refreshInterval, isConnected, fetchData])
+
+  // Record heartbeat when user is active
+  useEffect(() => {
+    if (!managerRef.current || !isConnected) return
+
+    const handleActivity = () => {
+      managerRef.current?.recordHeartbeat()
+    }
+
+    // Record heartbeat on mount
+    handleActivity()
+
+    // Set up interval for periodic heartbeats
+    const heartbeatInterval = setInterval(handleActivity, 60000) // Every minute
+
+    return () => {
+      clearInterval(heartbeatInterval)
+    }
+  }, [isConnected])
 
   return {
-    data,
+    survivalData,
+    healthMetrics,
+    economicMetrics,
     isLoading,
+    isRefreshing,
     error,
-    refetch: fetchData,
-  };
+    refresh: () => fetchData(true),
+    survivalManager: managerRef.current,
+  }
 }
 
-export default useSurvival;
+export default useSurvival
