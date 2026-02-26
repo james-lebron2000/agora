@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion'
 import { useAgent } from '../hooks/useAgent'
 import { AgentAvatar } from '../components/AgentAvatar'
 import { AchievementBadgeGrid, generateSampleBadges } from '../components/AchievementBadge'
@@ -306,6 +306,8 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
 
 export function AgentProfile() {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
+  const [isSwiping, setIsSwiping] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
   
   // Get agent ID from URL or use default
   const agentId = useMemo(() => {
@@ -315,6 +317,32 @@ export function AgentProfile() {
   }, []);
   
   const { agent, isLoading, error, refetch } = useAgent(agentId, 30000)
+
+  // Swipe gesture handling for tab switching
+  const x = useMotionValue(0)
+  const swipeThreshold = 50
+
+  const handleDragEnd = (_: any, info: { offset: { x: number }; velocity: { x: number } }) => {
+    const currentIndex = tabs.findIndex(t => t.id === activeTab)
+    const swipeOffset = info.offset.x
+    const swipeVelocity = info.velocity.x
+
+    // Determine swipe direction
+    if (Math.abs(swipeOffset) > swipeThreshold || Math.abs(swipeVelocity) > 500) {
+      if (swipeOffset > 0 && currentIndex > 0) {
+        // Swipe right - go to previous tab
+        setActiveTab(tabs[currentIndex - 1].id)
+      } else if (swipeOffset < 0 && currentIndex < tabs.length - 1) {
+        // Swipe left - go to next tab
+        setActiveTab(tabs[currentIndex + 1].id)
+      }
+    }
+    setIsSwiping(false)
+  }
+
+  const handleDragStart = () => {
+    setIsSwiping(true)
+  }
 
   // Generate sample data for demo purposes
   const sampleBadges = useMemo(() => generateSampleBadges(), [])
@@ -977,15 +1005,23 @@ export function AgentProfile() {
           </div>
         </motion.div>
 
-        {/* Tab Content with Smooth Transitions */}
+        {/* Tab Content with Smooth Transitions and Swipe Support */}
         <AnimatePresence mode="wait">
           <motion.div
+            ref={contentRef}
             key={activeTab}
             variants={tabContentVariants}
             initial="hidden"
             animate="show"
             exit="exit"
             transition={{ duration: 0.2 }}
+            drag="x"
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={0.2}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            style={{ x }}
+            className={`${isSwiping ? 'cursor-grabbing' : 'cursor-grab'} touch-pan-y`}
           >
             {activeTab === 'overview' && renderOverview()}
             {activeTab === 'analytics' && renderAnalytics()}
@@ -997,6 +1033,23 @@ export function AgentProfile() {
             {activeTab === 'settings' && renderSettings()}
           </motion.div>
         </AnimatePresence>
+
+        {/* Swipe Hint for Mobile */}
+        <div className="sm:hidden flex items-center justify-center gap-2 mt-4 text-xs text-agora-400">
+          <motion.div
+            animate={{ x: [-2, 2, -2] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+          >
+            ←
+          </motion.div>
+          <span>Swipe to switch tabs</span>
+          <motion.div
+            animate={{ x: [2, -2, 2] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+          >
+            →
+          </motion.div>
+        </div>
       </div>
     </div>
   )

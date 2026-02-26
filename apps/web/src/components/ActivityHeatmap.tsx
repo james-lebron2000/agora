@@ -72,7 +72,7 @@ export function generateActivityData(days: number = 365): ActivityDay[] {
 }
 
 /**
- * Single Day Cell Component
+ * Single Day Cell Component - Mobile Optimized
  */
 function DayCell({ day, index }: { day: ActivityDay; index: number }) {
   const formattedDate = useMemo(() => {
@@ -96,19 +96,21 @@ function DayCell({ day, index }: { day: ActivityDay; index: number }) {
   return (
     <motion.div
       className={`
-        w-3 h-3 rounded-sm
+        w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm
         ${levelColors[day.level]}
         ${levelHoverColors[day.level]}
         cursor-pointer
         transition-colors duration-200
+        touch-manipulation
       `}
       initial={{ opacity: 0, scale: 0 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: index * 0.001 }}
       whileHover={{ scale: 1.3 }}
+      whileTap={{ scale: 1.4 }}
     >
-      {/* Tooltip */}
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 hover:opacity-100 pointer-events-none z-30 group-hover:opacity-100 transition-opacity">
+      {/* Tooltip - Only show on larger screens */}
+      <div className="hidden sm:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 hover:opacity-100 pointer-events-none z-30 group-hover:opacity-100 transition-opacity">
         <div className="bg-agora-900 text-white text-xs rounded-lg py-1.5 px-2 whitespace-nowrap shadow-lg">
           <p className="font-medium">{formattedDate}</p>
           <p className="text-agora-300">{activityLabel}</p>
@@ -124,12 +126,13 @@ function DayCell({ day, index }: { day: ActivityDay; index: number }) {
 
 /**
  * Activity Heatmap Component (GitHub-style contribution graph)
- * 
+ *
  * Displays a heatmap showing activity levels over time with:
  * - Color-coded activity levels
  * - Smooth animations
  * - Tooltips on hover
  * - Responsive grid layout
+ * - Mobile-optimized touch targets
  */
 export function ActivityHeatmap({
   data,
@@ -159,11 +162,11 @@ export function ActivityHeatmap({
   }, [data]);
 
   return (
-    <div className={`bg-white rounded-2xl p-4 border border-agora-100 shadow-sm ${className}`}>
+    <div className={`bg-white rounded-2xl p-3 sm:p-4 border border-agora-100 shadow-sm ${className}`}>
       {/* Header with stats */}
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-agora-900">{title}</h3>
-        <div className="flex gap-4 text-xs text-agora-500">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 sm:mb-4">
+        <h3 className="font-semibold text-agora-900 text-sm sm:text-base">{title}</h3>
+        <div className="flex gap-3 sm:gap-4 text-xs text-agora-500">
           <span>{stats.totalContributions} contributions</span>
           <span>{stats.longestStreak} day streak</span>
         </div>
@@ -173,12 +176,12 @@ export function ActivityHeatmap({
       <ActivityHeatmapGrid data={data} />
 
       {/* Legend */}
-      <div className="flex items-center justify-end gap-2 mt-4 text-xs text-agora-500">
+      <div className="flex items-center justify-end gap-1.5 sm:gap-2 mt-3 sm:mt-4 text-xs text-agora-500">
         <span>Less</span>
         {[0, 1, 2, 3, 4].map((level) => (
           <div
             key={level}
-            className={`w-3 h-3 rounded-sm ${levelColors[level as 0 | 1 | 2 | 3 | 4]}`}
+            className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-sm ${levelColors[level as 0 | 1 | 2 | 3 | 4]}`}
           />
         ))}
         <span>More</span>
@@ -252,16 +255,16 @@ export function ActivityHeatmapGrid({
   }, [weeks]);
 
   return (
-    <div className={`overflow-x-auto ${className}`}>
+    <div className={`overflow-x-auto scrollbar-hide ${className}`}>
       <div className="min-w-max">
-        {/* Month labels */}
-        <div className="flex mb-1">
-          <div className="w-8" /> {/* Spacer for day labels */}
+        {/* Month labels - Improved positioning */}
+        <div className="flex mb-1 relative h-4">
+          <div className="w-6 sm:w-8" /> {/* Spacer for day labels */}
           {monthLabels.map(({ month, index }) => (
             <div
               key={`${month}-${index}`}
-              className="text-[10px] text-agora-500 absolute"
-              style={{ marginLeft: `${index * 16 + 32}px` }}
+              className="text-[9px] sm:text-[10px] text-agora-500"
+              style={{ marginLeft: index === 0 ? '0' : `${(index * 14) - 20}px` }}
             >
               {month}
             </div>
@@ -269,26 +272,26 @@ export function ActivityHeatmapGrid({
         </div>
 
         {/* Day labels and grid */}
-        <div className="flex gap-1">
+        <div className="flex gap-0.5 sm:gap-1">
           {/* Day of week labels */}
-          <div className="flex flex-col gap-1 mr-2">
-            {['Mon', 'Wed', 'Fri'].map((day) => (
-              <div key={day} className="h-3 text-[10px] text-agora-500 flex items-center">
+          <div className="flex flex-col gap-0.5 sm:gap-1 mr-1 sm:mr-2">
+            {['M', 'W', 'F'].map((day) => (
+              <div key={day} className="h-2.5 sm:h-3 text-[9px] sm:text-[10px] text-agora-500 flex items-center justify-center w-4 sm:w-6">
                 {day}
               </div>
             ))}
           </div>
 
           {/* Activity grid */}
-          <div className="flex gap-1">
+          <div className="flex gap-0.5 sm:gap-1">
             {weeks.map((week, weekIndex) => (
-              <div key={weekIndex} className="flex flex-col gap-1">
+              <div key={weekIndex} className="flex flex-col gap-0.5 sm:gap-1">
                 {week.map((day, dayIndex) => (
                   <div key={dayIndex} className="relative group">
                     {day.date ? (
                       <DayCell day={day} index={weekIndex * 7 + dayIndex} />
                     ) : (
-                      <div className="w-3 h-3" />
+                      <div className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                     )}
                   </div>
                 ))}
