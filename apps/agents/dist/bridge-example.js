@@ -1,13 +1,14 @@
 /**
  * Agora Cross-Chain Bridge Example
  *
- * This example demonstrates how to use the Bridge module for cross-chain USDC transfers
+ * This example demonstrates how to use the Bridge module for cross-chain token transfers
  * using LayerZero's OFT (Omnichain Fungible Token) protocol.
  *
  * Features demonstrated:
  * - Initializing the CrossChainBridge
- * - Getting bridge quotes
- * - Executing USDC transfers (Base → Optimism)
+ * - Getting bridge quotes for all supported tokens (USDC, USDT, DAI, WETH)
+ * - Executing token transfers (Base → Optimism, etc.)
+ * - Multi-token bridging support
  * - Tracking transaction history
  * - Error handling and retry mechanisms
  */
@@ -215,6 +216,123 @@ async function example6_multiChainOperations() {
     }
 }
 // =============================================================================
+// Example 8: Multi-Token Bridge Operations (NEW)
+// =============================================================================
+async function example8_multiTokenBridging(bridge) {
+    console.log('\n=== Example 8: Multi-Token Bridge Operations ===\n');
+    const tokens = ['USDC', 'USDT', 'DAI', 'WETH'];
+    const chains = ['base', 'optimism', 'arbitrum'];
+    const account = (await import('viem/accounts')).privateKeyToAccount(PRIVATE_KEY);
+    // Step 1: Check balances for all tokens across all chains
+    console.log('Fetching all token balances across chains...\n');
+    const allBalances = await bridge.getAllTokenBalances();
+    for (const chain of chains) {
+        console.log(`${chain.toUpperCase()}:`);
+        for (const token of tokens) {
+            const balance = allBalances[chain][token];
+            console.log(`  ${token}: ${balance}`);
+        }
+        console.log('');
+    }
+    // Step 2: Get bridge quotes for all token pairs
+    console.log('Bridge quotes for all supported tokens (Base → Optimism):\n');
+    for (const token of tokens) {
+        try {
+            const quote = await bridge.getQuote('optimism', token, '10');
+            console.log(`${token}: ${quote.estimatedFee} ETH fee, ~${quote.estimatedTime}s`);
+        }
+        catch (error) {
+            console.log(`${token}: Failed to get quote - ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+    // Step 3: Demonstrate token-specific bridging
+    console.log('\n--- Token-Specific Bridging Examples ---\n');
+    // Example: Bridge USDT
+    console.log('Example: Bridging USDT from Base to Arbitrum');
+    console.log('const result = await bridge.bridgeToken("arbitrum", "USDT", "5");');
+    // Example: Bridge DAI
+    console.log('\nExample: Bridging DAI from Optimism to Base');
+    console.log('const result = await bridge.bridgeToken("base", "DAI", "50");');
+    // Example: Bridge WETH
+    console.log('\nExample: Bridging WETH from Arbitrum to Optimism');
+    console.log('const result = await bridge.bridgeToken("optimism", "WETH", "0.5");');
+    // Step 4: Event handling for different tokens
+    console.log('\n--- Setting up Event Listeners for Multi-Token Bridging ---\n');
+    bridge.on('approvalRequired', (data) => {
+        console.log(`[Event] Approval required for ${data.token} on ${data.sourceChain}`);
+    });
+    bridge.on('approvalConfirmed', (data) => {
+        console.log(`[Event] ${data.token} approval confirmed`);
+    });
+    bridge.on('transactionSent', (data) => {
+        console.log(`[Event] ${data.token} bridge transaction sent: ${data.txHash}`);
+    });
+    bridge.on('transactionConfirmed', (data) => {
+        console.log(`[Event] ${data.token} bridge completed! ${data.sourceChain} → ${data.destinationChain}`);
+    });
+    bridge.on('transactionFailed', (data) => {
+        console.log(`[Event] ${data.token} bridge failed: ${data.error}`);
+    });
+    console.log('Event listeners configured for all token types');
+}
+// =============================================================================
+// Example 9: Token-Specific Bridge Operations (NEW)
+// =============================================================================
+async function example9_tokenSpecificBridging(bridge) {
+    console.log('\n=== Example 9: Token-Specific Bridge Operations ===\n');
+    // Bridge USDT example
+    console.log('--- Bridging USDT ---');
+    const usdtResult = await bridge.bridgeToken('optimism', 'USDT', '1');
+    if (usdtResult.success) {
+        console.log('✅ USDT bridge successful!');
+        console.log(`  Tx Hash: ${usdtResult.txHash}`);
+        console.log(`  From: ${usdtResult.sourceChain} → To: ${usdtResult.destinationChain}`);
+        console.log(`  Amount: ${usdtResult.amount} USDT`);
+        if (usdtResult.fees) {
+            console.log(`  Fee: ${usdtResult.fees.nativeFee} ETH`);
+        }
+    }
+    else {
+        console.log(`❌ USDT bridge failed: ${usdtResult.error}`);
+    }
+    // Bridge DAI example
+    console.log('\n--- Bridging DAI ---');
+    const daiResult = await bridge.bridgeToken('arbitrum', 'DAI', '10');
+    if (daiResult.success) {
+        console.log('✅ DAI bridge successful!');
+        console.log(`  Tx Hash: ${daiResult.txHash}`);
+        console.log(`  From: ${daiResult.sourceChain} → To: ${daiResult.destinationChain}`);
+        console.log(`  Amount: ${daiResult.amount} DAI`);
+        if (daiResult.fees) {
+            console.log(`  Fee: ${daiResult.fees.nativeFee} ETH`);
+        }
+    }
+    else {
+        console.log(`❌ DAI bridge failed: ${daiResult.error}`);
+    }
+    // Bridge WETH example
+    console.log('\n--- Bridging WETH ---');
+    const wethResult = await bridge.bridgeToken('base', 'WETH', '0.1');
+    if (wethResult.success) {
+        console.log('✅ WETH bridge successful!');
+        console.log(`  Tx Hash: ${wethResult.txHash}`);
+        console.log(`  From: ${wethResult.sourceChain} → To: ${wethResult.destinationChain}`);
+        console.log(`  Amount: ${wethResult.amount} WETH`);
+        if (wethResult.fees) {
+            console.log(`  Fee: ${wethResult.fees.nativeFee} ETH`);
+        }
+    }
+    else {
+        console.log(`❌ WETH bridge failed: ${wethResult.error}`);
+    }
+    // Get token balance after bridging
+    console.log('\n--- Checking Token Balances ---');
+    for (const token of ['USDT', 'DAI', 'WETH']) {
+        const balance = await bridge.getTokenBalance(token);
+        console.log(`${token} Balance: ${balance}`);
+    }
+}
+// =============================================================================
 // Example 7: Complete Bridge Workflow
 // =============================================================================
 async function example7_completeWorkflow() {
@@ -300,6 +418,10 @@ async function main() {
         await example6_multiChainOperations();
         // Uncomment to run complete workflow:
         // await example7_completeWorkflow();
+        // Multi-token bridging examples (read-only in demo mode):
+        await example8_multiTokenBridging(bridge);
+        // Uncomment to execute actual multi-token transfers:
+        // await example9_tokenSpecificBridging(bridge);
         console.log('\n╔══════════════════════════════════════════════════════════════╗');
         console.log('║              All examples completed!                         ║');
         console.log('╚══════════════════════════════════════════════════════════════╝\n');
@@ -314,5 +436,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     main();
 }
 // Export for use as module
-export { example1_basicSetup, example2_getBridgeQuote, example3_executeBridgeTransfer, example4_transactionHistory, example5_errorHandling, example6_multiChainOperations, example7_completeWorkflow };
+export { example1_basicSetup, example2_getBridgeQuote, example3_executeBridgeTransfer, example4_transactionHistory, example5_errorHandling, example6_multiChainOperations, example7_completeWorkflow, example8_multiTokenBridging, example9_tokenSpecificBridging };
 //# sourceMappingURL=bridge-example.js.map
