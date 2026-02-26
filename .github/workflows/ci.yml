@@ -2,12 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
-  test:
+  # TypeScript compilation check
+  typecheck:
+    name: TypeScript Compilation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,18 +24,169 @@ jobs:
         working-directory: packages/sdk
         run: npm ci
       
-      - name: Run tests
+      - name: TypeScript compilation
         working-directory: packages/sdk
-        run: npm test
+        run: npx tsc --noEmit
+
+  # Test on Node 18 and 20
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ['18', '20']
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      
+      - name: Install dependencies (SDK)
+        working-directory: packages/sdk
+        run: npm ci
+      
+      - name: Run unit tests
+        working-directory: packages/sdk
+        run: npm test -- --run
+      
+      - name: Run integration tests
+        working-directory: packages/sdk
+        run: npm test -- --run src/__tests__/integration.test.ts
+
+  # Build check
+  build:
+    name: Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies (SDK)
+        working-directory: packages/sdk
+        run: npm ci
       
       - name: Build SDK
         working-directory: packages/sdk
         run: npm run build
       
+      - name: Check build artifacts
+        working-directory: packages/sdk
+        run: |
+          ls -la dist/ || echo "No dist folder"
+          test -f dist/index.js || (echo "Missing index.js" && exit 1)
+          test -f dist/index.d.ts || (echo "Missing index.d.ts" && exit 1)
+
+  # Export validation
+  exports:
+    name: Validate Exports
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies (SDK)
+        working-directory: packages/sdk
+        run: npm ci
+      
+      - name: Build SDK
+        working-directory: packages/sdk
+        run: npm run build
+      
+      - name: Verify module exports
+        working-directory: packages/sdk
+        run: |
+          # Check main entry point
+          node -e "const pkg = require('./dist/index.js'); console.log('Main exports:', Object.keys(pkg).slice(0, 20), '...');"
+          
+          # Check specific module exports exist
+          node -e "
+            const pkg = require('./dist/index.js');
+            const requiredExports = [
+              // Core
+              'EnvelopeBuilder', 'EnvelopeSigner', 'generateKeypair',
+              // Bridge
+              'BridgeClient', 'createBridgeClient',
+              // Survival
+              'EchoSurvivalManager', 'getOrCreateSurvivalManager',
+              // Profile
+              'ProfileManager', 'createProfileManager',
+              // Performance
+              'PerformanceTracker', 'createPerformanceTracker',
+              // Mobile
+              'DeviceDetector', 'MobileOptimizer'
+            ];
+            const missing = requiredExports.filter(e => !pkg[e]);
+            if (missing.length > 0) {
+              console.error('Missing exports:', missing);
+              process.exit(1);
+            }
+            console.log('All required exports verified!');
+          "
+
+  # Lint check
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies (SDK)
+        working-directory: packages/sdk
+        run: npm ci
+      
+      - name: Run ESLint
+        working-directory: packages/sdk
+        run: npm run lint || echo "No lint script configured"
+
+  # Schema validation
+  schemas:
+    name: Validate Schemas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
       - name: Validate schemas
         run: |
           npm install -g ajv-cli
           ajv validate -s schemas/v1/envelope.schema.json -d tests/vectors/envelope.valid.json || true
+
+  # Relay tests
+  relay:
+    name: Relay Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
       
       - name: Test relay
         working-directory: apps/relay
