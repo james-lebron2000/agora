@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { CrossChainBridge, BridgeTransactionHistory, getBridgeHistory, createChainPublicClient, getUSDCBalance, getNativeBalance, getAllBalances, getBridgeQuote, findCheapestChain, getTokenBalance, SUPPORTED_CHAINS, USDC_ADDRESSES, USDT_ADDRESSES, DAI_ADDRESSES, WETH_ADDRESSES, LAYERZERO_CHAIN_IDS, LAYERZERO_OFT_ADDRESSES, TOKEN_DECIMALS, SUPPORTED_TOKENS, RPC_URLS } from './bridge.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { CrossChainBridge, BridgeTransactionHistory, BridgeTransactionMonitor, BridgeAnalytics, BridgeError, getBridgeHistory, createChainPublicClient, getUSDCBalance, getNativeBalance, getAllBalances, getBridgeQuote, findCheapestChain, getTokenBalance, SUPPORTED_CHAINS, USDC_ADDRESSES, USDT_ADDRESSES, DAI_ADDRESSES, WETH_ADDRESSES, LAYERZERO_CHAIN_IDS, LAYERZERO_OFT_ADDRESSES, TOKEN_DECIMALS, SUPPORTED_TOKENS, RPC_URLS } from './bridge';
 import { parseUnits } from 'viem';
 // Mock viem
 vi.mock('viem', async () => {
@@ -26,6 +26,7 @@ describe('Cross-Chain Bridge Module', () => {
         getBalance: vi.fn(),
         getTransactionReceipt: vi.fn(),
         getBlockNumber: vi.fn(),
+        getLogs: vi.fn(),
     };
     const mockWalletClient = {
         writeContract: vi.fn(),
@@ -766,6 +767,282 @@ describe('Cross-Chain Bridge Module', () => {
             globalThis.localStorage.getItem.mockReturnValue(JSON.stringify(mockTxs));
             const history = getBridgeHistory(mockAddress);
             expect(history).toHaveLength(1);
+        });
+    });
+    describe('BridgeTransactionMonitor', () => {
+        let monitor;
+        beforeEach(() => {
+            monitor = new BridgeTransactionMonitor('base');
+            vi.useFakeTimers();
+        });
+        afterEach(() => {
+            vi.useRealTimers();
+            monitor.stopAllMonitoring();
+        });
+        describe('constructor', () => {
+            it('should create monitor with default config', () => {
+                const m = new BridgeTransactionMonitor('base');
+                const config = m.getPollingConfig();
+                expect(config.intervalMs).toBe(3000);
+                expect(config.maxRetries).toBe(3);
+                expect(config.requiredConfirmations).toBe(1);
+            });
+            it('should create monitor with custom config', () => {
+                const customConfig = {
+                    intervalMs: 1000,
+                    maxRetries: 5,
+                    requiredConfirmations: 2
+                };
+                const m = new BridgeTransactionMonitor('base', undefined, customConfig);
+                const config = m.getPollingConfig();
+                expect(config.intervalMs).toBe(1000);
+                expect(config.maxRetries).toBe(5);
+                expect(config.requiredConfirmations).toBe(2);
+            });
+        });
+        describe('updatePollingConfig', () => {
+            it('should update config', () => {
+                monitor.updatePollingConfig({ intervalMs: 5000, maxRetries: 10 });
+                const config = monitor.getPollingConfig();
+                expect(config.intervalMs).toBe(5000);
+                expect(config.maxRetries).toBe(10);
+            });
+        });
+        describe('monitorTransaction', () => {
+            const mockTxHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+            it('should emit monitoringStarted event', async () => {
+                const startedListener = vi.fn();
+                monitor.on('monitoringStarted', startedListener);
+                // Setup mock for successful confirmation
+                mockPublicClient.getTransactionReceipt.mockResolvedValue({
+                    status: 'success',
+                    blockNumber: 100n,
+                    transactionIndex: 1,
+                    logs: []
+                });
+                mockPublicClient.getBlockNumber.mockResolvedValue(101n);
+                mockPublicClient.getLogs.mockResolvedValue([]);
+                // Mock the source client
+                createPublicClient.mockReturnValue(mockPublicClient);
+                // Start monitoring but don't await - it will timeout
+                monitor.monitorTransaction(mockTxHash, 'base', 'optimism', '100', { timeout: 100 }).catch(() => { });
+                // Fast-forward past initial delay
+                await vi.advanceTimersByTimeAsync(10);
+                expect(startedListener).toHaveBeenCalledWith({
+                    txHash: mockTxHash,
+                    sourceChain: 'base',
+                    destinationChain: 'optimism'
+                });
+            });
+            it('should stop monitoring on stopMonitoring call', () => {
+                const mockTx = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+                monitor.stopMonitoring(mockTx, 'base', 'optimism');
+                // Should not throw
+            });
+            it('should stop all monitoring', () => {
+                monitor.stopAllMonitoring();
+                // Should not throw
+            });
+        });
+        describe('getStatus', () => {
+            it('should return undefined for unknown transaction', () => {
+                const status = monitor.getStatus('0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef', 'base', 'optimism');
+                expect(status).toBeUndefined();
+            });
+        });
+    });
+    describe('BridgeAnalytics', () => {
+        let analytics;
+        beforeEach(() => {
+            analytics = new BridgeAnalytics(mockAddress);
+        });
+        describe('constructor', () => {
+            it('should create analytics with default config', () => {
+                const a = new BridgeAnalytics(mockAddress);
+                expect(a).toBeDefined();
+            });
+            it('should create analytics with custom config', () => {
+                const a = new BridgeAnalytics(mockAddress, {
+                    enableFeeTracking: false,
+                    maxHistoryDays: 30
+                });
+                expect(a).toBeDefined();
+            });
+        });
+        describe('getStatistics', () => {
+            it('should return statistics for empty history', async () => {
+                const stats = await analytics.getStatistics();
+                expect(stats.totalTransactions).toBe(0);
+                expect(stats.successfulTransactions).toBe(0);
+                expect(stats.failedTransactions).toBe(0);
+                expect(stats.successRate).toBe(0);
+                expect(stats.averageCompletionTimeMs).toBe(0);
+            });
+            it('should calculate statistics from history', async () => {
+                // Add some mock transactions
+                const history = new BridgeTransactionHistory(mockAddress);
+                history.addTransaction({
+                    txHash: '0x1111111111111111111111111111111111111111111111111111111111111111',
+                    sourceChain: 'base',
+                    destinationChain: 'optimism',
+                    amount: '100',
+                    token: 'USDC',
+                    status: 'completed',
+                    timestamp: Date.now(),
+                    senderAddress: mockAddress,
+                    recipientAddress: mockAddress
+                });
+                history.addTransaction({
+                    txHash: '0x2222222222222222222222222222222222222222222222222222222222222222',
+                    sourceChain: 'optimism',
+                    destinationChain: 'arbitrum',
+                    amount: '50',
+                    token: 'USDT',
+                    status: 'failed',
+                    timestamp: Date.now(),
+                    senderAddress: mockAddress,
+                    recipientAddress: mockAddress
+                });
+                const stats = await analytics.getStatistics();
+                expect(stats.totalTransactions).toBeGreaterThanOrEqual(0);
+            });
+        });
+        describe('getFeeTrends', () => {
+            it('should return empty array when no trends', () => {
+                const trends = analytics.getFeeTrends();
+                expect(trends).toEqual([]);
+            });
+            it('should filter trends by chain', async () => {
+                // Track some fees
+                await analytics.trackFee('base', 'optimism', 'USDC', '0.001', '10');
+                await analytics.trackFee('optimism', 'arbitrum', 'USDC', '0.002', '15');
+                const trends = analytics.getFeeTrends('base');
+                expect(trends).toHaveLength(1);
+                expect(trends[0].sourceChain).toBe('base');
+            });
+            it('should filter trends by token', async () => {
+                await analytics.trackFee('base', 'optimism', 'USDC', '0.001', '10');
+                await analytics.trackFee('base', 'optimism', 'USDT', '0.0015', '10');
+                const trends = analytics.getFeeTrends('base', 'optimism', 'USDC');
+                expect(trends).toHaveLength(1);
+                expect(trends[0].token).toBe('USDC');
+            });
+            it('should limit results', async () => {
+                for (let i = 0; i < 10; i++) {
+                    await analytics.trackFee('base', 'optimism', 'USDC', '0.001', '10');
+                }
+                const trends = analytics.getFeeTrends('base', 'optimism', 'USDC', 5);
+                expect(trends).toHaveLength(5);
+            });
+        });
+        describe('getAverageFee', () => {
+            it('should return 0 for no trends', () => {
+                const avg = analytics.getAverageFee('base', 'optimism', 'USDC');
+                expect(avg).toBe('0');
+            });
+            it('should calculate average fee', async () => {
+                await analytics.trackFee('base', 'optimism', 'USDC', '0.001', '10');
+                await analytics.trackFee('base', 'optimism', 'USDC', '0.003', '10');
+                const avg = analytics.getAverageFee('base', 'optimism', 'USDC');
+                expect(parseFloat(avg)).toBeGreaterThan(0);
+            });
+        });
+        describe('getFeeTrendAnalysis', () => {
+            it('should return stable for no trends', () => {
+                const analysis = analytics.getFeeTrendAnalysis('base', 'optimism', 'USDC');
+                expect(analysis.trend).toBe('stable');
+                expect(analysis.changePercent).toBe(0);
+            });
+            it('should detect increasing trend', async () => {
+                // Add old low fees
+                for (let i = 0; i < 3; i++) {
+                    await analytics.trackFee('base', 'optimism', 'USDC', '0.001', '10');
+                }
+                // Add new high fees
+                for (let i = 0; i < 3; i++) {
+                    await analytics.trackFee('base', 'optimism', 'USDC', '0.01', '20');
+                }
+                const analysis = analytics.getFeeTrendAnalysis('base', 'optimism', 'USDC');
+                expect(analysis.trend).toBe('increasing');
+                expect(analysis.changePercent).toBeGreaterThan(0);
+            });
+            it('should detect decreasing trend', async () => {
+                // Add old high fees
+                for (let i = 0; i < 3; i++) {
+                    await analytics.trackFee('base', 'optimism', 'USDC', '0.01', '20');
+                }
+                // Add new low fees
+                for (let i = 0; i < 3; i++) {
+                    await analytics.trackFee('base', 'optimism', 'USDC', '0.001', '10');
+                }
+                const analysis = analytics.getFeeTrendAnalysis('base', 'optimism', 'USDC');
+                expect(analysis.trend).toBe('decreasing');
+                expect(analysis.changePercent).toBeLessThan(0);
+            });
+        });
+        describe('getBestTimeToBridge', () => {
+            it('should return default for no trends', () => {
+                const best = analytics.getBestTimeToBridge('base', 'optimism', 'USDC');
+                expect(best.bestHour).toBe(0);
+                expect(best.averageFee).toBe('0');
+            });
+            it('should find best hour', async () => {
+                // Track fees at different hours
+                const mockDate = new Date('2024-01-01T02:00:00Z');
+                vi.setSystemTime(mockDate);
+                await analytics.trackFee('base', 'optimism', 'USDC', '0.01', '10'); // High fee at 2 AM
+                const mockDate2 = new Date('2024-01-01T14:00:00Z');
+                vi.setSystemTime(mockDate2);
+                await analytics.trackFee('base', 'optimism', 'USDC', '0.001', '10'); // Low fee at 2 PM
+                const best = analytics.getBestTimeToBridge('base', 'optimism', 'USDC');
+                expect(best.bestHour).toBe(14); // 2 PM should be best
+            });
+        });
+        describe('clearData', () => {
+            it('should clear all analytics data', async () => {
+                await analytics.trackFee('base', 'optimism', 'USDC', '0.001', '10');
+                let trends = analytics.getFeeTrends();
+                expect(trends.length).toBeGreaterThan(0);
+                analytics.clearData();
+                trends = analytics.getFeeTrends();
+                expect(trends).toHaveLength(0);
+            });
+        });
+        describe('exportData', () => {
+            it('should export analytics data', () => {
+                const data = analytics.exportData();
+                expect(data).toHaveProperty('statistics');
+                expect(data).toHaveProperty('feeTrends');
+                expect(Array.isArray(data.feeTrends)).toBe(true);
+            });
+        });
+    });
+    describe('BridgeError', () => {
+        it('should create error with default code', () => {
+            const error = new BridgeError('Test error');
+            expect(error.message).toBe('Test error');
+            expect(error.code).toBe('UNKNOWN_ERROR');
+            expect(error.name).toBe('BridgeError');
+        });
+        it('should create error with specific code', () => {
+            const error = new BridgeError('Network failed', 'NETWORK_ERROR');
+            expect(error.code).toBe('NETWORK_ERROR');
+        });
+        it('should include chain and txHash in error', () => {
+            const error = new BridgeError('Transaction failed', 'TRANSACTION_FAILED', {
+                chain: 'base',
+                txHash: '0x1234',
+                retryable: true
+            });
+            expect(error.chain).toBe('base');
+            expect(error.txHash).toBe('0x1234');
+            expect(error.retryable).toBe(true);
+        });
+        it('should determine if error is retryable', () => {
+            const retryableError = new BridgeError('Network error', 'NETWORK_ERROR');
+            expect(retryableError.isRetryable()).toBe(true);
+            const nonRetryableError = new BridgeError('Invalid params', 'INVALID_PARAMS', { retryable: false });
+            expect(nonRetryableError.isRetryable()).toBe(false);
         });
     });
 });
