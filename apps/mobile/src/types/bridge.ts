@@ -3,7 +3,7 @@
  * TypeScript type definitions for cross-chain bridge operations
  */
 
-import type { SupportedChain, ChainBalance, BridgeQuote as SDKBridgeQuote, BridgeTransaction as SDKBridgeTransaction } from '@agora/sdk/bridge';
+import type { SupportedChain, ChainBalance, BridgeQuote as SDKBridgeQuote, BridgeTransaction as SDKBridgeTransaction } from '@agora/sdk';
 
 // Re-export SDK types for mobile use
 export type { SupportedChain, ChainBalance };
