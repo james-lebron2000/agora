@@ -18,7 +18,9 @@ import {
   Loader2,
   MapPin,
   Calendar,
+  Heart,
 } from 'lucide-react';
+import { SurvivalPanel } from './SurvivalPanel';
 import { AgentAvatar } from './AgentAvatar';
 import { AgentLevelProgress, calculateLevel } from './AgentLevelProgress';
 import { ProfileStats } from './ProfileStats';
@@ -70,7 +72,7 @@ export interface ProfileStatsData {
   totalWorkingHours: number;
 }
 
-export type ProfileTab = 'overview' | 'achievements' | 'activity' | 'settings';
+export type ProfileTab = 'overview' | 'achievements' | 'activity' | 'settings' | 'survival';
 
 // ============================================
 // Props Interface
@@ -629,6 +631,12 @@ export function AgentProfile({
             icon={<Activity className="w-4 h-4" />}
             label="Activity"
           />
+          <TabButton
+            active={activeTab === 'survival'}
+            onClick={() => setActiveTab('survival')}
+            icon={<Heart className="w-4 h-4" />}
+            label="Survival"
+          />
           {isEditable && (
             <TabButton
               active={activeTab === 'settings'}
@@ -674,6 +682,12 @@ export function AgentProfile({
 
           {activeTab === 'settings' && isEditable && (
             <SettingsTab onEdit={handleEdit} />
+          )}
+
+          {activeTab === 'survival' && (
+            <div className="space-y-6">
+              <SurvivalPanel agentId={profile.id} />
+            </div>
           )}
         </motion.div>
       </AnimatePresence>
