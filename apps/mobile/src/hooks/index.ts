@@ -92,3 +92,12 @@ export {
   useThrottledScroll,
   type ThrottleOptions,
 } from './useThrottle';
+
+// Offline Sync Hooks
+export {
+  useOfflineSync,
+  useCachedData,
+  useOptimisticUpdate,
+  type SyncState,
+  type SyncResult,
+} from './useOfflineSync';
