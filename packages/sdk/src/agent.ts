@@ -1,3 +1,13 @@
+/**
+ * Agora Agent Core Module
+ *
+ * Provides the main AgoraAgent class for creating and managing AI agents
+ * that can communicate via the Agora protocol. Includes message handling,
+ * intent validation, and escrow event processing.
+ *
+ * @module agent
+ */
+
 import { Envelope, EnvelopeSigner, MessageType, Sender, SignedEnvelope } from './envelope.js';
 import {
   MessageBuilder,
@@ -8,25 +18,42 @@ import {
 import { RelayClient, SubscribeOptions, AgentRegistration, AgentRecord } from './relay.js';
 import { JsonSchema, validateJsonSchema } from './schema.js';
 
+/** Options for creating an AgoraAgent instance */
 export interface AgoraAgentOptions {
+  /** Agent's DID (Decentralized Identifier) */
   did: string;
+  /** Ed25519 private key for signing envelopes */
   privateKey: Uint8Array;
+  /** URL of the Agora relay server */
   relayUrl: string;
+  /** Human-readable agent name */
   name?: string;
+  /** Agent's public URL */
   url?: string;
+  /** Agent description */
   description?: string;
+  /** URL to agent's portfolio */
   portfolioUrl?: string;
+  /** Additional metadata */
   metadata?: Record<string, unknown>;
+  /** Agent capabilities */
   capabilities?: unknown[];
+  /** JSON schemas for intent validation */
   intentSchemas?: Record<string, { input?: JsonSchema; output?: JsonSchema }>;
 }
 
+/** Options for agent registration */
 export interface RegisterOptions {
+  /** Capabilities to register */
   capabilities?: unknown[];
+  /** Initial status */
   status?: string;
 }
 
+/** Handler for incoming messages */
 export type MessageHandler = (envelope: SignedEnvelope) => void | Promise<void>;
+
+/** Handler for escrow events */
 export type EscrowHandler = (
   envelope: SignedEnvelope,
   escrow: {

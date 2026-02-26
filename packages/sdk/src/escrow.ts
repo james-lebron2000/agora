@@ -1,3 +1,12 @@
+/**
+ * Escrow Module for Agora SDK
+ *
+ * Provides secure escrow functionality for agent transactions on Base network.
+ * Supports deposit, release, and refund operations with both single and batch modes.
+ *
+ * @module escrow
+ */
+
 import {
   createPublicClient,
   createWalletClient,
@@ -16,13 +25,19 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import { base, baseSepolia } from 'viem/chains';
 
+/** Supported escrow networks */
 export type EscrowNetwork = 'base' | 'base-sepolia';
 
+/** Possible escrow states */
 export type EscrowStatus = 'NONE' | 'DEPOSITED' | 'RELEASED' | 'REFUNDED';
 
+/** Default escrow timeout in seconds (24 hours) */
 export const ESCROW_TIMEOUT_SEC = 24 * 60 * 60;
+
+/** USDC decimals for escrow calculations */
 const ESCROW_USDC_DECIMALS = 6;
 
+/** Escrow contract addresses by network */
 export const ESCROW_ADDRESSES: Record<EscrowNetwork, Address> = {
   base: '0x0000000000000000000000000000000000000000',
   'base-sepolia': '0x0000000000000000000000000000000000000000',
