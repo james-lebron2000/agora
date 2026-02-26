@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
+import { useEffect, useMemo, useState, lazy, Suspense, useCallback, useRef } from 'react'
 import { Layout } from './components/Layout'
 import { Feed } from './components/Feed'
 import { Hero } from './components/Hero'
@@ -9,22 +9,96 @@ import { BridgeCard } from './components/BridgeCard'
 import { BridgeStatus } from './components/BridgeStatus'
 import { MobileHeader } from './components/MobileHeader'
 import { MobileBottomNav } from './components/MobileBottomNav'
-import { ErrorBoundary } from './components/ErrorBoundary'
+import { ErrorBoundary, SectionErrorBoundary } from './components/ErrorBoundary'
 import { WalletProvider } from './hooks/useWallet'
 import { aggregateThreads, SEED_EVENTS, type AgoraEvent } from './lib/agora'
-// 动态导入页面组件 (named exports 需要转换)
-const Echo = lazy(() => import('./pages/Echo').then(m => ({ default: m.Echo })))
-const Tokenomics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
-const ARHud = lazy(() => import('./pages/ARHud').then(m => ({ default: m.ARHud })))
-const AgentProfile = lazy(() => import('./pages/AgentProfile').then(m => ({ default: m.AgentProfile })))
 
-// 加载状态组件
+// ============================================================================
+// CODE SPLITTING WITH PREFETCH STRATEGY
+// ============================================================================
+
+// Type for lazy loaded components with prefetch
+type LazyComponentWithPrefetch<T> = React.LazyExoticComponent<React.ComponentType<T>> & {
+  prefetch: () => Promise<void>;
+};
+
+// Helper to create lazy component with prefetch
+function createLazyComponent<T>(loader: () => Promise<{ default: React.ComponentType<T> }>) {
+  const LazyComponent = lazy(loader) as LazyComponentWithPrefetch<T>;
+  let prefetchPromise: Promise<void> | null = null;
+  
+  LazyComponent.prefetch = () => {
+    if (!prefetchPromise) {
+      prefetchPromise = loader().then(() => void 0);
+    }
+    return prefetchPromise;
+  };
+  
+  return LazyComponent;
+}
+
+// 动态导入页面组件 (named exports 需要转换)
+const Echo = createLazyComponent(() => import('./pages/Echo').then(m => ({ default: m.Echo })))
+const Tokenomics = createLazyComponent(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
+const ARHud = createLazyComponent(() => import('./pages/ARHud').then(m => ({ default: m.ARHud })))
+const AgentProfile = createLazyComponent(() => import('./pages/AgentProfile').then(m => ({ default: m.AgentProfile })))
+
+// Route prefetch map for navigation preloading
+const routePrefetchMap: Record<Route, () => Promise<void>> = {
+  home: () => Promise.resolve(),
+  analytics: () => Promise.resolve(),
+  tokenomics: Tokenomics.prefetch,
+  echo: Echo.prefetch,
+  ar: ARHud.prefetch,
+  bridge: () => Promise.resolve(), // Bridge uses WalletProvider, no lazy load needed for the card
+  profile: AgentProfile.prefetch,
+};
+
+// ============================================================================
+// LOADING COMPONENTS
+// ============================================================================
+
+// Full page loader for route transitions
 function PageLoader() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-agora-50">
       <div className="flex flex-col items-center gap-4">
         <div className="w-8 h-8 border-2 border-agora-300 border-t-agora-900 rounded-full animate-spin" />
         <p className="text-sm text-agora-600">Loading...</p>
+      </div>
+    </div>
+  )
+}
+
+// Skeleton loader for feed items
+function FeedSkeleton() {
+  return (
+    <div className="space-y-4 animate-pulse">
+      {[1, 2, 3].map((i) => (
+        <div key={i} className="p-4 bg-white rounded-xl border border-agora-100">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 bg-agora-200 rounded-full" />
+            <div className="flex-1">
+              <div className="h-4 bg-agora-200 rounded w-1/3 mb-2" />
+              <div className="h-3 bg-agora-100 rounded w-1/4" />
+            </div>
+          </div>
+          <div className="h-3 bg-agora-100 rounded w-full mb-2" />
+          <div className="h-3 bg-agora-100 rounded w-2/3" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Analytics dashboard skeleton
+function AnalyticsSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="h-48 bg-agora-100 rounded-2xl" />
+      <div className="grid grid-cols-2 gap-4">
+        <div className="h-32 bg-agora-100 rounded-xl" />
+        <div className="h-32 bg-agora-100 rounded-xl" />
       </div>
     </div>
   )
@@ -194,12 +268,38 @@ function NavLink({
   href,
   active,
   onClick,
+  onHover,
 }: {
   label: string
   href: string
   active: boolean
   onClick: () => void
+  onHover?: () => void
 }) {
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const handleMouseEnter = useCallback(() => {
+    // Delay prefetch slightly to avoid unnecessary loads on quick mouse passes
+    timeoutRef.current = setTimeout(() => {
+      onHover?.();
+    }, 100);
+  }, [onHover]);
+  
+  const handleMouseLeave = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+  
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
     <a
       href={href}
@@ -207,6 +307,9 @@ function NavLink({
         event.preventDefault()
         onClick()
       }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={onHover}
       aria-current={active ? 'page' : undefined}
       className={`px-3 py-1.5 rounded-full border text-sm transition-colors ${
         active
@@ -412,14 +515,18 @@ function AppContent() {
         </button>
       </div>
 
-      <Feed
-        threads={threads}
-        relayUrl={relayUrl}
-        onAcceptComplete={() => {
-          // Force a poll to get the latest events
-          poll().catch(() => {})
-        }}
-      />
+      <SectionErrorBoundary sectionName="Feed" compact>
+        <Suspense fallback={<FeedSkeleton />}>
+          <Feed
+            threads={threads}
+            relayUrl={relayUrl}
+            onAcceptComplete={() => {
+              // Force a poll to get the latest events
+              poll().catch(() => {})
+            }}
+          />
+        </Suspense>
+      </SectionErrorBoundary>
     </div>
   )
 
@@ -498,7 +605,9 @@ function AppContent() {
 
   const analyticsCenter = (
     <div className="space-y-8">
-      <AnalyticsDashboard />
+      <SectionErrorBoundary sectionName="Analytics Dashboard" compact>
+        <AnalyticsDashboard />
+      </SectionErrorBoundary>
 
       <div className="space-y-4">
         <div className="flex items-center gap-2">
@@ -560,6 +669,16 @@ function AppContent() {
     </div>
   )
 
+  // Prefetch handlers for routes
+  const prefetchRoute = useCallback((routeName: Route) => {
+    const prefetchFn = routePrefetchMap[routeName];
+    if (prefetchFn) {
+      prefetchFn().catch(() => {
+        // Silently fail - prefetch shouldn't break anything
+      });
+    }
+  }, []);
+
   const nav = (
     <>
       <NavLink
@@ -567,42 +686,49 @@ function AppContent() {
         href="/"
         active={route === 'home'}
         onClick={() => navigate('home')}
+        onHover={() => { /* Home is always loaded */ }}
       />
       <NavLink
         label="Analytics"
         href="/analytics"
         active={route === 'analytics'}
         onClick={() => navigate('analytics')}
+        onHover={() => { /* Analytics is main bundle */ }}
       />
       <NavLink
         label="Tokenomics"
         href="/tokenomics"
         active={route === 'tokenomics'}
         onClick={() => navigate('tokenomics')}
+        onHover={() => prefetchRoute('tokenomics')}
       />
       <NavLink
         label="🤖 Echo"
         href="/echo"
         active={route === 'echo'}
         onClick={() => navigate('echo')}
+        onHover={() => prefetchRoute('echo')}
       />
       <NavLink
         label="AR HUD"
         href="/ar"
         active={route === 'ar'}
         onClick={() => navigate('ar')}
+        onHover={() => prefetchRoute('ar')}
       />
       <NavLink
         label="Bridge"
         href="/bridge"
         active={route === 'bridge'}
         onClick={() => navigate('bridge')}
+        onHover={() => prefetchRoute('bridge')}
       />
       <NavLink
         label="Profile"
         href="/profile"
         active={route === 'profile'}
         onClick={() => navigate('profile')}
+        onHover={() => prefetchRoute('profile')}
       />
     </>
   )
