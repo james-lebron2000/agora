@@ -9,30 +9,77 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Animated,
   useColorScheme,
+  ViewStyle,
+  TextStyle,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSurvival } from '../hooks/useSurvival';
-import type { SurvivalIndicatorProps } from '../types/survival';
+import type { 
+  SurvivalIndicatorProps, 
+  ExtendedHealthStatus,
+  SurvivalAction 
+} from '../types/survival';
 import {
   COLORS,
   SPACING,
   FONT_SIZE,
   BORDER_RADIUS,
+  SHADOWS,
 } from '../constants/theme';
 
-export function SurvivalIndicator({
-  agentId,
-  address,
+// Status color schemes
+const STATUS_COLORS: Record<ExtendedHealthStatus, { bg: string; text: string; icon: string; border: string }> = {
+  healthy: { bg: '#dcfce7', text: '#166534', icon: '#22c55e', border: '#bbf7d0' },
+  stable: { bg: '#dbeafe', text: '#1e40af', icon: '#3b82f6', border: '#bfdbfe' },
+  degraded: { bg: '#fef3c7', text: '#92400e', icon: '#f59e0b', border: '#fde68a' },
+  critical: { bg: '#fee2e2', text: '#991b1b', icon: '#ef4444', border: '#fecaca' },
+  dying: { bg: '#fecaca', text: '#7f1d1d', icon: '#dc2626', border: '#fca5a5' },
+  dead: { bg: '#374151', text: '#f3f4f6', icon: '#9ca3af', border: '#4b5563' },
+};
+
+// Status icon mapping
+const STATUS_ICONS: Record<ExtendedHealthStatus, keyof typeof Ionicons.glyphMap> = {
+  healthy: 'checkmark-circle',
+  stable: 'shield-checkmark',
+  degraded: 'warning',
+  critical: 'alert-circle',
+  dying: 'pulse',
+  dead: 'skull',
+};
+
+// Status label mapping
+const STATUS_LABELS: Record<ExtendedHealthStatus, string> = {
+  healthy: 'Healthy',
+  stable: 'Stable',
+  degraded: 'Degraded',
+  critical: 'Critical',
+  dying: 'Dying',
+  dead: 'Dead',
+};
+
+// SurvivalIndicator - Visual indicator for Echo Survival status
+// Memoized for performance optimization
+export const SurvivalIndicator = React.memo(function SurvivalIndicator({
+  agentId = undefined,
+  address = undefined,
   compact = false,
-  showActions = true,
+  showActions = false,
   onStatusChange,
   onActionPress,
-  testID,
+  testID
 }: SurvivalIndicatorProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  
+  // Get theme colors based on color scheme
+  const theme = {
+    text: isDark ? COLORS.gray100 : COLORS.gray800,
+    textSecondary: isDark ? COLORS.gray400 : COLORS.gray500,
+    card: isDark ? COLORS.gray800 : COLORS.white,
+    border: isDark ? COLORS.gray700 : COLORS.gray200,
+  };
 
   const {
     snapshot,
@@ -40,278 +87,195 @@ export function SurvivalIndicator({
     economics,
     actions,
     isLoading,
-    isInSurvivalMode,
-    needsEmergencyFunding,
-    daysOfRunway,
-    survivalScore,
-    refresh,
+    error
   } = useSurvival({
-    agentId: agentId || null,
-    address: address || null,
-    autoRefresh: true,
-    refreshInterval: 60000,
+    agentId,
+    address
   });
 
-  const theme = {
-    background: isDark ? COLORS.gray900 : COLORS.gray50,
-    card: isDark ? COLORS.gray800 : COLORS.white,
-    text: isDark ? COLORS.gray100 : COLORS.gray900,
-    textSecondary: isDark ? COLORS.gray400 : COLORS.gray600,
-    border: isDark ? COLORS.gray700 : COLORS.gray200,
-  };
-
-  // Get status color
-  const getStatusColor = (status?: string): string => {
-    switch (status) {
-      case 'healthy':
-      case 'stable':
-        return COLORS.success;
-      case 'degraded':
-        return COLORS.warning;
-      case 'critical':
-      case 'dying':
-        return COLORS.error;
-      case 'dead':
-        return '#7f1d1d';
-      default:
-        return COLORS.gray500;
+  // Notify parent of status changes
+  React.useEffect(() => {
+    if (health && onStatusChange) {
+      onStatusChange(health.status);
     }
-  };
+  }, [health?.status, onStatusChange]);
 
-  // Get status icon
-  const getStatusIcon = (status?: string): keyof typeof Ionicons.glyphMap => {
-    switch (status) {
-      case 'healthy':
-        return 'checkmark-circle';
-      case 'stable':
-        return 'shield-checkmark';
-      case 'degraded':
-        return 'warning';
-      case 'critical':
-        return 'alert-circle';
-      case 'dying':
-      case 'dead':
-        return 'skull';
-      default:
-        return 'help-circle';
+  // Handle action press
+  const handleActionPress = React.useCallback((action: SurvivalAction) => {
+    if (onActionPress) {
+      onActionPress(action);
     }
-  };
+  }, [onActionPress]);
 
-  // Compact view for headers/navbars
-  if (compact) {
+  // Loading state
+  if (isLoading && !snapshot) {
     return (
-      <TouchableOpacity
-        testID={testID}
-        onPress={refresh}
-        style={[
-          styles.compactContainer,
-          {
-            backgroundColor: isInSurvivalMode
-              ? `${COLORS.error}20`
-              : `${getStatusColor(health?.status)}20`,
-            borderColor: isInSurvivalMode ? COLORS.error : getStatusColor(health?.status),
-          },
-        ]}
-      >
-        <Animated.View style={styles.pulseAnimation}>
-          <Ionicons
-            name={getStatusIcon(health?.status)}
-            size={16}
-            color={isInSurvivalMode ? COLORS.error : getStatusColor(health?.status)}
-          />
-        </Animated.View>
-        <Text
-          style={[
-            styles.compactText,
-            {
-              color: isInSurvivalMode ? COLORS.error : getStatusColor(health?.status),
-            },
-          ]}
-        >
-          {isInSurvivalMode ? 'SURVIVAL' : `${survivalScore}`}
-        </Text>
-      </TouchableOpacity>
+      <View style={[styles.loadingContainer, compact && styles.compactContainer]}>
+        <ActivityIndicator size={compact ? "small" : "large"} color={COLORS.primary} />
+      </View>
     );
   }
 
-  // Full card view
+  // Error state
+  if (error && !snapshot) {
+    return (
+      <View style={[styles.errorContainer, compact && styles.compactContainer]}>
+        <Ionicons name="alert-circle" size={compact ? 16 : 24} color={COLORS.error} />
+        <Text style={[styles.errorText, compact && styles.compactErrorText]}>
+          Connection Error
+        </Text>
+      </View>
+    );
+  }
+
+  // No data state
+  if (!snapshot || !health) {
+    return (
+      <View style={[styles.emptyContainer, compact && styles.compactContainer]}>
+        <Ionicons name="pulse-outline" size={compact ? 20 : 32} color={COLORS.gray400} />
+        <Text style={[styles.emptyText, compact && styles.compactEmptyText]}>
+          No survival data
+        </Text>
+      </View>
+    );
+  }
+
+  const status = health.status;
+  const statusColors = STATUS_COLORS[status];
+  const statusIcon = STATUS_ICONS[status];
+  const statusLabel = STATUS_LABELS[status];
+
+  // Compact indicator
+  if (compact) {
+    return (
+      <View style={styles.compactContainer}>
+        <View style={[
+          styles.compactStatusBadge,
+          { backgroundColor: statusColors.bg, borderColor: statusColors.border }
+        ]}>
+          <Ionicons name={statusIcon} size={14} color={statusColors.icon} />
+          <Text style={[styles.compactStatusText, { color: statusColors.text }]}>
+            {statusLabel}
+          </Text>
+        </View>
+        <View style={styles.compactMetrics}>
+          <View style={styles.compactMetric}>
+            <Text style={[styles.compactMetricValue, { color: theme.text }]}>
+              {health.overall}
+            </Text>
+            <Text style={[styles.compactMetricLabel, { color: theme.textSecondary }]}>
+              Score
+            </Text>
+          </View>
+          <View style={styles.compactMetric}>
+            <Text style={[styles.compactMetricValue, { color: theme.text }]}>
+              {economics?.runwayDays ?? 0}
+            </Text>
+            <Text style={[styles.compactMetricLabel, { color: theme.textSecondary }]}>
+              Days
+            </Text>
+          </View>
+          <View style={styles.compactMetric}>
+            <Text style={[styles.compactMetricValue, { color: theme.text }]}>
+              ${economics?.totalUSDC?.toFixed(0) ?? '0'}
+            </Text>
+            <Text style={[styles.compactMetricLabel, { color: theme.textSecondary }]}>
+              USDC
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  // Full indicator
   return (
-    <View
-      testID={testID}
-      style={[
-        styles.container,
-        {
-          backgroundColor: theme.card,
-          borderColor: isInSurvivalMode ? COLORS.error : theme.border,
-        },
-      ]}
-    >
+    <View style={[styles.container, { backgroundColor: theme.card }]} testID={testID}>
+      {/* Status Header */}
+      <View style={styles.statusHeader}>
+        <View style={[
+          styles.statusBadge,
+          { backgroundColor: statusColors.bg, borderColor: statusColors.border }
+        ]}>
+          <Ionicons name={statusIcon} size={16} color={statusColors.icon} />
+          <Text style={[styles.statusText, { color: statusColors.text }]}>
+            {statusLabel}
+          </Text>
+        </View>
+        <Text style={[styles.survivalScore, { color: theme.text }]}>
+          {health.overall}/100
+        </Text>
+      </View>
+
       {/* Survival Mode Banner */}
-      {isInSurvivalMode && (
-        <View style={styles.survivalBanner}>
-          <Ionicons name="warning" size={20} color={COLORS.white} />
+      {snapshot.survivalMode && (
+        <View style={[styles.survivalBanner, { backgroundColor: COLORS.error }]}>
+          <Ionicons name="warning" size={16} color={COLORS.white} />
           <Text style={styles.survivalBannerText}>SURVIVAL MODE ACTIVE</Text>
         </View>
       )}
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.statusRow}>
-          <Ionicons
-            name={getStatusIcon(health?.status)}
-            size={32}
-            color={getStatusColor(health?.status)}
-          />
-          <View style={styles.statusText}>
-            <Text
-              style={[
-                styles.statusLabel,
-                { color: getStatusColor(health?.status) },
-              ]}
-            >
-              {(health?.status || 'unknown').toUpperCase()}
-            </Text>
-            <Text style={[styles.scoreText, { color: theme.text }]}>
-              Score: {survivalScore}/100
-            </Text>
-          </View>
-        </View>
-        <TouchableOpacity onPress={refresh} style={styles.refreshButton}>
-          <Ionicons
-            name="refresh"
-            size={20}
-            color={theme.textSecondary}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Progress Bar */}
-      <View style={styles.progressContainer}>
-        <View
-          style={[
-            styles.progressBar,
-            {
-              backgroundColor:
-                survivalScore > 70
-                  ? COLORS.success
-                  : survivalScore > 40
-                  ? COLORS.warning
-                  : COLORS.error,
-              width: `${survivalScore}%`,
-            },
-          ]}
-        />
-      </View>
-
-      {/* Metrics Grid */}
-      <View style={styles.metricsGrid}>
-        <View style={[styles.metricBox, { backgroundColor: theme.background }]}>
-          <Ionicons name="time-outline" size={20} color={COLORS.primary} />
-          <Text style={[styles.metricValue, { color: theme.text }]}>
-            {daysOfRunway}
-          </Text>
+      {/* Metrics */}
+      <View style={styles.metricsContainer}>
+        <View style={styles.metric}>
           <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>
-            Days Runway
+            Health Score
+          </Text>
+          <Text style={[styles.metricValue, { color: theme.text }]}>
+            {health.overall}
           </Text>
         </View>
-        <View style={[styles.metricBox, { backgroundColor: theme.background }]}>
-          <Ionicons name="wallet-outline" size={20} color={COLORS.success} />
-          <Text style={[styles.metricValue, { color: theme.text }]}>
-            ${economics?.totalUSDC?.toFixed(2) || '0.00'}
+        <View style={styles.metric}>
+          <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>
+            Runway Days
           </Text>
+          <Text style={[styles.metricValue, { color: theme.text }]}>
+            {economics?.runwayDays ?? 0}
+          </Text>
+        </View>
+        <View style={styles.metric}>
           <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>
             Balance
           </Text>
-        </View>
-        <View style={[styles.metricBox, { backgroundColor: theme.background }]}>
-          <Ionicons name="trending-up-outline" size={20} color={COLORS.info} />
           <Text style={[styles.metricValue, { color: theme.text }]}>
-            {((health?.successRate || 0) * 100).toFixed(0)}%
-          </Text>
-          <Text style={[styles.metricLabel, { color: theme.textSecondary }]}>
-            Success Rate
+            ${economics?.totalUSDC?.toFixed(2) ?? '0.00'}
           </Text>
         </View>
       </View>
 
-      {/* Emergency Warning */}
-      {needsEmergencyFunding && (
-        <View style={styles.emergencyWarning}>
-          <Ionicons name="alert-circle" size={20} color={COLORS.error} />
-          <Text style={styles.emergencyText}>
-            Emergency funding needed! Runway below 3 days.
-          </Text>
-        </View>
-      )}
-
-      {/* Action Buttons */}
+      {/* Actions */}
       {showActions && actions.length > 0 && (
         <View style={styles.actionsContainer}>
-          <Text style={[styles.actionsTitle, { color: theme.textSecondary }]}>
+          <Text style={[styles.actionsTitle, { color: theme.text }]}>
             Recommended Actions
           </Text>
-          {actions.slice(0, 3).map((action, index) => (
+          {actions.map((action, index) => (
             <TouchableOpacity
               key={index}
-              style={[
-                styles.actionButton,
-                {
-                  backgroundColor:
-                    action.priority === 'critical'
-                      ? `${COLORS.error}15`
-                      : action.priority === 'high'
-                      ? `${COLORS.warning}15`
-                      : `${COLORS.info}15`,
-                  borderColor:
-                    action.priority === 'critical'
-                      ? COLORS.error
-                      : action.priority === 'high'
-                      ? COLORS.warning
-                      : COLORS.info,
-                },
-              ]}
-              onPress={() => onActionPress?.(action)}
+              style={[styles.actionItem, { borderColor: theme.border }]}
+              onPress={() => handleActionPress(action)}
+              disabled={!action.actionable}
             >
-              <Ionicons
-                name={(action.icon as any) || 'alert-circle'}
-                size={18}
-                color={
-                  action.priority === 'critical'
-                    ? COLORS.error
-                    : action.priority === 'high'
-                    ? COLORS.warning
-                    : COLORS.info
-                }
-              />
-              <View style={styles.actionTextContainer}>
-                <Text
-                  style={[
-                    styles.actionDescription,
-                    { color: theme.text },
-                  ]}
-                  numberOfLines={2}
-                >
-                  {action.description}
-                </Text>
-                <Text
-                  style={[
-                    styles.actionImpact,
-                    { color: theme.textSecondary },
-                  ]}
-                >
-                  {action.estimatedImpact}
-                </Text>
+              <View style={styles.actionLeft}>
+                <Ionicons
+                  name={action.icon as keyof typeof Ionicons.glyphMap}
+                  size={20}
+                  color={action.color}
+                />
+                <View style={styles.actionContent}>
+                  <Text style={[styles.actionDescription, { color: theme.text }]}>
+                    {action.description}
+                  </Text>
+                  <Text style={[styles.actionImpact, { color: theme.textSecondary }]}>
+                    {action.estimatedImpact}
+                  </Text>
+                </View>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={theme.textSecondary} />
+              {action.actionable && (
+                <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+              )}
             </TouchableOpacity>
           ))}
-        </View>
-      )}
-
-      {/* Loading Overlay */}
-      {isLoading && (
-        <View style={styles.loadingOverlay}>
-          <Animated.View style={styles.spinner} />
         </View>
       )}
     </View>
@@ -321,134 +285,145 @@ export function SurvivalIndicator({
 const styles = StyleSheet.create({
   container: {
     borderRadius: BORDER_RADIUS.lg,
-    borderWidth: 1,
     overflow: 'hidden',
+    ...SHADOWS.md,
+  },
+  loadingContainer: {
+    padding: SPACING.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   compactContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: SPACING.md,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    padding: SPACING.md,
+  },
+  emptyContainer: {
+    padding: SPACING.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  compactStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: BORDER_RADIUS.sm,
+    borderWidth: 1,
+  },
+  compactStatusText: {
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '600',
+  },
+  compactMetrics: {
+    flexDirection: 'row',
+    gap: SPACING.lg,
+  },
+  compactMetric: {
+    alignItems: 'center',
+  },
+  compactMetricValue: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: '600',
+  },
+  compactMetricLabel: {
+    fontSize: FONT_SIZE.xs,
+    marginTop: 2,
+  },
+  compactErrorText: {
+    fontSize: FONT_SIZE.xs,
+  },
+  compactEmptyText: {
+    fontSize: FONT_SIZE.xs,
+  },
+  statusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: SPACING.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.xs,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
-    borderRadius: BORDER_RADIUS.full,
+    borderRadius: BORDER_RADIUS.md,
     borderWidth: 1,
   },
-  compactText: {
-    fontSize: FONT_SIZE.sm,
-    fontWeight: '700',
+  statusText: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: '600',
   },
-  pulseAnimation: {
-    // Animation would be added here
+  survivalScore: {
+    fontSize: FONT_SIZE.lg,
+    fontWeight: '700',
   },
   survivalBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: SPACING.sm,
-    padding: SPACING.md,
-    backgroundColor: COLORS.error,
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
   },
   survivalBannerText: {
-    fontSize: FONT_SIZE.md,
+    fontSize: FONT_SIZE.sm,
     fontWeight: '700',
     color: COLORS.white,
   },
-  header: {
+  metricsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    justifyContent: 'space-around',
     padding: SPACING.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
   },
-  statusRow: {
-    flexDirection: 'row',
+  metric: {
     alignItems: 'center',
-    gap: SPACING.md,
-  },
-  statusText: {
-    gap: 2,
-  },
-  statusLabel: {
-    fontSize: FONT_SIZE.md,
-    fontWeight: '700',
-  },
-  scoreText: {
-    fontSize: FONT_SIZE.sm,
-  },
-  refreshButton: {
-    padding: SPACING.sm,
-  },
-  progressContainer: {
-    height: 8,
-    backgroundColor: COLORS.gray200,
-    marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.lg,
-    borderRadius: BORDER_RADIUS.full,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: '100%',
-    borderRadius: BORDER_RADIUS.full,
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    gap: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    marginBottom: SPACING.lg,
-  },
-  metricBox: {
-    flex: 1,
-    padding: SPACING.md,
-    borderRadius: BORDER_RADIUS.md,
-    alignItems: 'center',
-  },
-  metricValue: {
-    fontSize: FONT_SIZE.lg,
-    fontWeight: '700',
-    marginTop: SPACING.xs,
   },
   metricLabel: {
-    fontSize: FONT_SIZE.xs,
-    marginTop: 2,
-  },
-  emergencyWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    marginHorizontal: SPACING.lg,
-    marginBottom: SPACING.lg,
-    padding: SPACING.md,
-    backgroundColor: `${COLORS.error}15`,
-    borderRadius: BORDER_RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.error,
-  },
-  emergencyText: {
-    flex: 1,
     fontSize: FONT_SIZE.sm,
-    color: COLORS.error,
-    fontWeight: '600',
+    marginBottom: SPACING.xs,
+  },
+  metricValue: {
+    fontSize: FONT_SIZE.xl,
+    fontWeight: '700',
   },
   actionsContainer: {
     padding: SPACING.lg,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
   },
   actionsTitle: {
-    fontSize: FONT_SIZE.sm,
+    fontSize: FONT_SIZE.md,
     fontWeight: '600',
     marginBottom: SPACING.md,
-    textTransform: 'uppercase',
   },
-  actionButton: {
+  actionItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.md,
-    padding: SPACING.md,
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
     borderRadius: BORDER_RADIUS.md,
     borderWidth: 1,
     marginBottom: SPACING.sm,
   },
-  actionTextContainer: {
+  actionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  actionContent: {
     flex: 1,
   },
   actionDescription: {
@@ -456,22 +431,16 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   actionImpact: {
-    fontSize: FONT_SIZE.xs,
-    marginTop: 2,
+    fontSize: FONT_SIZE.sm,
+    marginTop: SPACING.xs,
   },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  errorText: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.error,
   },
-  spinner: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 3,
-    borderColor: COLORS.primary,
-    borderTopColor: 'transparent',
+  emptyText: {
+    fontSize: FONT_SIZE.md,
+    color: COLORS.gray400,
   },
 });
 

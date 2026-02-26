@@ -349,7 +349,8 @@ export function useBridge(options: UseBridgeOptions = {}): UseBridgeReturn {
     return sdkFindCheapestChain('send', excludeChains);
   }, []);
 
-  // Execute bridge (mock for UI - actual execution would require wallet signing)
+  // Execute bridge
+  // TODO: 当前为 mock 实现，需要集成真实钱包签名和链上执行
   const executeBridge = useCallback(async (
     statusCallback?: TransactionStatusCallback
   ): Promise<BridgeOperationResult> => {
@@ -396,7 +397,12 @@ export function useBridge(options: UseBridgeOptions = {}): UseBridgeReturn {
       setStatus('confirming');
 
       // Simulate progress updates
-      const stages = [
+      const stages: Array<{
+        progress: number;
+        stage: MobileBridgeTransaction['stage'];
+        status: MobileBridgeTransaction['status'];
+        message: string;
+      }> = [
         { progress: 25, stage: 'source', status: 'pending', message: 'Waiting for source confirmation...' },
         { progress: 50, stage: 'cross_chain', status: 'source_confirmed', message: 'Bridge in progress...' },
         { progress: 75, stage: 'cross_chain', status: 'message_sent', message: 'Waiting for destination...' },

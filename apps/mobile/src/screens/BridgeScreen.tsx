@@ -1,4 +1,9 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+/**
+ * BridgeScreen.tsx - Complete Bridge Integration
+ * Cross-chain bridge screen with full SDK integration
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +16,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,23 +27,12 @@ import {
   responsiveFontSize,
   spacing,
 } from '../utils/responsive';
-import { useBridgeSDK } from '../hooks/useSDK';
+import { useBridge } from '../hooks/useBridge';
 import { useWalletStore } from '../store/walletStore';
+import type { SupportedChain, TokenType } from '../types/bridge';
 
-// Type definitions for SDK compatibility
-type SupportedChain = 'base' | 'optimism' | 'arbitrum' | 'ethereum';
-interface ChainBalance {
-  chain: SupportedChain;
-  usdcBalance: string;
-  nativeBalance: string;
-}
-
-// Supported chains from SDK
-const SUPPORTED_CHAINS: SupportedChain[] = ['base', 'optimism', 'arbitrum', 'ethereum'];
-type ChainType = SupportedChain;
-type TokenType = 'USDC' | 'ETH';
-
-const CHAIN_METADATA: Record<SupportedChain, { name: string; icon: string; color: string; nativeToken: string }> = {
+// Chain metadata for UI
+const CHAIN_METADATA = {
   ethereum: {
     name: 'Ethereum',
     icon: '🔷',
@@ -62,7 +57,9 @@ const CHAIN_METADATA: Record<SupportedChain, { name: string; icon: string; color
     color: '#28A0F0',
     nativeToken: 'ETH'
   }
-};
+} as const;
+
+const SUPPORTED_CHAINS: SupportedChain[] = ['base', 'optimism', 'arbitrum', 'ethereum'];
 
 interface BridgeScreenProps {
   navigation?: any;
@@ -70,86 +67,82 @@ interface BridgeScreenProps {
 
 export default function BridgeScreen({ navigation }: BridgeScreenProps) {
   const { address, isConnected } = useWalletStore();
-  
-  // Form state
-  const [sourceChain, setSourceChain] = useState<ChainType>('base');
-  const [destChain, setDestChain] = useState<ChainType>('optimism');
-  const [token, setToken] = useState<TokenType>('USDC');
-  const [amount, setAmount] = useState('');
-  const [recipient, setRecipient] = useState('');
-  const [useCustomRecipient, setUseCustomRecipient] = useState(false);
+  const insets = useSafeAreaInsets();
   const [showChainSelect, setShowChainSelect] = useState<'source' | 'dest' | null>(null);
-  const [balances, setBalances] = useState<ChainBalance[]>([]);
-  const [isBridging, setIsBridging] = useState(false);
-  
-  const { quote, isQuoting, error, getQuote, findCheapestChain, getAllChainBalances, clearQuote } = useBridgeSDK(address as `0x${string}` | null | undefined);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Load balances on mount
-  useEffect(() => {
-    if (address) {
-      getAllChainBalances().then(setBalances).catch(console.error);
+  const {
+    sourceChain,
+    destinationChain,
+    token,
+    amount,
+    recipient,
+    useCustomRecipient,
+    quote,
+    transaction,
+    balances,
+    errors,
+    isQuoting,
+    isBridging,
+    isLoadingBalances,
+    setSourceChain,
+    setDestinationChain,
+    setToken,
+    setAmount,
+    setRecipient,
+    setUseCustomRecipient,
+    swapChains,
+    getQuote,
+    executeBridge,
+    clearQuote,
+    getBalanceForChain,
+    formatAmount,
+    refreshBalances
+  } = useBridge({
+    address: address as `0x${string}` | null,
+    defaultSourceChain: 'base',
+    defaultDestChain: 'optimism',
+    autoRefreshBalances: true,
+    refreshInterval: 30000
+  });
+
+  // Refresh handler
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await refreshBalances();
+    setIsRefreshing(false);
+  }, [refreshBalances]);
+
+  // Handle bridge completion
+  const handleBridgeComplete = useCallback(async (result: { success: boolean; txHash?: string; error?: string }) => {
+    if (result.success) {
+      Alert.alert(
+        'Bridge Successful!',
+        `Transaction: ${result.txHash?.slice(0, 10)}...${result.txHash?.slice(-8)}`,
+        [{ text: 'OK' }]
+      );
+      // Refresh balances after successful bridge
+      await refreshBalances();
+    } else {
+      Alert.alert('Bridge Failed', result.error || 'Unknown error occurred');
     }
-  }, [address, getAllChainBalances]);
+  }, [refreshBalances]);
 
-  // Get available destination chains (exclude source)
-  const availableDestChains = useMemo(() => 
-    SUPPORTED_CHAINS.filter(c => c !== sourceChain),
-    [sourceChain]
-  );
-
-  // Update destination if it matches source
-  const handleSourceChange = useCallback((newSource: ChainType) => {
-    setSourceChain(newSource);
-    if (destChain === newSource) {
-      setDestChain(availableDestChains[0]);
-    }
-    setShowChainSelect(null);
-    clearQuote();
-  }, [destChain, availableDestChains, clearQuote]);
-
-  // Swap source and destination
-  const handleSwapChains = useCallback(() => {
-    const newSource = destChain;
-    const newDest = sourceChain;
-    setSourceChain(newSource);
-    setDestChain(newDest);
-    clearQuote();
-  }, [sourceChain, destChain, clearQuote]);
-
-  // Format amount input
-  const formatAmount = (value: string) => {
-    // Only allow numbers and one decimal point
-    const cleaned = value.replace(/[^0-9.]/g, '');
-    const parts = cleaned.split('.');
-    if (parts.length > 2) return parts[0] + '.' + parts.slice(1).join('');
-    // Limit decimals based on token
-    if (parts[1] && parts[1].length > (token === 'USDC' ? 6 : 18)) {
-      return parts[0] + '.' + parts[1].slice(0, token === 'USDC' ? 6 : 18);
-    }
-    return cleaned;
-  };
-
-  // Get quote using SDK
-  const handleGetQuote = async () => {
+  // Get quote with validation
+  const handleGetQuote = useCallback(async () => {
     if (!amount || parseFloat(amount) <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid amount');
       return;
     }
 
-    try {
-      await getQuote({
-        sourceChain,
-        destinationChain: destChain,
-        token,
-        amount
-      });
-    } catch (err) {
-      Alert.alert('Quote Failed', error || 'Failed to get bridge quote');
+    const result = await getQuote();
+    if (!result && errors.general) {
+      Alert.alert('Quote Failed', errors.general);
     }
-  };
+  }, [amount, getQuote, errors.general]);
 
-  // Execute bridge using SDK
-  const handleBridge = async () => {
+  // Execute bridge with confirmation
+  const handleBridge = useCallback(async () => {
     if (!isConnected) {
       Alert.alert('Not Connected', 'Please connect your wallet first');
       return;
@@ -160,55 +153,37 @@ export default function BridgeScreen({ navigation }: BridgeScreenProps) {
       return;
     }
 
+    if (!quote) {
+      Alert.alert('No Quote', 'Please get a quote first');
+      return;
+    }
+
     Alert.alert(
       'Confirm Bridge',
-      `Bridge ${amount} ${token} from ${CHAIN_METADATA[sourceChain].name} to ${CHAIN_METADATA[destChain].name}?`,
+      `Bridge ${amount} ${token} from ${CHAIN_METADATA[sourceChain].name} to ${CHAIN_METADATA[destinationChain].name}?\n\nEstimated fee: ${quote.estimatedFee} ETH\nEstimated time: ${quote.estimatedTime}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Confirm',
           onPress: async () => {
-            setIsBridging(true);
-            try {
-              // Get cheapest chain recommendation from SDK
-              const cheapestChain = await findCheapestChain([destChain]);
-              console.log('[Bridge] Cheapest chain for bridge:', cheapestChain);
-
-              // Note: Full bridge execution requires wallet signing
-              // This would typically be handled by the wallet provider
-              // For now, we simulate the bridge flow with SDK integration
-
-              Alert.alert(
-                'Bridge Initiated',
-                `Bridging ${amount} ${token} from ${CHAIN_METADATA[sourceChain].name} to ${CHAIN_METADATA[destChain].name}\n\nEstimated fee: ${quote?.estimatedFee || '0.001'} ETH`,
-                [{ text: 'OK', onPress: () => {
-                  setAmount('');
-                  clearQuote();
-                  // Refresh balances after bridge
-                  getAllChainBalances().then(setBalances);
-                }}]
-              );
-            } catch (err) {
-              const errorMsg = err instanceof Error ? err.message : 'Failed to execute bridge';
-              Alert.alert('Bridge Failed', errorMsg);
-            } finally {
-              setIsBridging(false);
-            }
+            const result = await executeBridge();
+            await handleBridgeComplete(result);
           }
         }
       ]
     );
-  };
+  }, [isConnected, amount, token, sourceChain, destinationChain, quote, handleBridgeComplete]);
 
   const sourceMeta = CHAIN_METADATA[sourceChain];
-  const destMeta = CHAIN_METADATA[destChain];
+  const destMeta = CHAIN_METADATA[destinationChain];
+  const availableBalance = getBalanceForChain(sourceChain, token);
 
   const renderChainSelector = () => {
     if (!showChainSelect) return null;
 
     const chains = showChainSelect === 'source' 
       ? SUPPORTED_CHAINS 
-      : availableDestChains;
+      : SUPPORTED_CHAINS.filter(c => c !== sourceChain);
 
     return (
       <View style={styles.chainSelectorOverlay}>
@@ -225,23 +200,23 @@ export default function BridgeScreen({ navigation }: BridgeScreenProps) {
             const meta = CHAIN_METADATA[chain];
             const isSelected = showChainSelect === 'source' 
               ? sourceChain === chain 
-              : destChain === chain;
+              : destinationChain === chain;
             
             return (
               <TouchableOpacity
                 key={chain}
                 style={[
                   styles.chainOption,
-                  isSelected && styles.chainOptionSelected
+                  isSelected && { backgroundColor: '#eef2ff' }
                 ]}
                 onPress={() => {
                   if (showChainSelect === 'source') {
-                    handleSourceChange(chain);
+                    setSourceChain(chain);
                   } else {
-                    setDestChain(chain);
-                    setShowChainSelect(null);
-                    clearQuote();
+                    setDestinationChain(chain);
                   }
+                  setShowChainSelect(null);
+                  clearQuote();
                 }}
               >
                 <View style={[styles.chainOptionIcon, { backgroundColor: `${meta.color}20` }]}>
@@ -262,8 +237,6 @@ export default function BridgeScreen({ navigation }: BridgeScreenProps) {
     );
   };
 
-  const insets = useSafeAreaInsets();
-
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -275,259 +248,293 @@ export default function BridgeScreen({ navigation }: BridgeScreenProps) {
           style={styles.scrollView}
           contentContainerStyle={{ paddingBottom: insets.bottom + spacing.lg }}
           keyboardShouldPersistTaps="handled"
-        >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerIcon}>
-            <Ionicons name="swap-horizontal" size={24} color="#fff" />
-          </View>
-          <View>
-            <Text style={styles.headerTitle}>Cross-Chain Bridge</Text>
-            <Text style={styles.headerSubtitle}>Transfer assets across L2 networks</Text>
-          </View>
-        </View>
-
-        {/* Balance Display */}
-        {address && balances.length > 0 && (
-          <View style={styles.balanceCard}>
-            <View style={styles.balanceHeader}>
-              <Ionicons name="wallet-outline" size={18} color="#6366f1" />
-              <Text style={styles.balanceTitle}>Your Balances (SDK)</Text>
-            </View>
-            <View style={styles.balanceList}>
-              {balances.map((bal) => {
-                const usdc = parseFloat(bal.usdcBalance || '0');
-                const native = parseFloat(bal.nativeBalance || '0');
-                if (usdc < 0.01 && native < 0.0001) return null;
-                return (
-                  <View key={bal.chain} style={styles.balanceItem}>
-                    <Text style={styles.balanceChain}>{CHAIN_METADATA[bal.chain].name}</Text>
-                    <View style={styles.balanceValues}>
-                      {usdc > 0.01 && (
-                        <Text style={styles.balanceValue}>{usdc.toFixed(2)} USDC</Text>
-                      )}
-                      {native > 0.0001 && (
-                        <Text style={styles.balanceNative}>{native.toFixed(4)} ETH</Text>
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        )}
-
-        {/* Token Selection */}
-        <View style={styles.tokenSelector}>
-          {(['USDC', 'ETH'] as TokenType[]).map((t) => (
-            <TouchableOpacity
-              key={t}
-              style={[
-                styles.tokenButton,
-                token === t && styles.tokenButtonActive
-              ]}
-              onPress={() => {
-                setToken(t);
-                clearQuote();
-              }}
-            >
-              <Text style={[
-                styles.tokenButtonText,
-                token === t && styles.tokenButtonTextActive
-              ]}>
-                {t === 'USDC' ? '💲 USDC' : '♦ ETH'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Chain Selection */}
-        <View style={styles.chainSection}>
-          {/* Source Chain */}
-          <View style={styles.chainBox}>
-            <Text style={styles.chainLabel}>From</Text>
-            <TouchableOpacity
-              style={styles.chainButton}
-              onPress={() => setShowChainSelect('source')}
-            >
-              <View style={[styles.chainButtonIcon, { backgroundColor: `${sourceMeta.color}20` }]}>
-                <Text style={styles.chainButtonIconText}>{sourceMeta.icon}</Text>
-              </View>
-              <View style={styles.chainButtonInfo}>
-                <Text style={styles.chainButtonName}>{sourceMeta.name}</Text>
-                <Text style={styles.chainButtonMeta}>{sourceMeta.nativeToken} Network</Text>
-              </View>
-              <Ionicons name="chevron-down" size={20} color="#6b7280" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Swap Button */}
-          <TouchableOpacity style={styles.swapButton} onPress={handleSwapChains}>
-            <View style={styles.swapButtonInner}>
-              <Ionicons name="swap-vertical" size={20} color="#6366f1" />
-            </View>
-          </TouchableOpacity>
-
-          {/* Destination Chain */}
-          <View style={styles.chainBox}>
-            <Text style={styles.chainLabel}>To</Text>
-            <TouchableOpacity
-              style={styles.chainButton}
-              onPress={() => setShowChainSelect('dest')}
-            >
-              <View style={[styles.chainButtonIcon, { backgroundColor: `${destMeta.color}20` }]}>
-                <Text style={styles.chainButtonIconText}>{destMeta.icon}</Text>
-              </View>
-              <View style={styles.chainButtonInfo}>
-                <Text style={styles.chainButtonName}>{destMeta.name}</Text>
-                <Text style={styles.chainButtonMeta}>{destMeta.nativeToken} Network</Text>
-              </View>
-              <Ionicons name="chevron-down" size={20} color="#6b7280" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Amount Input */}
-        <View style={styles.amountSection}>
-          <Text style={styles.sectionLabel}>Amount</Text>
-          <View style={styles.amountInputContainer}>
-            <TextInput
-              style={styles.amountInput}
-              value={amount}
-              onChangeText={(text) => {
-                setAmount(formatAmount(text));
-                clearQuote();
-              }}
-              placeholder="0.00"
-              placeholderTextColor="#9ca3af"
-              keyboardType="decimal-pad"
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              tintColor="#6366f1"
             />
-            <View style={styles.amountRight}>
-              <Text style={styles.amountToken}>{token}</Text>
-              <TouchableOpacity 
-                style={styles.maxButton}
+          }
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.headerIcon}>
+              <Ionicons name="swap-horizontal" size={24} color="#fff" />
+            </View>
+            <View>
+              <Text style={styles.headerTitle}>Cross-Chain Bridge</Text>
+              <Text style={styles.headerSubtitle}>Transfer assets across L2 networks</Text>
+            </View>
+          </View>
+
+          {/* Balance Display */}
+          {address && balances.length > 0 && (
+            <View style={styles.balanceCard}>
+              <View style={styles.balanceHeader}>
+                <Ionicons name="wallet-outline" size={18} color="#6366f1" />
+                <Text style={styles.balanceTitle}>Your Balances</Text>
+                <TouchableOpacity 
+                  onPress={refreshBalances}
+                  style={styles.refreshButton}
+                  disabled={isLoadingBalances}
+                >
+                  <Ionicons 
+                    name="refresh" 
+                    size={16} 
+                    color="#6366f1" 
+                    style={isLoadingBalances && styles.refreshSpinning}
+                  />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.balanceList}>
+                {balances.map((bal) => {
+                  const usdc = parseFloat(bal.usdcBalance || '0');
+                  const native = parseFloat(bal.nativeBalance || '0');
+                  if (usdc < 0.01 && native < 0.0001) return null;
+                  return (
+                    <View key={bal.chain} style={styles.balanceItem}>
+                      <Text style={styles.balanceChain}>{CHAIN_METADATA[bal.chain].name}</Text>
+                      <View style={styles.balanceValues}>
+                        {usdc > 0.01 && (
+                          <Text style={styles.balanceValue}>{usdc.toFixed(2)} USDC</Text>
+                        )}
+                        {native > 0.0001 && (
+                          <Text style={styles.balanceNative}>{native.toFixed(4)} ETH</Text>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* Token Selection */}
+          <View style={styles.tokenSelector}>
+            {(['USDC', 'ETH'] as TokenType[]).map((t) => (
+              <TouchableOpacity
+                key={t}
+                style={[
+                  styles.tokenButton,
+                  token === t && styles.tokenButtonActive
+                ]}
                 onPress={() => {
-                  setAmount(token === 'USDC' ? '1000' : '0.5');
+                  setToken(t);
                   clearQuote();
                 }}
               >
-                <Text style={styles.maxButtonText}>MAX</Text>
+                <Text style={[
+                  styles.tokenButtonText,
+                  token === t && styles.tokenButtonTextActive
+                ]}>
+                  {t === 'USDC' ? '💲 USDC' : '♦ ETH'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Chain Selection */}
+          <View style={styles.chainSection}>
+            {/* Source Chain */}
+            <View style={styles.chainBox}>
+              <Text style={styles.chainLabel}>From</Text>
+              <TouchableOpacity
+                style={styles.chainButton}
+                onPress={() => setShowChainSelect('source')}
+              >
+                <View style={[styles.chainButtonIcon, { backgroundColor: `${sourceMeta.color}20` }]}>
+                  <Text style={styles.chainButtonIconText}>{sourceMeta.icon}</Text>
+                </View>
+                <View style={styles.chainButtonInfo}>
+                  <Text style={styles.chainButtonName}>{sourceMeta.name}</Text>
+                  <Text style={styles.chainButtonMeta}>{sourceMeta.nativeToken} Network</Text>
+                </View>
+                <Ionicons name="chevron-down" size={20} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Swap Button */}
+            <TouchableOpacity style={styles.swapButton} onPress={swapChains}>
+              <View style={styles.swapButtonInner}>
+                <Ionicons name="swap-vertical" size={20} color="#6366f1" />
+              </View>
+            </TouchableOpacity>
+
+            {/* Destination Chain */}
+            <View style={styles.chainBox}>
+              <Text style={styles.chainLabel}>To</Text>
+              <TouchableOpacity
+                style={styles.chainButton}
+                onPress={() => setShowChainSelect('dest')}
+              >
+                <View style={[styles.chainButtonIcon, { backgroundColor: `${destMeta.color}20` }]}>
+                  <Text style={styles.chainButtonIconText}>{destMeta.icon}</Text>
+                </View>
+                <View style={styles.chainButtonInfo}>
+                  <Text style={styles.chainButtonName}>{destMeta.name}</Text>
+                  <Text style={styles.chainButtonMeta}>{destMeta.nativeToken} Network</Text>
+                </View>
+                <Ionicons name="chevron-down" size={20} color="#6b7280" />
               </TouchableOpacity>
             </View>
           </View>
-        </View>
 
-        {/* Custom Recipient Toggle */}
-        <TouchableOpacity 
-          style={styles.recipientToggle}
-          onPress={() => {
-            setUseCustomRecipient(!useCustomRecipient);
-            if (useCustomRecipient) {
-              setRecipient('');
-            } else {
-              setRecipient(address || '');
-            }
-          }}
-        >
-          <View style={[
-            styles.checkbox,
-            useCustomRecipient && styles.checkboxChecked
-          ]}>
-            {useCustomRecipient && (
-              <Ionicons name="checkmark" size={14} color="#fff" />
-            )}
-          </View>
-          <Text style={styles.recipientToggleText}>Send to a different address</Text>
-        </TouchableOpacity>
-
-        {/* Custom Recipient Input */}
-        {useCustomRecipient && (
-          <View style={styles.recipientSection}>
-            <Text style={styles.sectionLabel}>Recipient Address</Text>
-            <TextInput
-              style={styles.recipientInput}
-              value={recipient}
-              onChangeText={setRecipient}
-              placeholder="0x..."
-              placeholderTextColor="#9ca3af"
-              autoCapitalize="none"
-            />
-          </View>
-        )}
-
-        {/* Quote Display */}
-        {quote && (
-          <View style={styles.quoteCard}>
-            <View style={styles.quoteRow}>
-              <Text style={styles.quoteLabel}>Estimated Fee</Text>
-              <Text style={styles.quoteValue}>{quote.estimatedFee} ETH</Text>
-            </View>
-            <View style={styles.quoteRow}>
-              <Text style={styles.quoteLabel}>Estimated Time</Text>
-              <Text style={styles.quoteValue}>{quote.estimatedTime}</Text>
-            </View>
-          </View>
-        )}
-
-        {/* Error Display */}
-        {error && (
-          <View style={styles.errorCard}>
-            <Ionicons name="alert-circle" size={20} color="#ef4444" />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[
-              styles.quoteButton,
-              (!amount || parseFloat(amount) <= 0 || isQuoting) && styles.buttonDisabled
-            ]}
-            onPress={handleGetQuote}
-            disabled={!amount || parseFloat(amount) <= 0 || isQuoting}
-          >
-            {isQuoting ? (
-              <ActivityIndicator size="small" color="#374151" />
-            ) : (
-              <Text style={styles.quoteButtonText}>Get Quote</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.bridgeButton,
-              (!isConnected || isBridging || !amount || parseFloat(amount) <= 0) && styles.buttonDisabled
-            ]}
-            onPress={handleBridge}
-            disabled={!isConnected || isBridging || !amount || parseFloat(amount) <= 0}
-          >
-            {isBridging ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : !isConnected ? (
-              <Text style={styles.bridgeButtonText}>Connect Wallet</Text>
-            ) : (
-              <View style={styles.bridgeButtonContent}>
-                <Text style={styles.bridgeButtonText}>Bridge {token}</Text>
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
+          {/* Amount Input */}
+          <View style={styles.amountSection}>
+            <Text style={styles.sectionLabel}>Amount</Text>
+            <View style={styles.amountInputContainer}>
+              <TextInput
+                style={styles.amountInput}
+                value={amount}
+                onChangeText={(text) => setAmount(formatAmount(text))}
+                placeholder="0.00"
+                placeholderTextColor="#9ca3af"
+                keyboardType="decimal-pad"
+                editable={!isBridging}
+              />
+              <View style={styles.amountRight}>
+                <Text style={styles.amountToken}>{token}</Text>
+                <TouchableOpacity 
+                  style={styles.maxButton}
+                  onPress={() => setAmount(availableBalance)}
+                >
+                  <Text style={styles.maxButtonText}>MAX</Text>
+                </TouchableOpacity>
               </View>
+            </View>
+            {errors.amount && (
+              <Text style={styles.errorText}>{errors.amount}</Text>
             )}
+          </View>
+
+          {/* Custom Recipient Toggle */}
+          <TouchableOpacity 
+            style={styles.recipientToggle}
+            onPress={() => setUseCustomRecipient(!useCustomRecipient)}
+          >
+            <View style={[
+              styles.checkbox,
+              useCustomRecipient && styles.checkboxChecked
+            ]}>
+              {useCustomRecipient && (
+                <Ionicons name="checkmark" size={14} color="#fff" />
+              )}
+            </View>
+            <Text style={styles.recipientToggleText}>Send to a different address</Text>
           </TouchableOpacity>
-        </View>
 
-        {/* Security Note */}
-        <View style={styles.securityNote}>
-          <Ionicons name="shield-checkmark" size={16} color="#9ca3af" />
-          <Text style={styles.securityText}>Powered by LayerZero</Text>
-        </View>
+          {/* Custom Recipient Input */}
+          {useCustomRecipient && (
+            <View style={styles.recipientSection}>
+              <Text style={styles.sectionLabel}>Recipient Address</Text>
+              <TextInput
+                style={styles.recipientInput}
+                value={recipient}
+                onChangeText={setRecipient}
+                placeholder="0x..."
+                placeholderTextColor="#9ca3af"
+                autoCapitalize="none"
+                editable={!isBridging}
+              />
+              {errors.recipient && (
+                <Text style={styles.errorText}>{errors.recipient}</Text>
+              )}
+            </View>
+          )}
 
-        {/* Bottom padding */}
-        <View style={styles.bottomPadding} />
-      </ScrollView>
+          {/* Quote Display */}
+          {quote && (
+            <View style={styles.quoteCard}>
+              <View style={styles.quoteRow}>
+                <Text style={styles.quoteLabel}>Estimated Fee</Text>
+                <Text style={styles.quoteValue}>{quote.estimatedFee} ETH</Text>
+              </View>
+              <View style={styles.quoteRow}>
+                <Text style={styles.quoteLabel}>Estimated Time</Text>
+                <Text style={styles.quoteValue}>{quote.estimatedTime}</Text>
+              </View>
+            </View>
+          )}
 
-      {/* Chain Selector Modal */}
-      {renderChainSelector()}
-    </KeyboardAvoidingView>
+          {/* Transaction Progress */}
+          {transaction && (
+            <View style={styles.transactionCard}>
+              <View style={styles.transactionHeader}>
+                <Ionicons name="swap-horizontal" size={20} color="#6366f1" />
+                <Text style={styles.transactionTitle}>Bridge in Progress</Text>
+                <Text style={styles.transactionStatus}>{transaction.status}</Text>
+              </View>
+              <View style={styles.progressBar}>
+                <View style={[styles.progressFill, { width: `${transaction.progress}%` }]} />
+              </View>
+              <Text style={styles.transactionText}>
+                {transaction.stage} • {transaction.progress}%
+              </Text>
+              <Text style={styles.transactionHash}>
+                {transaction.txHash.slice(0, 10)}...{transaction.txHash.slice(-8)}
+              </Text>
+            </View>
+          )}
+
+          {/* Error Display */}
+          {errors.general && (
+            <View style={styles.errorCard}>
+              <Ionicons name="alert-circle" size={20} color="#ef4444" />
+              <Text style={styles.errorText}>{errors.general}</Text>
+            </View>
+          )}
+
+          {/* Action Buttons */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[
+                styles.quoteButton,
+                (!amount || parseFloat(amount) <= 0 || isQuoting) && styles.buttonDisabled
+              ]}
+              onPress={handleGetQuote}
+              disabled={!amount || parseFloat(amount) <= 0 || isQuoting}
+            >
+              {isQuoting ? (
+                <ActivityIndicator size="small" color="#374151" />
+              ) : (
+                <Text style={styles.quoteButtonText}>Get Quote</Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.bridgeButton,
+                (!isConnected || isBridging || !amount || parseFloat(amount) <= 0 || !quote) && styles.buttonDisabled
+              ]}
+              onPress={handleBridge}
+              disabled={!isConnected || isBridging || !amount || parseFloat(amount) <= 0 || !quote}
+            >
+              {isBridging ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : !isConnected ? (
+                <Text style={styles.bridgeButtonText}>Connect Wallet</Text>
+              ) : (
+                <View style={styles.bridgeButtonContent}>
+                  <Text style={styles.bridgeButtonText}>Bridge {token}</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Security Note */}
+          <View style={styles.securityNote}>
+            <Ionicons name="shield-checkmark" size={16} color="#9ca3af" />
+            <Text style={styles.securityText}>Powered by LayerZero for secure cross-chain transfers</Text>
+          </View>
+
+          {/* Bottom padding */}
+          <View style={styles.bottomPadding} />
+        </ScrollView>
+
+        {/* Chain Selector Modal */}
+        {renderChainSelector()}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -542,6 +549,32 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 20,
+    backgroundColor: '#f5f3ff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  headerIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#6366f1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  headerSubtitle: {
+    fontSize: 13,
+    color: '#6b7280',
   },
   balanceCard: {
     margin: 16,
@@ -562,6 +595,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#4338ca',
+  },
+  refreshButton: {
+    marginLeft: 'auto',
+  },
+  refreshSpinning: {
+    transform: [{ rotate: '360deg' }],
   },
   balanceList: {
     gap: 8,
@@ -591,32 +630,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6b7280',
     marginTop: 2,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    padding: 20,
-    backgroundColor: '#f5f3ff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  headerIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#6366f1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: '#6b7280',
   },
   tokenSelector: {
     flexDirection: 'row',
@@ -764,6 +777,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#6366f1',
   },
+  errorText: {
+    fontSize: 13,
+    color: '#ef4444',
+    marginTop: 4,
+  },
   recipientToggle: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -825,6 +843,53 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#111827',
   },
+  transactionCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: '#f5f3ff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e7ff',
+  },
+  transactionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  transactionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4338ca',
+    flex: 1,
+  },
+  transactionStatus: {
+    fontSize: 12,
+    color: '#6b7280',
+    textTransform: 'uppercase',
+  },
+  progressBar: {
+    height: 4,
+    backgroundColor: '#e0e7ff',
+    borderRadius: 2,
+    marginBottom: 8,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#6366f1',
+    borderRadius: 2,
+  },
+  transactionText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  transactionHash: {
+    fontSize: 11,
+    color: '#6366f1',
+    fontFamily: 'monospace',
+  },
   errorCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -834,11 +899,6 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: '#fef2f2',
     borderRadius: 10,
-  },
-  errorText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#ef4444',
   },
   actionButtons: {
     flexDirection: 'row',
