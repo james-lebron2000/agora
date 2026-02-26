@@ -3,14 +3,14 @@
  * React hook for survival simulation and scenario analysis
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import {
   SurvivalSimulator,
   createSimulatorFromSnapshot,
   type SimulationParams as SDKSimulationParams,
   type SimulationResult as SDKSimulationResult,
   type ScenarioComparison as SDKScenarioComparison,
-  type ScenarioType,
+  type ScenarioType as SDKScenarioType,
 } from '@agora/sdk/survival-simulation';
 import type { SurvivalSnapshot } from '@agora/sdk/survival';
 import type {
@@ -20,7 +20,30 @@ import type {
   ScenarioComparison,
   MonteCarloResult,
   SimulationOptions,
+  ScenarioType,
 } from '../types/survival';
+
+// Map mobile scenario types to SDK scenario types
+const toSDKScenarioType = (scenario: ScenarioType): SDKScenarioType => {
+  switch (scenario) {
+    case 'optimistic': return 'best-case';
+    case 'pessimistic': return 'worst-case';
+    case 'realistic': return 'average-case';
+    case 'custom': return 'custom';
+    default: return 'custom';
+  }
+};
+
+// Map SDK scenario types to mobile scenario types
+const toMobileScenarioType = (scenario: SDKScenarioType): ScenarioType => {
+  switch (scenario) {
+    case 'best-case': return 'optimistic';
+    case 'worst-case': return 'pessimistic';
+    case 'average-case': return 'realistic';
+    case 'custom': return 'custom';
+    default: return 'custom';
+  }
+};
 
 // Convert mobile params to SDK params
 function toSDKParams(params: Partial<SimulationParams>): SDKSimulationParams {
@@ -39,7 +62,7 @@ function toSDKParams(params: Partial<SimulationParams>): SDKSimulationParams {
 // Convert SDK result to mobile result
 function toMobileResult(result: SDKSimulationResult): SimulationResult {
   return {
-    scenario: result.scenario as ScenarioType,
+    scenario: toMobileScenarioType(result.scenario),
     params: {
       initialBalance: result.params.initialBalance,
       dailyIncome: result.params.dailyIncome,
@@ -53,6 +76,20 @@ function toMobileResult(result: SDKSimulationResult): SimulationResult {
     dailyResults: result.dailyResults,
     summary: result.summary,
     riskAssessment: result.riskAssessment,
+  };
+}
+
+// Convert SDK scenario comparison to mobile scenario comparison
+function toMobileComparison(comparison: SDKScenarioComparison): ScenarioComparison {
+  return {
+    scenarios: {
+      optimistic: toMobileResult(comparison.scenarios['best-case']),
+      pessimistic: toMobileResult(comparison.scenarios['worst-case']),
+      realistic: toMobileResult(comparison.scenarios['average-case']),
+      custom: toMobileResult(comparison.scenarios['custom']),
+    },
+    recommendation: toMobileScenarioType(comparison.recommendation),
+    riskAnalysis: comparison.riskAnalysis,
   };
 }
 
@@ -102,7 +139,7 @@ export function useSurvivalSimulation(
       });
 
       const simulator = getSimulator();
-      const sdkResult = simulator.simulateScenario('custom', sdkParams);
+      const sdkResult = simulator.simulate(sdkParams);
       const mobileResult = toMobileResult(sdkResult);
 
       setResult(mobileResult);
@@ -133,38 +170,12 @@ export function useSurvivalSimulation(
       });
 
       const simulator = getSimulator();
-      const scenarios: ScenarioType[] = ['optimistic', 'pessimistic', 'realistic'];
-      const results: Record<string, SimulationResult> = {};
+      const sdkComparison = simulator.compareScenarios(sdkParams);
+      const mobileComparison = toMobileComparison(sdkComparison);
 
-      for (const scenario of scenarios) {
-        const sdkResult = simulator.simulateScenario(scenario as any, sdkParams);
-        results[scenario] = toMobileResult(sdkResult);
-      }
-
-      // Determine recommendation
-      const realisticResult = results['realistic'];
-      let recommendation: ScenarioType = 'realistic';
-      
-      if (realisticResult.riskAssessment.bankruptcyProbability < 0.1) {
-        recommendation = 'optimistic';
-      } else if (realisticResult.riskAssessment.bankruptcyProbability > 0.5) {
-        recommendation = 'pessimistic';
-      }
-
-      const comparisonResult: ScenarioComparison = {
-        scenarios: results as Record<ScenarioType, SimulationResult>,
-        recommendation,
-        riskAnalysis: {
-          bestCaseOutcome: results['optimistic'].summary.finalBalance,
-          worstCaseOutcome: results['pessimistic'].summary.finalBalance,
-          expectedOutcome: results['realistic'].summary.finalBalance,
-          probabilityOfSuccess: 1 - realisticResult.riskAssessment.bankruptcyProbability,
-        },
-      };
-
-      setComparison(comparisonResult);
+      setComparison(mobileComparison);
       setLastUpdated(Date.now());
-      return comparisonResult;
+      return mobileComparison;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Scenario comparison failed';
       setError(message);
@@ -196,7 +207,7 @@ export function useSurvivalSimulation(
 
       const simulator = getSimulator();
       const its = iterations ?? monteCarloIterations;
-      const sdkResult = simulator.runMonteCarlo(sdkParams, its);
+      const sdkResult = simulator.monteCarlo(sdkParams, its);
 
       const results = sdkResult.results.map(toMobileResult);
       const monteCarloResult: MonteCarloResult = {
@@ -254,8 +265,14 @@ export function useSurvivalSimulation(
 
   // Computed helpers
   const hasResults = result !== null;
-  const bankruptcyProbability = result?.riskAssessment.bankruptcyProbability ?? 0;
-  const isSafe = bankruptcyProbability < 0.2;
+  
+  const bankruptcyProbability = useMemo(() => {
+    return result?.riskAssessment.bankruptcyProbability ?? 0;
+  }, [result]);
+  
+  const isSafe = useMemo(() => {
+    return bankruptcyProbability < 0.2;
+  }, [bankruptcyProbability]);
 
   return {
     result,
@@ -276,6 +293,56 @@ export function useSurvivalSimulation(
     hasResults,
     bankruptcyProbability,
     isSafe,
+  };
+}
+
+// Helper function to generate simulation chart data
+export function generateSimulationChartData(
+  result: SimulationResult
+): { labels: string[]; datasets: Array<{ label: string; data: number[]; color?: string }> } {
+  return {
+    labels: result.dailyResults.map(d => `Day ${d.day}`),
+    datasets: [
+      {
+        label: 'Balance',
+        data: result.dailyResults.map(d => d.balance),
+        color: '#10b981',
+      },
+      {
+        label: 'Income',
+        data: result.dailyResults.map(d => d.income),
+        color: '#3b82f6',
+      },
+      {
+        label: 'Expenses',
+        data: result.dailyResults.map(d => d.expenses),
+        color: '#ef4444',
+      },
+    ],
+  };
+}
+
+// Helper function to generate prediction chart data
+export function generatePredictionChartData(
+  history: Array<{ timestamp: number; trend: { currentScore: number } }>,
+  prediction?: { predictedScore: { value: number; lowerBound: number; upperBound: number } } | null
+): { labels: string[]; actual: number[]; predicted: number[]; lowerBound: number[]; upperBound: number[] } {
+  const labels = history.map(h => new Date(h.timestamp).toLocaleDateString());
+  const actual = history.map(h => h.trend.currentScore);
+  
+  if (!prediction) {
+    return { labels, actual, predicted: [], lowerBound: [], upperBound: [] };
+  }
+
+  const futureLabels = Array.from({ length: 7 }, (_, i) => `+${i + 1}d`);
+  const lastValue = actual[actual.length - 1] ?? 0;
+  
+  return {
+    labels: [...labels, ...futureLabels],
+    actual: [...actual, ...Array(7).fill(null)],
+    predicted: [...Array(actual.length - 1).fill(null), lastValue, ...Array(6).fill(prediction.predictedScore.value)],
+    lowerBound: [...Array(actual.length).fill(null), ...Array(7).fill(prediction.predictedScore.lowerBound)],
+    upperBound: [...Array(actual.length).fill(null), ...Array(7).fill(prediction.predictedScore.upperBound)],
   };
 }
 

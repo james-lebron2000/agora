@@ -11,7 +11,7 @@ import { spacing } from '../../utils/responsive';
 
 type SurvivalStatus = 'healthy' | 'stable' | 'degraded' | 'critical' | 'dying';
 
-interface ProfileSurvivalStatusProps {
+export interface ProfileSurvivalStatusProps {
   status: SurvivalStatus;
   score: number;
   address?: string | null;

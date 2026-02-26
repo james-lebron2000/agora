@@ -22,6 +22,16 @@ export {
   useSurvival,
 } from './useSurvival';
 
+export {
+  useSurvivalPrediction,
+} from './useSurvivalPrediction';
+
+export {
+  useSurvivalSimulation,
+  generateSimulationChartData,
+  generatePredictionChartData,
+} from './useSurvivalSimulation';
+
 // Network Hooks
 export {
   useNetworkState,

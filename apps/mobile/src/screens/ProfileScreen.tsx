@@ -1,4 +1,9 @@
-import React, { useMemo, useState } from 'react';
+/**
+ * ProfileScreen - Optimized Version
+ * Uses modular components for better maintainability and performance
+ */
+
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,642 +11,337 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
-  Image,
-  Dimensions,
-  ActivityIndicator,
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import {
-  scale,
-  verticalScale,
-  moderateScale,
-  responsiveFontSize,
-  spacing,
-  SCREEN_WIDTH,
-} from '../utils/responsive';
-
-// Helper to get spacing value
-const getSpacing = (value: number): number => {
-  if (value <= 4) return spacing.xs;
-  if (value <= 8) return spacing.sm;
-  if (value <= 12) return spacing.md;
-  if (value <= 16) return spacing.lg;
-  if (value <= 20) return spacing.xl;
-  return spacing['2xl'];
-};
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Rect, Text as SvgText, Line } from 'react-native-svg';
 
+import {
+  ProfileHeader,
+  ProfileStatsCard,
+  ProfileSurvivalStatus,
+  ProfileTaskList,
+  ProfileTaskChart,
+} from '../components/profile';
 import {
   MultiChainBalance,
   ProfileEditModal,
   AchievementBadge,
-  AgentAvatar,
   ActivityHeatmap,
-  ActivityHeatmapCompact,
-  AgentLevelProgress,
   AgentLeaderboard,
-  ShareProfile,
-  ProfileStats,
-  AchievementGallery,
   generateActivityData,
   calculateLevel,
-  type TimePeriod,
-  type SortMetric,
-  type LeaderboardEntry,
-  type Achievement,
 } from '../components';
 import { useWalletStore } from '../store/walletStore';
 import { useTasks, useSurvival, useProfileApi } from '../hooks/useApi';
 import { useProfile } from '../hooks/useProfile';
 import { useOfflineSync } from '../hooks/useOfflineSync';
+import { spacing } from '../utils/responsive';
 import type { Task } from '../types/navigation';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
- type NavigationProp = any;
-
+type NavigationProp = any;
 type SurvivalStatus = 'healthy' | 'stable' | 'degraded' | 'critical' | 'dying';
 
-const screenWidth = SCREEN_WIDTH;
-
-const statusMeta: Record<SurvivalStatus, { color: string; label: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  healthy: { color: '#10b981', label: 'Healthy', icon: 'checkmark-circle' },
-  stable: { color: '#3b82f6', label: 'Stable', icon: 'shield-checkmark' },
-  degraded: { color: '#f59e0b', label: 'Degraded', icon: 'warning' },
-  critical: { color: '#ef4444', label: 'Critical', icon: 'alert-circle' },
-  dying: { color: '#7f1d1d', label: 'Dying', icon: 'skull' },
-};
-
-const TaskRow: React.FC<{ task: Task; onPress: () => void }> = ({ task, onPress }) => (
-  <TouchableOpacity style={styles.taskRow} onPress={onPress}>
-    <View style={styles.taskInfo}>
-      <Text style={styles.taskTitle} numberOfLines={1}>{task.title}</Text>
-      <Text style={styles.taskDate}>{new Date(task.createdAt).toLocaleDateString()}</Text>
-    </View>
-    <View style={styles.taskMeta}>
-      <Text style={styles.taskBudget}>{task.budget} {task.currency}</Text>
-      <View style={[styles.statusBadge, styles[`status_${task.status}`]]}>
-        <Text style={styles.statusText}>{task.status.replace('_', ' ')}</Text>
-      </View>
-    </View>
-  </TouchableOpacity>
-);
-
-const MiniTaskChart: React.FC<{ posted: number; completed: number; inProgress: number; cancelled: number }> = ({
-  posted,
-  completed,
-  inProgress,
-  cancelled,
-}) => {
-  const width = screenWidth - 80;
-  const height = 170;
-  const chartHeight = 110;
-  const maxValue = Math.max(posted, completed, inProgress, cancelled, 1);
-  const data = [
-    { label: 'Posted', value: posted, color: '#6366f1' },
-    { label: 'Done', value: completed, color: '#10b981' },
-    { label: 'Progress', value: inProgress, color: '#f59e0b' },
-    { label: 'Canceled', value: cancelled, color: '#ef4444' },
-  ];
-
-  return (
-    <View style={styles.chartContainer}>
-      <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-        <Line x1={18} y1={chartHeight + 18} x2={width - 10} y2={chartHeight + 18} stroke="#cbd5e1" strokeWidth={1} />
-
-        {data.map((item, index) => {
-          const barWidth = (width - 60) / data.length - 10;
-          const gap = 10;
-          const x = 28 + index * (barWidth + gap);
-          const barHeight = (item.value / maxValue) * chartHeight;
-          const y = chartHeight + 18 - barHeight;
-
-          return (
-            <React.Fragment key={item.label}>
-              <Rect x={x} y={y} width={barWidth} height={barHeight} rx={6} fill={item.color} />
-              <SvgText x={x + barWidth / 2} y={y - 6} fontSize={11} fill="#334155" textAnchor="middle">
-                {item.value}
-              </SvgText>
-              <SvgText x={x + barWidth / 2} y={height - 8} fontSize={10} fill="#64748b" textAnchor="middle">
-                {item.label}
-              </SvgText>
-            </React.Fragment>
-          );
-        })}
-      </Svg>
-    </View>
-  );
-};
-
-/**
- * Generate mock leaderboard data
- */
-function generateMockLeaderboard(
-  period: TimePeriod,
-  sortBy: SortMetric,
-  currentUserId?: string
-): LeaderboardEntry[] {
+// Generate mock leaderboard data
+const generateMockLeaderboard = (currentUserId?: string) => {
   const mockAgents = [
     { id: 'agent-alpha-001', name: 'Alpha Trader', level: 42 },
     { id: 'agent-beta-002', name: 'Beta Scout', level: 38 },
     { id: 'agent-gamma-003', name: 'Gamma Analyst', level: 35 },
-    { id: 'agent-delta-004', name: 'Delta Guardian', level: 33 },
-    { id: 'agent-echo-001', name: 'Echo Sentinel', level: 28 },
-    { id: 'agent-zeta-005', name: 'Zeta Explorer', level: 25 },
-    { id: 'agent-eta-006', name: 'Eta Collector', level: 22 },
-    { id: 'agent-theta-007', name: 'Theta Pioneer', level: 20 },
   ];
 
-  const periodMultiplier = {
-    '24h': 0.1,
-    '7d': 0.3,
-    '30d': 0.7,
-    'all-time': 1.0,
-  }[period];
-
-  let entries: LeaderboardEntry[] = mockAgents.map((agent, index) => {
-    const baseEarnings = (mockAgents.length - index) * 1000 + Math.random() * 500;
-    const baseTasks = Math.floor((mockAgents.length - index) * 50 + Math.random() * 25);
-    const baseSurvival = Math.min(100, 95 - index * 3 + Math.random() * 10);
-
-    return {
-      rank: index + 1,
-      agentId: agent.id,
-      name: agent.name,
-      level: agent.level,
-      earnings: Math.floor(baseEarnings * periodMultiplier),
-      tasksCompleted: Math.floor(baseTasks * periodMultiplier),
-      survivalScore: Math.round(baseSurvival),
-      isCurrentUser: agent.id === currentUserId,
-    };
-  });
-
-  entries.sort((a, b) => {
-    switch (sortBy) {
-      case 'earnings':
-        return b.earnings - a.earnings;
-      case 'tasks':
-        return b.tasksCompleted - a.tasksCompleted;
-      case 'survival':
-        return b.survivalScore - a.survivalScore;
-      case 'level':
-        return b.level - a.level;
-      default:
-        return b.earnings - a.earnings;
-    }
-  });
-
-  entries = entries.map((entry, index) => ({
-    ...entry,
+  const entries = mockAgents.map((agent, index) => ({
+    id: agent.id,
+    name: agent.name,
+    avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${agent.id}`,
+    level: agent.level,
+    xp: agent.level * 1000 + Math.floor(Math.random() * 1000),
+    tasksCompleted: Math.floor(Math.random() * 100) + 50,
+    earnings: (Math.random() * 5 + 1).toFixed(2),
+    streak: Math.floor(Math.random() * 30),
     rank: index + 1,
   }));
 
-  return entries;
-}
+  // Add current user
+  if (currentUserId) {
+    entries.push({
+      id: currentUserId,
+      name: 'You',
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${currentUserId}`,
+      level: 25,
+      xp: 25000,
+      tasksCompleted: 45,
+      earnings: '2.5',
+      streak: 7,
+      rank: entries.length + 1,
+    });
+  }
 
-export default function ProfileScreen() {
+  return entries.sort((a, b) => b.xp - a.xp).map((e, i) => ({ ...e, rank: i + 1 }));
+};
+
+export default function ProfileScreen(): React.ReactElement {
   const navigation = useNavigation<NavigationProp>();
   const { address, disconnect } = useWalletStore();
-  const { tasks } = useTasks();
-  const { snapshot } = useSurvival(address);
-  const {
-    profile: legacyProfile,
-    stats: legacyStats,
-    isSavingProfile,
-    isUploadingAvatar,
-    saveProfile,
-    uploadUserAvatar,
-  } = useProfileApi(address);
+  const { isOnline, isSyncing, pendingCount, forceSync, lastSyncTime } = useOfflineSync();
+  
+  // Data fetching
+  const { data: tasksData, isLoading: isLoadingTasks } = useTasks(address || undefined);
+  const { data: survivalData, isLoading: isLoadingSurvival } = useSurvival(address || undefined);
+  const { data: profileData, isLoading: isLoadingProfile } = useProfileApi(address || undefined);
+  
+  // Local profile state
+  const { 
+    profile, 
+    isEditModalVisible, 
+    setEditModalVisible, 
+    updateProfile, 
+    generateShareUrl,
+  } = useProfile(address);
 
-  // Profile SDK Integration
-  const {
-    profile,
-    stats,
-    achievements: sdkAchievements,
-    isLoadingProfile,
-    isLoadingStats,
-    isLoadingAchievements,
-    level,
-    levelProgress: levelProgressValue,
-  } = useProfile({ agentId: address || undefined });
+  // Memoized values
+  const displayName = useMemo(() => 
+    profile.displayName || address?.slice(0, 12) || 'Anonymous',
+  [profile.displayName, address]);
 
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [leaderboardPeriod, setLeaderboardPeriod] = useState<TimePeriod>('all-time');
-  const [leaderboardSort, setLeaderboardSort] = useState<SortMetric>('earnings');
+  const nickname = useMemo(() => 
+    profile.nickname || address?.slice(0, 8) || 'anon',
+  [profile.nickname, address]);
 
-  // Offline sync integration
-  const {
-    isOnline,
-    isSyncing,
-    pendingOperations,
-    lastSyncTime,
-    syncError,
-    forceSync,
-  } = useOfflineSync();
-
-  // Generate activity data
-  const activityData = useMemo(() => generateActivityData(90), []);
-
-  // Calculate agent level from stats
-  const agentLevel = useMemo(() => {
-    const totalXP = (stats?.tasksCompleted ?? 0) * 100 + (parseFloat(profile?.totalEarned || '0') ?? 0);
-    return calculateLevel(totalXP);
-  }, [stats, profile]);
-
-  // Generate leaderboard entries
-  const leaderboardEntries = useMemo(() => {
-    return generateMockLeaderboard(leaderboardPeriod, leaderboardSort, address ?? undefined);
-  }, [leaderboardPeriod, leaderboardSort, address]);
-
-  const myTasks = useMemo(
-    () => tasks.filter((t: Task) => t.creator?.walletAddress === address),
-    [tasks, address]
-  );
-
-  const postedCount = legacyStats?.postedTasks ?? myTasks.length;
-  const completedCount = legacyStats?.completedTasks ?? myTasks.filter((t) => t.status === 'completed').length;
-  const inProgressCount = legacyStats?.inProgressTasks ?? myTasks.filter((t) => t.status === 'in_progress').length;
-  const cancelledCount = legacyStats?.cancelledTasks ?? myTasks.filter((t) => t.status === 'cancelled').length;
-  const completionRate = legacyStats?.completionRate ?? (postedCount > 0 ? (completedCount / postedCount) * 100 : 0);
-
-  const survivalStatus = (snapshot?.health?.status || 'stable') as SurvivalStatus;
-  const survivalScore = snapshot?.health?.overall ?? legacyStats?.survivalHealth ?? 72;
-
-  const achievements = legacyStats?.achievements ?? [];
-
-  // Convert SDK achievements to component format
-  const formattedAchievements: Achievement[] = useMemo(() => {
-    if (sdkAchievements.length > 0) {
-      return sdkAchievements.map(a => ({
-        id: a.id,
-        name: a.name,
-        description: a.description,
-        icon: a.icon,
-        tier: a.tier,
-        xpReward: a.xpReward,
-        unlocked: a.unlocked,
-        unlockedAt: a.unlockedAt,
-        progress: a.progress,
-        criteria: a.criteria,
-      }));
+  const survivalStatus = useMemo((): SurvivalStatus => {
+    if (!survivalData?.status) return 'stable';
+    const status = survivalData.status.toLowerCase();
+    if (['healthy', 'stable', 'degraded', 'critical', 'dying'].includes(status)) {
+      return status as SurvivalStatus;
     }
-    return [];
-  }, [sdkAchievements]);
+    return 'stable';
+  }, [survivalData]);
 
-  const handleDisconnect = () => {
+  const survivalScore = useMemo(() => 
+    survivalData?.health?.overall || 75,
+  [survivalData]);
+
+  const levelInfo = useMemo(() => 
+    calculateLevel(profileData?.xp || 0),
+  [profileData?.xp]);
+
+  const taskStats = useMemo(() => {
+    const tasks = tasksData || [];
+    const posted = tasks.filter((t: Task) => t.creator === address).length;
+    const completed = tasks.filter((t: Task) => t.status === 'completed').length;
+    const inProgress = tasks.filter((t: Task) => t.status === 'in_progress').length;
+    const cancelled = tasks.filter((t: Task) => t.status === 'cancelled').length;
+    const completionRate = posted > 0 ? Math.round((completed / posted) * 100) : 0;
+    
+    return { posted, completed, inProgress, cancelled, completionRate };
+  }, [tasksData, address]);
+
+  const leaderboardData = useMemo(() => 
+    generateMockLeaderboard(address || undefined),
+  [address]);
+
+  const activityData = useMemo(() => 
+    generateActivityData(180),
+  []);
+
+  // Callbacks
+  const handleEditPress = useCallback(() => {
+    setEditModalVisible(true);
+  }, [setEditModalVisible]);
+
+  const handleTaskPress = useCallback((task: Task) => {
+    navigation.navigate('TaskDetail', { taskId: task.id });
+  }, [navigation]);
+
+  const handleDisconnect = useCallback(() => {
     Alert.alert(
       'Disconnect Wallet',
-      'Are you sure you want to disconnect your wallet?',
+      'Are you sure you want to disconnect?',
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disconnect',
+        { 
+          text: 'Disconnect', 
           style: 'destructive',
           onPress: () => disconnect(),
         },
       ]
     );
-  };
+  }, [disconnect]);
 
-  const handleProfileSave = async (payload: { username: string; nickname: string }) => {
-    if (!address) return;
+  const handleSurvivalPress = useCallback(() => {
+    navigation.navigate('SurvivalDetail');
+  }, [navigation]);
 
-    await saveProfile(payload);
-    setIsEditOpen(false);
-  };
+  const handleShare = useCallback(async () => {
+    const url = await generateShareUrl();
+    // Share implementation
+    Alert.alert('Profile Shared', `URL: ${url}`);
+  }, [generateShareUrl]);
 
-  const handleAvatarPick = async () => {
-    if (!address) return;
-
-    try {
-      const moduleName = 'expo-image-picker';
-      const picker: any = await import(moduleName);
-
-      const permission = await picker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission Needed', 'Please allow photo library access to update avatar.');
-        return;
-      }
-
-      const result = await picker.launchImageLibraryAsync({
-        mediaTypes: picker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (result.canceled || !result.assets?.[0]?.uri) {
-        return;
-      }
-
-      const localUri = result.assets[0].uri;
-      const uploadedAvatar = await uploadUserAvatar(localUri);
-      if (uploadedAvatar) {
-        await saveProfile({ avatarUrl: uploadedAvatar });
-      }
-    } catch {
-      Alert.alert(
-        'Album Picker Unavailable',
-        'expo-image-picker is not installed in this environment. Install it to enable album selection.'
-      );
-    }
-  };
-
-  // Use SDK profile data when available, fallback to legacy
-  const displayName = profile?.name || legacyProfile?.username || (address ? `User ${address.slice(0, 6)}` : 'Guest');
-  const nickname = profile?.name || legacyProfile?.nickname || 'Echo Agent';
-  const avatarUri = profile?.avatarUrl || legacyProfile?.avatarUrl;
-  const agentId = address || 'unknown-agent';
-
-  // SDK stats data (when available)
-  const sdkStatsData = stats ? {
-    tasksCompleted: stats.tasksCompleted,
-    tasksCompletedThisMonth: stats.tasksCompletedThisMonth,
-    successRate: stats.successRate,
-    averageRating: stats.averageRating,
-    totalReviews: stats.totalReviews,
-    currentStreak: stats.currentStreak,
-    longestStreak: stats.longestStreak,
-    averageResponseTime: stats.averageResponseTime,
-    totalWorkingHours: stats.totalWorkingHours,
-  } : null;
-
-  const sdkEarningsData = profile ? {
-    totalEarned: profile.totalEarned,
-    totalSpent: profile.totalSpent,
-  } : { totalEarned: '0', totalSpent: '0' };
+  if (!address) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyContainer}>
+          <Ionicons name="wallet-outline" size={64} color="#d1d5db" />
+          <Text style={styles.emptyTitle}>Connect Wallet</Text>
+          <Text style={styles.emptySubtitle}>
+            Connect your wallet to view your profile
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
+      <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardAvoidingView}
+        style={styles.flex}
       >
-        <ScrollView
+        <ScrollView 
           style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
         >
-        {/* Enhanced Header with AgentAvatar */}
-        <View style={styles.header}>
-          {/* Sync Status Indicator */}
-          <View style={styles.syncStatusContainer}>
-            {!isOnline && (
-              <View style={styles.offlineBadge}>
-                <Ionicons name="cloud-offline-outline" size={12} color="#fff" />
-                <Text style={styles.offlineText}>Offline</Text>
-              </View>
-            )}
-            {isSyncing && (
-              <View style={styles.syncingBadge}>
-                <ActivityIndicator size="small" color="#fff" style={styles.syncSpinner} />
-                <Text style={styles.syncingText}>Syncing...</Text>
-              </View>
-            )}
-            {!isSyncing && pendingOperations > 0 && isOnline && (
-              <TouchableOpacity onPress={forceSync} style={styles.pendingBadge}>
-                <Ionicons name="sync-outline" size={12} color="#fff" />
-                <Text style={styles.pendingText}>{pendingOperations} pending</Text>
-              </TouchableOpacity>
-            )}
-            {lastSyncTime && !isSyncing && pendingOperations === 0 && (
-              <View style={styles.syncedBadge}>
-                <Ionicons name="checkmark-circle-outline" size={12} color="#fff" />
-                <Text style={styles.syncedText}>Synced</Text>
-              </View>
-            )}
+          {/* Header Section */}
+          <ProfileHeader
+            displayName={displayName}
+            nickname={nickname}
+            address={address}
+            avatarUri={profile.avatarUri}
+            agentId={address}
+            survivalStatus={survivalStatus}
+            isOnline={isOnline}
+            isSyncing={isSyncing}
+            pendingOperations={pendingCount}
+            lastSyncTime={lastSyncTime}
+            onEditPress={handleEditPress}
+            onForceSync={forceSync}
+          />
+
+          {/* Survival Status */}
+          <ProfileSurvivalStatus
+            status={survivalStatus}
+            score={survivalScore}
+            address={address}
+            onPress={handleSurvivalPress}
+          />
+
+          {/* Stats Card */}
+          <ProfileStatsCard
+            postedCount={taskStats.posted}
+            completedCount={taskStats.completed}
+            inProgressCount={taskStats.inProgress}
+            cancelledCount={taskStats.cancelled}
+            completionRate={taskStats.completionRate}
+            level={levelInfo.level}
+            levelProgress={levelInfo.progress}
+            tasksCompleted={profileData?.tasksCompleted}
+            successRate={profileData?.successRate}
+            currentStreak={profileData?.currentStreak}
+            totalEarned={profileData?.totalEarned}
+            totalSpent={profileData?.totalSpent}
+            isLoadingProfile={isLoadingProfile}
+            isLoadingStats={isLoadingTasks}
+          />
+
+          {/* Task Chart */}
+          <ProfileTaskChart
+            posted={taskStats.posted}
+            completed={taskStats.completed}
+            inProgress={taskStats.inProgress}
+            cancelled={taskStats.cancelled}
+          />
+
+          {/* Activity Heatmap */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Activity</Text>
+            <ActivityHeatmap data={activityData} />
           </View>
 
-          <TouchableOpacity style={styles.editPill} onPress={() => setIsEditOpen(true)}>
-            <Ionicons name="create-outline" size={14} color="#4f46e5" />
-            <Text style={styles.editPillText}>Edit</Text>
-          </TouchableOpacity>
-
-          <View style={styles.avatarWrapper}>
-            {avatarUri ? (
-              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
-            ) : (
-              <AgentAvatar
-                agentId={agentId}
-                agentName={displayName}
-                size="lg"
-                status={survivalStatus === 'healthy' ? 'online' : 'busy'}
+          {/* Achievements */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Achievements</Text>
+            <View style={styles.achievementsRow}>
+              <AchievementBadge
+                icon="🎯"
+                name="Task Master"
+                description="Complete 50 tasks"
+                unlocked={taskStats.completed >= 50}
+                rarity="rare"
               />
-            )}
-          </View>
-
-          <Text style={styles.userName}>{displayName}</Text>
-          <Text style={styles.nickname}>@{nickname}</Text>
-          <Text style={styles.walletLabel}>Connected Wallet</Text>
-          <Text style={styles.walletAddress}>
-            {address ? `${address.slice(0, 8)}...${address.slice(-8)}` : 'Not connected'}
-          </Text>
-
-          {/* Share Button */}
-          {address && (
-            <ShareProfile
-              agentId={agentId}
-              agentName={displayName}
-              style={styles.shareButton}
-            />
-          )}
-        </View>
-
-        {/* Agent Level Progress */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Agent Level</Text>
-          <AgentLevelProgress level={agentLevel} compact />
-        </View>
-
-        {/* Survival Card */}
-        <View style={styles.survivalCard}>
-          <View style={styles.survivalHeader}>
-            <View>
-              <Text style={styles.cardTitle}>Echo Survival</Text>
-              <Text style={styles.cardSubTitle}>Real-time economic self-preservation</Text>
-            </View>
-            <View style={[styles.survivalStatus, { backgroundColor: `${statusMeta[survivalStatus].color}20` }]}>
-              <Ionicons name={statusMeta[survivalStatus].icon} size={16} color={statusMeta[survivalStatus].color} />
-              <Text style={[styles.survivalStatusText, { color: statusMeta[survivalStatus].color }]}>
-                {statusMeta[survivalStatus].label}
-              </Text>
+              <AchievementBadge
+                icon="🔥"
+                name="On Fire"
+                description="7 day streak"
+                unlocked={(profileData?.currentStreak || 0) >= 7}
+                rarity="epic"
+              />
+              <AchievementBadge
+                icon="💎"
+                name="Big Spender"
+                description="Spend 10 ETH"
+                unlocked={parseFloat(profileData?.totalSpent || '0') >= 10}
+                rarity="legendary"
+              />
             </View>
           </View>
-          <Text style={styles.survivalScore}>{survivalScore}/100</Text>
-        </View>
 
-        {/* Stats Container */}
-        <View style={styles.statsContainer}>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{postedCount}</Text>
-            <Text style={styles.statLabel}>Posted</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{completedCount}</Text>
-            <Text style={styles.statLabel}>Completed</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{Math.round(completionRate)}%</Text>
-            <Text style={styles.statLabel}>Completion</Text>
-          </View>
-        </View>
-
-        {/* Activity Heatmap */}
-        <View style={styles.section}>
-          <ActivityHeatmap data={activityData} title="Contribution Activity" />
-        </View>
-
-        {/* SDK Profile Stats - New! */}
-        {(isLoadingProfile || isLoadingStats) ? (
-          <View style={[styles.section, styles.loadingSection]}>
-            <ActivityIndicator size="small" color="#6366f1" />
-            <Text style={styles.loadingText}>Loading profile stats...</Text>
-          </View>
-        ) : sdkStatsData ? (
+          {/* Multi-Chain Balance */}
           <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Performance Stats</Text>
-              <View style={styles.sdkBadge}>
-                <Text style={styles.sdkBadgeText}>SDK</Text>
-              </View>
-            </View>
-            <ProfileStats stats={sdkStatsData} earnings={sdkEarningsData} />
-          </View>
-        ) : null}
-
-        {/* SDK Achievement Gallery - New! */}
-        {isLoadingAchievements ? (
-          <View style={[styles.section, styles.loadingSection]}>
-            <ActivityIndicator size="small" color="#6366f1" />
-            <Text style={styles.loadingText}>Loading achievements...</Text>
-          </View>
-        ) : formattedAchievements.length > 0 ? (
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Achievements</Text>
-              <View style={styles.sdkBadge}>
-                <Text style={styles.sdkBadgeText}>SDK</Text>
-              </View>
-            </View>
-            <AchievementGallery achievements={formattedAchievements} />
-          </View>
-        ) : null}
-
-        {/* Task Statistics */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Task Statistics</Text>
-          <MiniTaskChart
-            posted={postedCount}
-            completed={completedCount}
-            inProgress={inProgressCount}
-            cancelled={cancelledCount}
-          />
-        </View>
-
-        {/* Leaderboard */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Leaderboard</Text>
-          <AgentLeaderboard
-            entries={leaderboardEntries}
-            period={leaderboardPeriod}
-            sortBy={leaderboardSort}
-            onPeriodChange={setLeaderboardPeriod}
-            onSortChange={setLeaderboardSort}
-          />
-        </View>
-
-        {/* Multi-Chain Wallet */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Multi-Chain Wallet</Text>
-          <Text style={styles.sectionHint}>Track balances across Ethereum, Base, Optimism, and Arbitrum</Text>
-          <View style={styles.balanceWrapper}>
+            <Text style={styles.sectionTitle}>Wallet</Text>
             <MultiChainBalance address={address} />
           </View>
-        </View>
 
-        {/* Achievement Badges */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Achievement Badges</Text>
-          {achievements.length === 0 ? (
-            <Text style={styles.emptyText}>No achievements yet. Complete tasks to unlock badges.</Text>
-          ) : (
-            achievements.map((badge) => (
-              <AchievementBadge
-                key={badge.id}
-                title={badge.title}
-                description={badge.description}
-                icon={badge.icon}
-                rarity={badge.rarity}
-                unlocked={badge.unlocked}
-                progress={badge.progress}
-              />
-            ))
-          )}
-        </View>
+          {/* Task List */}
+          <ProfileTaskList
+            tasks={tasksData || []}
+            maxDisplay={3}
+            onTaskPress={handleTaskPress}
+            onViewAllPress={() => navigation.navigate('MyTasks')}
+          />
 
-        {/* My Tasks */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>My Tasks</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('TaskPost')}>
-              <Text style={styles.seeAll}>+ New</Text>
-            </TouchableOpacity>
+          {/* Leaderboard */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Leaderboard</Text>
+            <AgentLeaderboard
+              entries={leaderboardData}
+              currentUserId={address}
+              sortBy="earnings"
+            />
           </View>
 
-          {myTasks.length === 0 ? (
-            <View style={styles.emptyTasks}>
-              <Ionicons name="document-text-outline" size={48} color="#cbd5e1" />
-              <Text style={styles.emptyText}>No tasks yet</Text>
-              <TouchableOpacity style={styles.createButton} onPress={() => navigation.navigate('TaskPost')}>
-                <Text style={styles.createButtonText}>Create Your First Task</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            myTasks.slice(0, 4).map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                onPress={() => navigation.navigate('TaskDetail', { taskId: task.id })}
-              />
-            ))
-          )}
-        </View>
+          {/* Actions */}
+          <View style={styles.actionsSection}>
+            <TouchableOpacity 
+              style={styles.disconnectButton}
+              onPress={handleDisconnect}
+            >
+              <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+              <Text style={styles.disconnectText}>Disconnect Wallet</Text>
+            </TouchableOpacity>
 
-        {/* Disconnect Button */}
-        <TouchableOpacity style={styles.disconnectButton} onPress={handleDisconnect}>
-          <Ionicons name="log-out-outline" size={22} color="#ef4444" />
-          <Text style={styles.disconnectText}>Disconnect Wallet</Text>
-        </TouchableOpacity>
-
-        {/* Performance Monitor Button */}
-        <TouchableOpacity 
-          style={[styles.disconnectButton, { backgroundColor: '#6366f120', marginTop: 0, marginBottom: spacing.md }]} 
-          onPress={() => navigation.navigate('Performance')}
-        >
-          <Ionicons name="speedometer" size={22} color="#6366f1" />
-          <Text style={[styles.disconnectText, { color: '#6366f1' }]}>Performance Monitor</Text>
-        </TouchableOpacity>
-
-          <Text style={styles.version}>Agora Mobile v1.2.0</Text>
+            <Text style={styles.versionText}>
+              Agora Agent v1.0.0
+            </Text>
+          </View>
         </ScrollView>
-
-        <ProfileEditModal
-          visible={isEditOpen}
-          initialUsername={displayName}
-          initialNickname={nickname}
-          initialAvatarUri={avatarUri}
-          isSaving={isSavingProfile}
-          isUploading={isUploadingAvatar}
-          onClose={() => setIsEditOpen(false)}
-          onSave={handleProfileSave}
-          onPickAvatar={handleAvatarPick}
-        />
       </KeyboardAvoidingView>
+
+      {/* Edit Modal */}
+      <ProfileEditModal
+        visible={isEditModalVisible}
+        onClose={() => setEditModalVisible(false)}
+        onSave={updateProfile}
+        initialData={{
+          displayName: profile.displayName,
+          bio: profile.bio,
+          avatarUri: profile.avatarUri,
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -649,379 +349,80 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f9fafb',
   },
-  keyboardAvoidingView: {
+  flex: {
     flex: 1,
   },
   scrollView: {
     flex: 1,
   },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
+  scrollContent: {
+    paddingBottom: 40,
   },
-  sdkBadge: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: scale(8),
-    paddingVertical: verticalScale(2),
-    borderRadius: moderateScale(10),
-  },
-  sdkBadgeText: {
-    color: '#ffffff',
-    fontSize: responsiveFontSize(10),
-    fontWeight: '700',
-  },
-  loadingSection: {
+  emptyContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: verticalScale(24),
+    padding: 40,
   },
-  loadingText: {
-    fontSize: responsiveFontSize(13),
-    color: '#64748b',
-    marginTop: verticalScale(8),
-  },
-  header: {
-    alignItems: 'center',
-    padding: spacing.lg,
-    backgroundColor: 'white',
-    position: 'relative',
-  },
-  editPill: {
-    position: 'absolute',
-    top: verticalScale(16),
-    right: scale(16),
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scale(4),
-    backgroundColor: '#eef2ff',
-    paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(6),
-    borderRadius: moderateScale(20),
-  },
-  editPillText: {
-    fontSize: responsiveFontSize(12),
-    fontWeight: '600',
-    color: '#4f46e5',
-  },
-  avatarWrapper: {
-    marginBottom: verticalScale(12),
-  },
-  avatarImage: {
-    width: moderateScale(96),
-    height: moderateScale(96),
-    borderRadius: moderateScale(48),
-    backgroundColor: '#e2e8f0',
-  },
-  userName: {
-    fontSize: responsiveFontSize(22),
+  emptyTitle: {
+    fontSize: 20,
     fontWeight: '700',
-    color: '#1e293b',
+    color: '#374151',
+    marginTop: 16,
   },
-  nickname: {
-    fontSize: responsiveFontSize(13),
-    color: '#6366f1',
-    marginTop: verticalScale(2),
-    marginBottom: verticalScale(10),
-  },
-  walletLabel: {
-    fontSize: responsiveFontSize(12),
-    color: '#94a3b8',
-    marginBottom: verticalScale(3),
-  },
-  walletAddress: {
-    fontSize: responsiveFontSize(14),
-    fontWeight: '600',
-    color: '#1e293b',
-    fontFamily: 'monospace',
-  },
-  shareButton: {
-    marginTop: verticalScale(16),
-  },
-  survivalCard: {
-    backgroundColor: 'white',
-    marginHorizontal: scale(16),
-    marginTop: verticalScale(16),
-    borderRadius: moderateScale(14),
-    padding: spacing.lg,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  survivalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  cardTitle: {
-    fontSize: responsiveFontSize(16),
-    color: '#0f172a',
-    fontWeight: '700',
-  },
-  cardSubTitle: {
-    fontSize: responsiveFontSize(12),
-    color: '#64748b',
-    marginTop: verticalScale(3),
-  },
-  survivalStatus: {
-    borderRadius: moderateScale(20),
-    paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(5),
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scale(4),
-  },
-  survivalStatusText: {
-    fontSize: responsiveFontSize(12),
-    fontWeight: '700',
-  },
-  survivalScore: {
-    marginTop: verticalScale(10),
-    fontSize: responsiveFontSize(26),
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    margin: scale(16),
-    marginBottom: verticalScale(12),
-    borderRadius: moderateScale(14),
-    padding: spacing.lg,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  stat: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: '#e2e8f0',
-  },
-  statValue: {
-    fontSize: responsiveFontSize(22),
-    fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  statLabel: {
-    fontSize: responsiveFontSize(12),
-    color: '#94a3b8',
-    marginTop: verticalScale(4),
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#9ca3af',
+    marginTop: 8,
+    textAlign: 'center',
   },
   section: {
-    backgroundColor: 'white',
-    margin: scale(16),
-    marginTop: 0,
-    borderRadius: moderateScale(14),
+    backgroundColor: '#fff',
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
     padding: spacing.lg,
-    marginBottom: verticalScale(12),
+    borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
   sectionTitle: {
-    fontSize: responsiveFontSize(17),
+    fontSize: 18,
     fontWeight: '700',
-    color: '#1e293b',
+    color: '#111827',
     marginBottom: spacing.md,
   },
-  sectionHint: {
-    fontSize: responsiveFontSize(12),
-    color: '#64748b',
-    marginBottom: spacing.md,
-  },
-  seeAll: {
-    color: '#6366f1',
-    fontSize: responsiveFontSize(14),
-    fontWeight: '600',
-  },
-  chartContainer: {
-    backgroundColor: '#f8fafc',
-    borderRadius: moderateScale(10),
-    paddingVertical: verticalScale(8),
-    paddingHorizontal: scale(2),
-  },
-  balanceWrapper: {
-    maxHeight: verticalScale(520),
-  },
-  emptyTasks: {
-    alignItems: 'center',
-    paddingVertical: verticalScale(24),
-  },
-  emptyText: {
-    fontSize: responsiveFontSize(14),
-    color: '#64748b',
-    marginTop: verticalScale(8),
-    marginBottom: verticalScale(12),
-  },
-  createButton: {
-    backgroundColor: '#6366f1',
-    paddingHorizontal: scale(20),
-    paddingVertical: verticalScale(11),
-    borderRadius: moderateScale(8),
-  },
-  createButtonText: {
-    color: 'white',
-    fontSize: responsiveFontSize(14),
-    fontWeight: '600',
-  },
-  taskRow: {
+  achievementsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+  },
+  actionsSection: {
+    marginTop: spacing.xl,
+    marginHorizontal: spacing.md,
     alignItems: 'center',
-    paddingVertical: verticalScale(12),
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  taskInfo: {
-    flex: 1,
-  },
-  taskTitle: {
-    fontSize: responsiveFontSize(15),
-    fontWeight: '500',
-    color: '#1e293b',
-    marginBottom: verticalScale(4),
-  },
-  taskDate: {
-    fontSize: responsiveFontSize(12),
-    color: '#94a3b8',
-  },
-  taskMeta: {
-    alignItems: 'flex-end',
-  },
-  taskBudget: {
-    fontSize: responsiveFontSize(14),
-    fontWeight: '600',
-    color: '#6366f1',
-    marginBottom: verticalScale(4),
-  },
-  statusBadge: {
-    paddingHorizontal: scale(8),
-    paddingVertical: verticalScale(2),
-    borderRadius: moderateScale(10),
-  },
-  status_open: {
-    backgroundColor: '#dbeafe',
-  },
-  status_in_progress: {
-    backgroundColor: '#fef3c7',
-  },
-  status_completed: {
-    backgroundColor: '#dcfce7',
-  },
-  status_cancelled: {
-    backgroundColor: '#fee2e2',
-  },
-  statusText: {
-    fontSize: responsiveFontSize(10),
-    fontWeight: '500',
-    textTransform: 'capitalize',
   },
   disconnectButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
     backgroundColor: '#fee2e2',
-    margin: scale(16),
-    marginTop: verticalScale(2),
-    padding: spacing.lg,
-    borderRadius: moderateScale(12),
   },
   disconnectText: {
     color: '#ef4444',
-    fontSize: responsiveFontSize(15),
-    fontWeight: '700',
-    marginLeft: scale(8),
-  },
-  version: {
-    textAlign: 'center',
-    fontSize: responsiveFontSize(12),
-    color: '#94a3b8',
-    marginBottom: verticalScale(26),
-  },
-  // Sync status styles
-  syncStatusContainer: {
-    position: 'absolute',
-    top: verticalScale(12),
-    left: scale(16),
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: scale(8),
-  },
-  offlineBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#64748b',
-    paddingHorizontal: scale(8),
-    paddingVertical: verticalScale(4),
-    borderRadius: moderateScale(12),
-    gap: scale(4),
-  },
-  offlineText: {
-    color: '#fff',
-    fontSize: responsiveFontSize(11),
     fontWeight: '600',
   },
-  syncingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: scale(8),
-    paddingVertical: verticalScale(4),
-    borderRadius: moderateScale(12),
-    gap: scale(4),
-  },
-  syncSpinner: {
-    transform: [{ scale: 0.7 }],
-  },
-  syncingText: {
-    color: '#fff',
-    fontSize: responsiveFontSize(11),
-    fontWeight: '600',
-  },
-  pendingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f59e0b',
-    paddingHorizontal: scale(8),
-    paddingVertical: verticalScale(4),
-    borderRadius: moderateScale(12),
-    gap: scale(4),
-  },
-  pendingText: {
-    color: '#fff',
-    fontSize: responsiveFontSize(11),
-    fontWeight: '600',
-  },
-  syncedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#10b981',
-    paddingHorizontal: scale(8),
-    paddingVertical: verticalScale(4),
-    borderRadius: moderateScale(12),
-    gap: scale(4),
-  },
-  syncedText: {
-    color: '#fff',
-    fontSize: responsiveFontSize(11),
-    fontWeight: '600',
+  versionText: {
+    marginTop: 16,
+    fontSize: 12,
+    color: '#9ca3af',
   },
 });

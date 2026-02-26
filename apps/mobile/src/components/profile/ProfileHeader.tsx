@@ -10,7 +10,7 @@ import { AgentAvatar } from '../AgentAvatar';
 import { ShareProfile } from '../ShareProfile';
 import { spacing, SCREEN_WIDTH } from '../../utils/responsive';
 
-interface ProfileHeaderProps {
+export interface ProfileHeaderProps {
   displayName: string;
   nickname: string;
   address: string | null;

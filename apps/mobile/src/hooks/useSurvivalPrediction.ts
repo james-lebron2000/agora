@@ -3,12 +3,11 @@
  * React hook for survival prediction and forecasting
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   SurvivalPredictor,
   createPredictorFromSnapshots,
   type HistoricalDataPoint,
-  type PredictionResult,
   type SurvivalTrendPrediction,
   type EconomicForecast,
 } from '@agora/sdk/survival-prediction';
@@ -42,7 +41,6 @@ export function useSurvivalPrediction(
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState(0);
-  const [hasEnoughData, setHasEnoughData] = useState(false);
 
   // Refs
   const predictorRef = useRef<SurvivalPredictor | null>(null);
@@ -52,12 +50,15 @@ export function useSurvivalPrediction(
   useEffect(() => {
     if (snapshots.length >= minDataPoints) {
       predictorRef.current = createPredictorFromSnapshots(snapshots);
-      setHasEnoughData(true);
     } else {
       predictorRef.current = new SurvivalPredictor();
-      setHasEnoughData(false);
     }
   }, [snapshots, minDataPoints]);
+
+  // Check if we have enough data
+  const hasEnoughData = useMemo(() => {
+    return predictorRef.current ? predictorRef.current.getHistory().length >= minDataPoints : false;
+  }, [predictorRef.current?.getHistory().length, minDataPoints]);
 
   // Perform prediction
   const predict = useCallback(async (customDaysAhead?: number): Promise<void> => {
@@ -71,6 +72,11 @@ export function useSurvivalPrediction(
     setError(null);
 
     try {
+      // Check if we have enough data
+      if (predictorRef.current.getHistory().length < minDataPoints) {
+        throw new Error(`Need at least ${minDataPoints} data points for prediction`);
+      }
+
       // Get trend prediction
       const trendResult = predictorRef.current.predictTrend(days);
       setTrend(trendResult);
@@ -95,7 +101,7 @@ export function useSurvivalPrediction(
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [daysAhead]);
+  }, [daysAhead, minDataPoints]);
 
   // Refresh prediction
   const refresh = useCallback(async (): Promise<void> => {
@@ -106,8 +112,7 @@ export function useSurvivalPrediction(
   // Add data point
   const addDataPoint = useCallback((point: HistoricalDataPoint): void => {
     predictorRef.current?.addDataPoint(point);
-    setHasEnoughData(predictorRef.current?.getHistoryLength() >= minDataPoints);
-  }, [minDataPoints]);
+  }, []);
 
   // Clear history
   const clearHistory = useCallback((): void => {
@@ -115,7 +120,6 @@ export function useSurvivalPrediction(
     setHistory([]);
     setTrend(null);
     setForecast(null);
-    setHasEnoughData(false);
   }, []);
 
   // Auto-refresh
@@ -132,9 +136,17 @@ export function useSurvivalPrediction(
   }, [autoRefresh, hasEnoughData, predict, refreshInterval]);
 
   // Computed helpers
-  const isBankruptcyRisk = forecast?.bankruptcyRisk > 0.3;
-  const daysUntilCritical = trend?.daysToCritical ?? null;
-  const confidenceLevel = trend?.predictedScore.confidence ?? 0;
+  const isBankruptcyRisk = useMemo(() => {
+    return (forecast?.bankruptcyRisk ?? 0) > 0.3;
+  }, [forecast]);
+
+  const daysUntilCritical = useMemo(() => {
+    return trend?.daysToCritical ?? null;
+  }, [trend]);
+
+  const confidenceLevel = useMemo(() => {
+    return trend?.predictedScore.confidence ?? 0;
+  }, [trend]);
 
   return {
     trend,

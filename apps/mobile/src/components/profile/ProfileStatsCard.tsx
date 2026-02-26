@@ -7,10 +7,10 @@ import React, { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ProfileStats } from '../ProfileStats';
-import { AgentLevelProgress } from '../AgentLevelProgress';
+import { AgentLevelProgress, type AgentLevel } from '../AgentLevelProgress';
 import { spacing } from '../../utils/responsive';
 
-interface ProfileStatsCardProps {
+export interface ProfileStatsCardProps {
   // Task stats
   postedCount: number;
   completedCount: number;
@@ -31,6 +31,16 @@ interface ProfileStatsCardProps {
   isLoadingStats?: boolean;
 }
 
+// Build AgentLevel object from level and progress
+const buildAgentLevel = (level: number, progress: number): AgentLevel => ({
+  level,
+  title: `Level ${level}`,
+  currentXP: Math.round(progress * 1000),
+  maxXP: 1000,
+  totalXP: level * 1000 + Math.round(progress * 1000),
+  nextLevelTitle: `Level ${level + 1}`,
+});
+
 export const ProfileStatsCard = memo(function ProfileStatsCard({
   postedCount,
   completedCount,
@@ -44,21 +54,30 @@ export const ProfileStatsCard = memo(function ProfileStatsCard({
   currentStreak,
   totalEarned,
   totalSpent,
-  isLoadingProfile,
-  isLoadingStats,
 }: ProfileStatsCardProps) {
+  const agentLevel = buildAgentLevel(level, levelProgress);
+
   return (
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>Statistics</Text>
       
-      <ProfileStats
-        posted={postedCount}
-        completed={completedCount}
-        inProgress={inProgressCount}
-        cancelled={cancelledCount}
-        completionRate={completionRate}
-      />
+      {/* Task Stats Summary */}
+      <View style={styles.taskStatsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statValue}>{postedCount}</Text>
+          <Text style={styles.statLabel}>Posted</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statValue}>{completedCount}</Text>
+          <Text style={styles.statLabel}>Completed</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statValue}>{completionRate}%</Text>
+          <Text style={styles.statLabel}>Success Rate</Text>
+        </View>
+      </View>
 
+      {/* Level Progress */}
       <View style={styles.levelSection}>
         <View style={styles.levelHeader}>
           <View style={styles.levelBadge}>
@@ -69,43 +88,43 @@ export const ProfileStatsCard = memo(function ProfileStatsCard({
         </View>
         
         <AgentLevelProgress
-          level={level}
-          progress={levelProgress}
-          showLabel={false}
+          level={agentLevel}
+          compact
         />
       </View>
 
+      {/* SDK Stats */}
       {(tasksCompleted !== undefined || successRate !== undefined) && (
         <View style={styles.sdkStatsGrid}>
           {tasksCompleted !== undefined && (
             <View style={styles.statItem}>
               <Ionicons name="checkmark-done-circle" size={20} color="#10b981" />
-              <Text style={styles.statValue}>{tasksCompleted}</Text>
-              <Text style={styles.statLabel}>Tasks Done</Text>
+              <Text style={styles.sdkStatValue}>{tasksCompleted}</Text>
+              <Text style={styles.sdkStatLabel}>Tasks Done</Text>
             </View>
           )}
           
           {successRate !== undefined && (
             <View style={styles.statItem}>
               <Ionicons name="trending-up" size={20} color="#3b82f6" />
-              <Text style={styles.statValue}>{Math.round(successRate * 100)}%</Text>
-              <Text style={styles.statLabel}>Success Rate</Text>
+              <Text style={styles.sdkStatValue}>{Math.round(successRate * 100)}%</Text>
+              <Text style={styles.sdkStatLabel}>Success Rate</Text>
             </View>
           )}
           
           {currentStreak !== undefined && (
             <View style={styles.statItem}>
               <Ionicons name="flame" size={20} color="#f59e0b" />
-              <Text style={styles.statValue}>{currentStreak}</Text>
-              <Text style={styles.statLabel}>Day Streak</Text>
+              <Text style={styles.sdkStatValue}>{currentStreak}</Text>
+              <Text style={styles.sdkStatLabel}>Day Streak</Text>
             </View>
           )}
           
           {totalEarned !== undefined && (
             <View style={styles.statItem}>
               <Ionicons name="wallet" size={20} color="#8b5cf6" />
-              <Text style={styles.statValue}>${parseFloat(totalEarned).toFixed(0)}</Text>
-              <Text style={styles.statLabel}>Total Earned</Text>
+              <Text style={styles.sdkStatValue}>${parseFloat(totalEarned).toFixed(0)}</Text>
+              <Text style={styles.sdkStatLabel}>Total Earned</Text>
             </View>
           )}
         </View>
@@ -132,6 +151,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
     marginBottom: spacing.md,
+  },
+  taskStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: spacing.md,
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+  },
+  statBox: {
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 2,
   },
   levelSection: {
     marginTop: spacing.lg,
@@ -174,13 +213,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.sm,
   },
-  statValue: {
+  sdkStatValue: {
     fontSize: 18,
     fontWeight: '700',
     color: '#111827',
     marginTop: 4,
   },
-  statLabel: {
+  sdkStatLabel: {
     fontSize: 11,
     color: '#6b7280',
     marginTop: 2,
