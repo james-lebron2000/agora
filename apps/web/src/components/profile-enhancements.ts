@@ -14,3 +14,12 @@ export { ProfileSkeleton, StatsSkeleton, AchievementSkeleton, ProgressiveLoading
 
 // Theme Selector
 export { ThemeSelector, ThemeToggleButton } from './ThemeSelector';
+
+// Profile Editor
+export { ProfileEditor } from './ProfileEditor';
+
+// Skills Showcase
+export { SkillsShowcase } from './SkillsShowcase';
+
+// Reputation Badge
+export { ReputationBadge } from './ReputationBadge';
