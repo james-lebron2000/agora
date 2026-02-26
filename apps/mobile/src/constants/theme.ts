@@ -2,7 +2,7 @@ import { Appearance, ColorSchemeName } from 'react-native';
 import { useEffect, useState } from 'react';
 
 // Light mode colors
-const LIGHT_COLORS = {
+export const LIGHT_COLORS = {
   // Primary
   primary: '#6366f1',
   primaryLight: '#818cf8',
@@ -57,7 +57,7 @@ const LIGHT_COLORS = {
 } as const;
 
 // Dark mode colors (WCAG AAA compliant)
-const DARK_COLORS = {
+export const DARK_COLORS = {
   // Primary
   primary: '#818cf8',
   primaryLight: '#a5b4fc',
