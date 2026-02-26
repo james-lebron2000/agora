@@ -466,10 +466,13 @@ export class CrossChainSurvivalOptimizer {
               // Get bridge quote for USDC
               try {
                 const quote = await getBridgeQuote(
-                  fromChain.chain,
-                  toChain.chain,
-                  'USDC',
-                  moveAmount.toFixed(2)
+                  {
+                    sourceChain: fromChain.chain,
+                    destinationChain: toChain.chain,
+                    token: 'USDC',
+                    amount: moveAmount.toFixed(2)
+                  },
+                  this.address
                 );
                 
                 const fee = parseFloat(quote.estimatedFee);
@@ -532,13 +535,12 @@ export class CrossChainSurvivalOptimizer {
     
     for (const move of plan.moves) {
       try {
-        const bridgeResult = await this.bridge.bridgeTokens({
-          sourceChain: move.from,
-          destinationChain: move.to,
-          token: move.token,
-          amount: move.amount,
-          recipient: this.address
-        });
+        const bridgeResult = await this.bridge.bridgeToken(
+          move.to,
+          move.token as import('./bridge.js').SupportedToken,
+          move.amount,
+          move.from
+        );
         
         if (bridgeResult.success) {
           result.completedMoves++;
@@ -548,7 +550,7 @@ export class CrossChainSurvivalOptimizer {
           this.recordTransaction(move.from, true, BigInt(0), 3000);
         } else {
           result.failedMoves++;
-          result.errors.push(`Bridge failed for ${move.from} -> ${move.to}: ${bridgeResult.error?.message}`);
+          result.errors.push(`Bridge failed for ${move.from} -> ${move.to}: ${bridgeResult.error || 'Unknown error'}`);
           
           // Record failure
           this.recordTransaction(move.from, false, BigInt(0), 0);

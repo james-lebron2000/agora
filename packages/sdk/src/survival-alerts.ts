@@ -189,7 +189,12 @@ export class SurvivalAlertSystem {
       timestamp: Date.now(),
       acknowledged: false,
       channelsSent: [],
-      deliveryStatus: {}
+      deliveryStatus: {
+        webhook: 'pending',
+        email: 'pending',
+        sms: 'pending',
+        push: 'pending'
+      }
     };
 
     // Store alert
@@ -276,7 +281,7 @@ export class SurvivalAlertSystem {
   /**
    * Send aggregated alert
    */
-  private async sendAggregatedAlert(group: AggregatedAlert): void {
+  private async sendAggregatedAlert(group: AggregatedAlert): Promise<void> {
     if (group.acknowledged) return;
 
     const payload: WebhookPayload = {
