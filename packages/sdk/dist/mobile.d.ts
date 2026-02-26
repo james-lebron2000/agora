@@ -7,6 +7,20 @@
  * @module mobile
  * @version 1.0.0
  */
+declare interface HTMLElement {
+    addEventListener(type: string, listener: ((e: unknown) => void) | {
+        handleEvent(e: unknown): void;
+    }, options?: {
+        passive?: boolean;
+        capture?: boolean;
+        once?: boolean;
+    }): void;
+    removeEventListener(type: string, listener: ((e: unknown) => void) | {
+        handleEvent(e: unknown): void;
+    }, options?: {
+        capture?: boolean;
+    }): void;
+}
 /**
  * Device type enumeration
  */
@@ -163,9 +177,9 @@ export interface OptimizationConfig {
     cacheTTL: number;
 }
 /**
- * Performance metrics interface
+ * Mobile performance metrics interface
  */
-export interface PerformanceMetrics {
+export interface MobilePerformanceMetrics {
     /** Memory usage in MB (if available) */
     memoryUsage?: number;
     /** Number of DOM nodes */
@@ -212,9 +226,9 @@ export declare class MobileOptimizer {
     estimatePerformanceLevel(): PerformanceLevel;
     /**
      * Gets current performance metrics
-     * @returns PerformanceMetrics object
+     * @returns MobilePerformanceMetrics object
      */
-    getPerformanceMetrics(): PerformanceMetrics;
+    getPerformanceMetrics(): MobilePerformanceMetrics;
     /**
      * Gets current network type using Network Information API
      * @returns Network type
@@ -298,6 +312,16 @@ export interface GestureConfig {
  * Default gesture configuration
  */
 export declare const DEFAULT_GESTURE_CONFIG: GestureConfig;
+interface Touch {
+    clientX: number;
+    clientY: number;
+    identifier: number;
+}
+interface TouchEvent {
+    touches: Touch[];
+    changedTouches: Touch[];
+    preventDefault(): void;
+}
 /**
  * TouchGestureHandler class for handling touch gestures on mobile devices
  *
@@ -321,8 +345,6 @@ export declare class TouchGestureHandler {
     private longPressTimer;
     private startDistance;
     private startAngle;
-    private initialScale;
-    private initialRotation;
     private isMultiTouch;
     /**
      * Creates a new TouchGestureHandler instance
@@ -400,5 +422,5 @@ export declare function isTablet(): boolean;
  * @returns OptimizationConfig for current device
  */
 export declare function getOptimizedConfig(): OptimizationConfig;
-export { DeviceDetector, MobileOptimizer, TouchGestureHandler, };
+export {};
 //# sourceMappingURL=mobile.d.ts.map

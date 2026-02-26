@@ -7,6 +7,9 @@
  * @module mobile
  * @version 1.0.0
  */
+// ============================================================================
+// DeviceDetector Class
+// ============================================================================
 /**
  * DeviceDetector class for detecting device types, OS, and capabilities
  *
@@ -29,11 +32,11 @@ export class DeviceDetector {
      */
     constructor(options = {}) {
         this.userAgent = options.userAgent?.toLowerCase() ??
-            (typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : '');
+            (typeof navigator !== 'undefined' && navigator ? navigator.userAgent.toLowerCase() : '');
         this.screen = options.screen ??
-            (typeof window !== 'undefined' ? { width: window.screen.width, height: window.screen.height } : { width: 0, height: 0 });
+            (typeof window !== 'undefined' && window ? { width: window.screen.width, height: window.screen.height } : { width: 0, height: 0 });
         this.pixelRatio = options.pixelRatio ??
-            (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
+            (typeof window !== 'undefined' && window ? window.devicePixelRatio || 1 : 1);
     }
     /**
      * Detects device information from user agent and screen properties
@@ -85,7 +88,7 @@ export class DeviceDetector {
      */
     detectOSVersion() {
         const os = this.detectOS();
-        const match = this.userAgent.match(new RegExp(`${os}[\s/]?([\d._]+)`, 'i'));
+        const match = this.userAgent.match(new RegExp(`${os}[\\s/]?([\\d._]+)`, 'i'));
         return match?.[1]?.replace(/_/g, '.') ?? 'unknown';
     }
     /**
@@ -154,7 +157,7 @@ export class DeviceDetector {
      * @returns Orientation type
      */
     detectOrientation() {
-        if (typeof window !== 'undefined' && window.screen?.orientation) {
+        if (typeof window !== 'undefined' && window?.screen?.orientation) {
             return window.screen.orientation.type.startsWith('landscape') ? 'landscape' : 'portrait';
         }
         return this.screen.width > this.screen.height ? 'landscape' : 'portrait';
@@ -164,8 +167,8 @@ export class DeviceDetector {
      * @returns True if touch is supported
      */
     isTouchDevice() {
-        if (typeof window !== 'undefined') {
-            return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        if (typeof window !== 'undefined' && window) {
+            return 'ontouchstart' in window || (typeof navigator !== 'undefined' && navigator?.maxTouchPoints ? navigator.maxTouchPoints > 0 : false);
         }
         return /iphone|ipad|ipod|android|windows phone/.test(this.userAgent);
     }
@@ -175,12 +178,15 @@ export class DeviceDetector {
      */
     isLowPowerMode() {
         // This is a best-effort detection based on reduced motion preference
-        if (typeof window !== 'undefined' && 'matchMedia' in window) {
+        if (typeof window !== 'undefined' && window && 'matchMedia' in window) {
             return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         }
         return false;
     }
 }
+// ============================================================================
+// MobileOptimizer Class
+// ============================================================================
 /**
  * MobileOptimizer class for optimizing performance based on device capabilities
  *
@@ -240,7 +246,7 @@ export class MobileOptimizer {
             return 'low';
         }
         // Check device memory if available
-        if (typeof navigator !== 'undefined' && 'deviceMemory' in navigator) {
+        if (typeof navigator !== 'undefined' && navigator && 'deviceMemory' in navigator) {
             const memory = navigator.deviceMemory;
             if (memory <= 2)
                 return 'low';
@@ -248,7 +254,7 @@ export class MobileOptimizer {
                 return 'medium';
         }
         // Check hardware concurrency
-        if (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) {
+        if (typeof navigator !== 'undefined' && navigator && navigator.hardwareConcurrency) {
             if (navigator.hardwareConcurrency <= 2)
                 return 'low';
             if (navigator.hardwareConcurrency <= 4)
@@ -262,7 +268,7 @@ export class MobileOptimizer {
     }
     /**
      * Gets current performance metrics
-     * @returns PerformanceMetrics object
+     * @returns MobilePerformanceMetrics object
      */
     getPerformanceMetrics() {
         const networkType = this.getNetworkType();
@@ -272,14 +278,11 @@ export class MobileOptimizer {
             performanceLevel,
         };
         // Memory usage (Chrome only)
-        if (typeof performance !== 'undefined' && 'memory' in performance) {
-            const memory = performance.memory;
-            if (memory?.usedJSHeapSize) {
-                metrics.memoryUsage = Math.round(memory.usedJSHeapSize / 1024 / 1024);
-            }
+        if (typeof performance !== 'undefined' && performance?.memory?.usedJSHeapSize) {
+            metrics.memoryUsage = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024);
         }
         // DOM node count
-        if (typeof document !== 'undefined') {
+        if (typeof document !== 'undefined' && document) {
             metrics.domNodes = document.getElementsByTagName('*').length;
         }
         return metrics;
@@ -289,9 +292,9 @@ export class MobileOptimizer {
      * @returns Network type
      */
     getNetworkType() {
-        if (typeof navigator !== 'undefined' && 'connection' in navigator) {
+        if (typeof navigator !== 'undefined' && navigator && 'connection' in navigator && navigator.connection) {
             const conn = navigator.connection;
-            if (conn?.effectiveType) {
+            if (conn.effectiveType) {
                 return conn.effectiveType;
             }
         }
@@ -363,8 +366,6 @@ export class TouchGestureHandler {
     longPressTimer = null;
     startDistance = 0;
     startAngle = 0;
-    initialScale = 1;
-    initialRotation = 0;
     isMultiTouch = false;
     /**
      * Creates a new TouchGestureHandler instance
@@ -458,8 +459,6 @@ export class TouchGestureHandler {
             const touch2 = e.touches[1];
             this.startDistance = this.getDistance(touch, touch2);
             this.startAngle = this.getAngle(touch, touch2);
-            this.initialScale = 1;
-            this.initialRotation = 0;
         }
         // Set up long press detection
         this.longPressTimer = setTimeout(() => {
@@ -618,6 +617,9 @@ export class TouchGestureHandler {
         return Math.atan2(touch2.clientY - touch1.clientY, touch2.clientX - touch1.clientX) * 180 / Math.PI;
     }
 }
+// ============================================================================
+// Utility Functions
+// ============================================================================
 /**
  * Utility function to quickly detect if running on mobile
  * @returns True if mobile device detected
