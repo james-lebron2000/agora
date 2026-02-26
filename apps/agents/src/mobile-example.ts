@@ -12,9 +12,9 @@
 import {
   MobileAgent,
   createMobileAgent,
-  MobileAgentOptions,
-  MobileUIAction,
-  MobileGestureCommand,
+  type MobileAgentOptions,
+  type MobileUIAction,
+  type MobileGestureCommand,
   isMobileEnvironment,
   getMobileConfig,
 } from './mobile-adapter.js';
@@ -174,7 +174,7 @@ async function handleMobileRequests(agent: MobileAgent): Promise<void> {
     // Send result back
     await agent.sendResult(
       (payload as any).request_id || 'unknown',
-      { output: adaptedResponse.content }
+      { output: adaptedResponse.content as Record<string, unknown> }
     );
   });
 }
@@ -315,9 +315,9 @@ async function main(): Promise<void> {
   }
 }
 
-// Run if this file is executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
+// Run if this file is executed directly (in ESM environment)
+if (typeof process !== 'undefined' && process.argv.length > 1) {
+  main().catch(console.error);
 }
 
 // Export examples for testing

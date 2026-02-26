@@ -8,6 +8,54 @@
  * @version 1.0.0
  */
 
+// ============================================================================
+// Type Declarations for Browser APIs (when DOM lib is not available)
+// ============================================================================
+
+declare const navigator: {
+  userAgent: string;
+  maxTouchPoints?: number;
+  hardwareConcurrency?: number;
+  connection?: {
+    effectiveType?: string;
+  };
+} | undefined;
+
+declare const window: {
+  screen: {
+    width: number;
+    height: number;
+    orientation?: {
+      type: string;
+    };
+  };
+  devicePixelRatio: number;
+  ontouchstart?: unknown;
+  matchMedia(query: string): { matches: boolean };
+  addEventListener(type: string, listener: unknown, options?: unknown): void;
+  removeEventListener(type: string, listener: unknown, options?: unknown): void;
+} | undefined;
+
+declare const document: {
+  getElementsByTagName(tag: string): { length: number };
+} | undefined;
+
+// Minimal HTMLElement interface for gesture handling
+declare interface HTMLElement {
+  addEventListener(type: string, listener: ((e: unknown) => void) | { handleEvent(e: unknown): void }, options?: { passive?: boolean; capture?: boolean; once?: boolean }): void;
+  removeEventListener(type: string, listener: ((e: unknown) => void) | { handleEvent(e: unknown): void }, options?: { capture?: boolean }): void;
+}
+
+declare const performance: {
+  memory?: {
+    usedJSHeapSize: number;
+  };
+} | undefined;
+
+// ============================================================================
+// Device Detection Types
+// ============================================================================
+
 /**
  * Device type enumeration
  */
@@ -79,6 +127,10 @@ export interface DeviceDetectorOptions {
   pixelRatio?: number;
 }
 
+// ============================================================================
+// DeviceDetector Class
+// ============================================================================
+
 /**
  * DeviceDetector class for detecting device types, OS, and capabilities
  * 
@@ -102,11 +154,11 @@ export class DeviceDetector {
    */
   constructor(options: DeviceDetectorOptions = {}) {
     this.userAgent = options.userAgent?.toLowerCase() ?? 
-      (typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : '');
+      (typeof navigator !== 'undefined' && navigator ? navigator.userAgent.toLowerCase() : '');
     this.screen = options.screen ?? 
-      (typeof window !== 'undefined' ? { width: window.screen.width, height: window.screen.height } : { width: 0, height: 0 });
+      (typeof window !== 'undefined' && window ? { width: window.screen.width, height: window.screen.height } : { width: 0, height: 0 });
     this.pixelRatio = options.pixelRatio ?? 
-      (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
+      (typeof window !== 'undefined' && window ? window.devicePixelRatio || 1 : 1);
   }
 
   /**
@@ -157,7 +209,7 @@ export class DeviceDetector {
    */
   detectOSVersion(): string {
     const os = this.detectOS();
-    const match = this.userAgent.match(new RegExp(`${os}[\s/]?([\d._]+)`, 'i'));
+    const match = this.userAgent.match(new RegExp(`${os}[\\s/]?([\\d._]+)`, 'i'));
     return match?.[1]?.replace(/_/g, '.') ?? 'unknown';
   }
 
@@ -230,7 +282,7 @@ export class DeviceDetector {
    * @returns Orientation type
    */
   detectOrientation(): Orientation {
-    if (typeof window !== 'undefined' && window.screen?.orientation) {
+    if (typeof window !== 'undefined' && window?.screen?.orientation) {
       return window.screen.orientation.type.startsWith('landscape') ? 'landscape' : 'portrait';
     }
     return this.screen.width > this.screen.height ? 'landscape' : 'portrait';
@@ -241,8 +293,8 @@ export class DeviceDetector {
    * @returns True if touch is supported
    */
   isTouchDevice(): boolean {
-    if (typeof window !== 'undefined') {
-      return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (typeof window !== 'undefined' && window) {
+      return 'ontouchstart' in window || (typeof navigator !== 'undefined' && navigator?.maxTouchPoints ? navigator.maxTouchPoints > 0 : false);
     }
     return /iphone|ipad|ipod|android|windows phone/.test(this.userAgent);
   }
@@ -253,12 +305,16 @@ export class DeviceDetector {
    */
   isLowPowerMode(): boolean {
     // This is a best-effort detection based on reduced motion preference
-    if (typeof window !== 'undefined' && 'matchMedia' in window) {
+    if (typeof window !== 'undefined' && window && 'matchMedia' in window) {
       return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     }
     return false;
   }
 }
+
+// ============================================================================
+// Performance Optimization Types
+// ============================================================================
 
 /**
  * Performance optimization configuration
@@ -283,9 +339,9 @@ export interface OptimizationConfig {
 }
 
 /**
- * Performance metrics interface
+ * Mobile performance metrics interface
  */
-export interface PerformanceMetrics {
+export interface MobilePerformanceMetrics {
   /** Memory usage in MB (if available) */
   memoryUsage?: number;
   /** Number of DOM nodes */
@@ -297,6 +353,10 @@ export interface PerformanceMetrics {
   /** Device performance level */
   performanceLevel: PerformanceLevel;
 }
+
+// ============================================================================
+// MobileOptimizer Class
+// ============================================================================
 
 /**
  * MobileOptimizer class for optimizing performance based on device capabilities
@@ -365,14 +425,14 @@ export class MobileOptimizer {
     }
 
     // Check device memory if available
-    if (typeof navigator !== 'undefined' && 'deviceMemory' in navigator) {
-      const memory = (navigator as any).deviceMemory as number;
+    if (typeof navigator !== 'undefined' && navigator && 'deviceMemory' in navigator) {
+      const memory = (navigator as unknown as { deviceMemory: number }).deviceMemory;
       if (memory <= 2) return 'low';
       if (memory <= 4) return 'medium';
     }
 
     // Check hardware concurrency
-    if (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) {
+    if (typeof navigator !== 'undefined' && navigator && navigator.hardwareConcurrency) {
       if (navigator.hardwareConcurrency <= 2) return 'low';
       if (navigator.hardwareConcurrency <= 4) return 'medium';
     }
@@ -387,27 +447,24 @@ export class MobileOptimizer {
 
   /**
    * Gets current performance metrics
-   * @returns PerformanceMetrics object
+   * @returns MobilePerformanceMetrics object
    */
-  getPerformanceMetrics(): PerformanceMetrics {
+  getPerformanceMetrics(): MobilePerformanceMetrics {
     const networkType = this.getNetworkType();
     const performanceLevel = this.estimatePerformanceLevel();
 
-    const metrics: PerformanceMetrics = {
+    const metrics: MobilePerformanceMetrics = {
       networkType,
       performanceLevel,
     };
 
     // Memory usage (Chrome only)
-    if (typeof performance !== 'undefined' && 'memory' in performance) {
-      const memory = (performance as any).memory;
-      if (memory?.usedJSHeapSize) {
-        metrics.memoryUsage = Math.round(memory.usedJSHeapSize / 1024 / 1024);
-      }
+    if (typeof performance !== 'undefined' && performance?.memory?.usedJSHeapSize) {
+      metrics.memoryUsage = Math.round(performance.memory.usedJSHeapSize / 1024 / 1024);
     }
 
     // DOM node count
-    if (typeof document !== 'undefined') {
+    if (typeof document !== 'undefined' && document) {
       metrics.domNodes = document.getElementsByTagName('*').length;
     }
 
@@ -419,9 +476,9 @@ export class MobileOptimizer {
    * @returns Network type
    */
   getNetworkType(): NetworkType {
-    if (typeof navigator !== 'undefined' && 'connection' in navigator) {
-      const conn = (navigator as any).connection;
-      if (conn?.effectiveType) {
+    if (typeof navigator !== 'undefined' && navigator && 'connection' in navigator && navigator.connection) {
+      const conn = navigator.connection;
+      if (conn.effectiveType) {
         return conn.effectiveType as NetworkType;
       }
     }
@@ -459,6 +516,10 @@ export class MobileOptimizer {
     };
   }
 }
+
+// ============================================================================
+// Touch Gesture Types
+// ============================================================================
 
 /**
  * Touch gesture types
@@ -546,6 +607,23 @@ export const DEFAULT_GESTURE_CONFIG: GestureConfig = {
   preventDefault: true,
 };
 
+// ============================================================================
+// TouchGestureHandler Class
+// ============================================================================
+
+// Minimal Touch and TouchEvent interface declarations
+interface Touch {
+  clientX: number;
+  clientY: number;
+  identifier: number;
+}
+
+interface TouchEvent {
+  touches: Touch[];
+  changedTouches: Touch[];
+  preventDefault(): void;
+}
+
 /**
  * TouchGestureHandler class for handling touch gestures on mobile devices
  * 
@@ -570,8 +648,6 @@ export class TouchGestureHandler {
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
   private startDistance = 0;
   private startAngle = 0;
-  private initialScale = 1;
-  private initialRotation = 0;
   private isMultiTouch = false;
 
   /**
@@ -589,20 +665,20 @@ export class TouchGestureHandler {
    * Attaches touch event listeners to element
    */
   private attachListeners(): void {
-    this.element.addEventListener('touchstart', this.handleTouchStart, { passive: !this.config.preventDefault });
-    this.element.addEventListener('touchmove', this.handleTouchMove, { passive: !this.config.preventDefault });
-    this.element.addEventListener('touchend', this.handleTouchEnd, { passive: !this.config.preventDefault });
-    this.element.addEventListener('touchcancel', this.handleTouchCancel, { passive: true });
+    this.element.addEventListener('touchstart', this.handleTouchStart as (e: unknown) => void, { passive: !this.config.preventDefault });
+    this.element.addEventListener('touchmove', this.handleTouchMove as (e: unknown) => void, { passive: !this.config.preventDefault });
+    this.element.addEventListener('touchend', this.handleTouchEnd as (e: unknown) => void, { passive: !this.config.preventDefault });
+    this.element.addEventListener('touchcancel', this.handleTouchCancel as (e: unknown) => void, { passive: true });
   }
 
   /**
    * Removes all event listeners
    */
   destroy(): void {
-    this.element.removeEventListener('touchstart', this.handleTouchStart);
-    this.element.removeEventListener('touchmove', this.handleTouchMove);
-    this.element.removeEventListener('touchend', this.handleTouchEnd);
-    this.element.removeEventListener('touchcancel', this.handleTouchCancel);
+    this.element.removeEventListener('touchstart', this.handleTouchStart as (e: unknown) => void);
+    this.element.removeEventListener('touchmove', this.handleTouchMove as (e: unknown) => void);
+    this.element.removeEventListener('touchend', this.handleTouchEnd as (e: unknown) => void);
+    this.element.removeEventListener('touchcancel', this.handleTouchCancel as (e: unknown) => void);
     this.handlers.clear();
     if (this.longPressTimer) {
       clearTimeout(this.longPressTimer);
@@ -673,8 +749,6 @@ export class TouchGestureHandler {
       const touch2 = e.touches[1];
       this.startDistance = this.getDistance(touch, touch2);
       this.startAngle = this.getAngle(touch, touch2);
-      this.initialScale = 1;
-      this.initialRotation = 0;
     }
 
     // Set up long press detection
@@ -852,6 +926,10 @@ export class TouchGestureHandler {
   }
 }
 
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
 /**
  * Utility function to quickly detect if running on mobile
  * @returns True if mobile device detected
@@ -875,10 +953,3 @@ export function isTablet(): boolean {
 export function getOptimizedConfig(): OptimizationConfig {
   return new MobileOptimizer().getOptimizedConfig();
 }
-
-// Export all types and classes
-export {
-  DeviceDetector,
-  MobileOptimizer,
-  TouchGestureHandler,
-};

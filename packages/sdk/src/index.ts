@@ -518,7 +518,7 @@ export {
   type NetworkType,
   type DeviceDetectorOptions,
   type OptimizationConfig,
-  type PerformanceMetrics,
+  type MobilePerformanceMetrics,
   type GestureType,
   type GestureHandler,
   type TouchEventData,

@@ -11,26 +11,26 @@
 
 import {
   AgoraAgent,
-  AgoraAgentOptions,
-} from '@agora/sdk/agent.js';
+  type AgoraAgentOptions,
+} from '../../../packages/sdk/src/agent.js';
 import {
   DeviceDetector,
   MobileOptimizer,
   TouchGestureHandler,
-  DeviceInfo,
-  DeviceType,
-  OS,
-  PerformanceLevel,
-  NetworkType,
-  OptimizationConfig,
-  PerformanceMetrics,
-  GestureType,
-  GestureHandler,
-  TouchEventData,
+  type DeviceInfo,
+  type DeviceType,
+  type OS,
+  type PerformanceLevel,
+  type NetworkType,
+  type OptimizationConfig,
+  type MobilePerformanceMetrics,
+  type GestureType,
+  type GestureHandler,
+  type TouchEventData,
   isMobile,
   isTablet,
   getOptimizedConfig,
-} from '@agora/sdk/mobile.js';
+} from '../../../packages/sdk/src/mobile.js';
 
 /**
  * Mobile agent configuration options
@@ -61,7 +61,7 @@ export interface MobileAgentState {
   /** Current optimization configuration */
   optimizationConfig: OptimizationConfig;
   /** Current performance metrics */
-  performanceMetrics: PerformanceMetrics;
+  performanceMetrics: MobilePerformanceMetrics;
   /** Whether the agent is running on mobile */
   isMobileEnvironment: boolean;
   /** Whether gestures are enabled */
@@ -306,6 +306,7 @@ export class MobileAgent extends AgoraAgent {
       : payload.params;
 
     return this.sendRequest({
+      request_id: crypto.randomUUID(),
       intent: payload.intent,
       params: adaptedPayload as Record<string, unknown>,
     }, options);
@@ -499,7 +500,7 @@ export type {
   PerformanceLevel,
   NetworkType,
   OptimizationConfig,
-  PerformanceMetrics,
+  MobilePerformanceMetrics,
   GestureType,
   GestureHandler,
   TouchEventData,
