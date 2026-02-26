@@ -198,6 +198,7 @@ export {
 
 // Performance Optimization module (v2.0) - Enhanced with analytics & monitoring
 export {
+  // Core monitoring
   PerformanceMonitor,
   createPerformanceMonitor,
   createEnhancedPerformanceMonitor,
@@ -208,6 +209,32 @@ export {
   withLatencyTrackingAsync,
   trackMemory,
   generateOptimizationReport,
+  // Caching
+  OperationCache,
+  createCache,
+  withCache as withPerformanceCache,
+  // Batch processing
+  BatchProcessor,
+  createBatchProcessor,
+  // WebSocket pooling
+  WebSocketPool,
+  createWebSocketPool,
+  // Lazy loading
+  LazyLoader,
+  createLazyLoader,
+  // Rate limiting
+  AdaptiveRateLimiter,
+  createRateLimiter,
+  // Request deduplication
+  RequestDeduplicator,
+  createDeduplicator,
+  withDeduplication,
+  // Bundle optimization
+  BundleOptimizer,
+  createBundleOptimizer,
+  dynamicImport,
+  prefetchModule,
+  // Types
   type PerformanceMetrics,
   type BenchmarkResult,
   type LatencyHistogram,
@@ -219,13 +246,33 @@ export {
   type AlertThresholds,
   type PerformanceMonitorConfig,
   type PerformanceAlert,
-  // New enhanced types
+  // Cache types
+  type OperationCacheEntry,
+  type OperationCacheOptions,
+  // Batch types
+  type BatchConfig,
+  type BatchItem,
+  // WebSocket types
+  type WebSocketPoolConfig,
+  type PooledConnection,
+  // Lazy loader types
+  type LazyLoaderConfig,
+  // Rate limiter types
+  type RateLimiterConfig,
+  type RateLimitState,
+  // Deduplication types
+  type DedupeConfig,
+  type PendingRequest,
+  // Bundle types
+  type ChunkConfig,
+  type BundleAnalyzer,
+  // Dashboard types
   type DashboardData,
   type RegressionResult,
   type PerformanceBudget,
   type PerformanceBudgetReport,
   type ApiEndpointMetrics,
-  type BundleSizeMetrics,
+  type BundleSizeMetrics as PerformanceBundleSizeMetrics,
   type AdaptiveThresholds,
   type TrendAnalysis,
   type EnhancedPerformanceConfig,
