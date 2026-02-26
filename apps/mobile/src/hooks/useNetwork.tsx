@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import NetInfo, { NetInfoSubscription, NetInfoState } from '@react-native-community/netinfo';
+import NetInfo, { NetInfoSubscription } from '@react-native-community/netinfo';
 
 export interface NetworkState {
   isConnected: boolean | null;
@@ -11,6 +11,9 @@ export interface NetworkState {
   isLoading: boolean;
 }
 
+/**
+ * Hook to monitor network connectivity state
+ */
 export function useNetworkState(): NetworkState {
   const [networkState, setNetworkState] = useState<NetworkState>({
     isConnected: null,
@@ -34,7 +37,7 @@ export function useNetworkState(): NetworkState {
           isLoading: false,
         });
 
-        unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
+        unsubscribe = NetInfo.addEventListener((state) => {
           setNetworkState({
             isConnected: state.isConnected,
             isInternetReachable: state.isInternetReachable,
@@ -61,32 +64,50 @@ export function useNetworkState(): NetworkState {
   return networkState;
 }
 
+/**
+ * Hook to check if device is online
+ */
 export function useIsOnline(): boolean {
   const { isConnected, isInternetReachable } = useNetworkState();
   return isConnected === true && isInternetReachable === true;
 }
 
+/**
+ * Hook to check if device is offline
+ */
 export function useIsOffline(): boolean {
   const { isConnected, isInternetReachable } = useNetworkState();
   return isConnected === false || isInternetReachable === false;
 }
 
+/**
+ * Hook to get connection type
+ */
 export function useConnectionType(): string {
   const { type } = useNetworkState();
   return type;
 }
 
+/**
+ * Hook to check if on WiFi
+ */
 export function useIsWifi(): boolean {
   const { type } = useNetworkState();
   return type === 'wifi';
 }
 
+/**
+ * Hook to check if on cellular
+ */
 export function useIsCellular(): boolean {
   const { type } = useNetworkState();
   return type === 'cellular';
 }
 
-export function OfflineFallback(): React.ReactElement {
+/**
+ * Network offline fallback component
+ */
+export function NetworkOfflineFallback() {
   return (
     <View style={styles.offlineContainer}>
       <Ionicons name="cloud-offline" size={64} color="#94a3b8" />
@@ -97,6 +118,11 @@ export function OfflineFallback(): React.ReactElement {
     </View>
   );
 }
+
+/**
+ * Alias for NetworkOfflineFallback
+ */
+export { NetworkOfflineFallback as OfflineFallback };
 
 const styles = StyleSheet.create({
   offlineContainer: {
