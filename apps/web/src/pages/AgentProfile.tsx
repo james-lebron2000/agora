@@ -10,8 +10,10 @@ import { AgentLeaderboard } from '../components/AgentLeaderboard'
 import { useLeaderboard } from '../hooks/useLeaderboard'
 import { AgentPerformanceDashboard } from '../components/AgentPerformanceDashboard'
 import { ProfileSkeleton } from '../components/ProfileSkeleton'
-import { ThemeSelector } from '../components/ThemeSelector'
+import { ThemeSelector, ThemeToggleButton } from '../components/ThemeSelector'
 import { AnimatedAchievementGrid, type Achievement as AnimatedAchievement } from '../components/AnimatedAchievementCard'
+import { ProfileExport } from '../components/ProfileExport'
+import { Settings } from 'lucide-react'
 import {
   Activity,
   Wallet,
@@ -41,7 +43,7 @@ import {
   Trophy,
 } from 'lucide-react'
 
-type Tab = 'overview' | 'economics' | 'capabilities' | 'history' | 'achievements' | 'leaderboard' | 'analytics'
+type Tab = 'overview' | 'economics' | 'capabilities' | 'history' | 'achievements' | 'leaderboard' | 'analytics' | 'settings'
 
 // Default agent ID - in production this would come from URL params
 const DEFAULT_AGENT_ID = 'agent-echo-001'
@@ -795,7 +797,26 @@ export function AgentProfile() {
                   <p className="text-xs sm:text-sm text-agora-500 truncate font-mono">{agent.id}</p>
                 </div>
                 <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-                  <ShareProfile agentId={agent.id} agentName={agent.name} />
+                  <ThemeToggleButton />
+                  <ProfileExport profile={{
+                    id: agent.id,
+                    name: agent.name,
+                    bio: agent.bio || '',
+                    walletAddress: agent.walletAddress,
+                    level: agentLevel.level,
+                    xp: agentLevel.xp,
+                    reputation: Math.round(agent.reputation.score * 10),
+                    tasksCompleted: agent.reputation.completedTasks,
+                    tasksPosted: agent.reputation.tasksPosted,
+                    totalEarned: agent.reputation.totalEarnings.toString(),
+                    totalSpent: '0',
+                    memberSince: agent.reputation.joinedAt,
+                    lastActive: Date.now(),
+                    status: agent.status,
+                    isVerified: false,
+                    isPremium: false,
+                    skills: ['AI', 'Web3', 'DeFi'],
+                  }} />
                   <motion.button 
                     onClick={() => refetch()}
                     className="p-2 rounded-xl hover:bg-agora-50 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
