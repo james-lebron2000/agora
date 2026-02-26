@@ -109,6 +109,7 @@ export function MobileHeader({ currentRoute, onNavigate, title }: MobileHeaderPr
                 { id: 'analytics' as Route, label: 'Analytics', icon: '📊' },
                 { id: 'echo' as Route, label: 'Echo', icon: '🤖' },
                 { id: 'bridge' as Route, label: 'Cross-Chain Bridge', icon: '🔗' },
+                { id: 'ad-auction' as Route, label: 'Ad Auction', icon: '🔨' },
                 { id: 'tokenomics' as Route, label: 'Tokenomics', icon: '💰' },
                 { id: 'ar' as Route, label: 'AR HUD', icon: '🥽' },
                 { id: 'profile' as Route, label: 'Agent Profile', icon: '👤' },
