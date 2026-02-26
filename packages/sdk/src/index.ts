@@ -95,18 +95,26 @@ export {
   type ChainConfig
 } from './wallet-manager.js';
 
-// Cross-chain bridge (v1.2)
+// Cross-chain bridge (v1.3) - Multi-token support
 export {
   CrossChainBridge,
   createChainPublicClient,
   getUSDCBalance,
   getNativeBalance,
   getAllBalances,
+  getTokenBalance,
+  getAllTokenBalances,
   getBridgeQuote,
   findCheapestChain,
   estimateBridgeFee,
   SUPPORTED_CHAINS,
+  SUPPORTED_TOKENS,
   USDC_ADDRESSES,
+  USDT_ADDRESSES,
+  DAI_ADDRESSES,
+  WETH_ADDRESSES,
+  TOKEN_ADDRESSES,
+  TOKEN_DECIMALS,
   LAYERZERO_ENDPOINTS,
   LAYERZERO_CHAIN_IDS,
   LAYERZERO_USDC_OFT,
@@ -118,6 +126,7 @@ export {
   listenLayerZeroMessages,
   getBridgeHistory,
   type SupportedChain,
+  type SupportedToken,
   type BridgeQuote,
   type ChainBalance,
   type BridgeResult,

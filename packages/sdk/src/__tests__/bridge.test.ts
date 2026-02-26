@@ -604,15 +604,15 @@ describe('getBridgeQuote', () => {
     }
   });
 
-  it('should handle ETH token quotes', async () => {
+  it('should handle WETH token quotes', async () => {
     const quote = await getBridgeQuote({
       sourceChain: 'optimism',
       destinationChain: 'base',
-      token: 'ETH',
+      token: 'WETH',
       amount: '1'
     }, TEST_ADDRESS);
 
-    expect(quote.token).toBe('ETH');
+    expect(quote.token).toBe('WETH');
     expect(quote.sourceChain).toBe('optimism');
     expect(quote.destinationChain).toBe('base');
   });
