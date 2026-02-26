@@ -24,7 +24,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAgents } from '../hooks/useApi';
 import { useTasks } from '../hooks/useApi';
 import { useWalletStore } from '../store/walletStore';
-import { SurvivalMonitor } from '../components';
+import { SurvivalMonitor, PerformanceMonitor } from '../components';
 import type { RootStackParamList, MainTabParamList, Agent, Task } from '../types/navigation';
 
 type NavigationProp = CompositeNavigationProp<
@@ -218,6 +218,10 @@ export default function HomeScreen() {
           />
         ))}
       </View>
+
+      {/* Performance Monitor Widget */}
+      <PerformanceMonitor position="bottom-right" compact={true} />
+
       </ScrollView>
     </SafeAreaView>
   );

@@ -579,6 +579,15 @@ export default function ProfileScreen() {
           <Text style={styles.disconnectText}>Disconnect Wallet</Text>
         </TouchableOpacity>
 
+        {/* Performance Monitor Button */}
+        <TouchableOpacity 
+          style={[styles.disconnectButton, { backgroundColor: '#6366f120', marginTop: 0, marginBottom: spacing.md }]} 
+          onPress={() => navigation.navigate('Performance')}
+        >
+          <Ionicons name="speedometer" size={22} color="#6366f1" />
+          <Text style={[styles.disconnectText, { color: '#6366f1' }]}>Performance Monitor</Text>
+        </TouchableOpacity>
+
           <Text style={styles.version}>Agora Mobile v1.2.0</Text>
         </ScrollView>
 

@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import Redis, { RedisOptions } from 'ioredis';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
@@ -9,8 +9,8 @@ class RedisService {
   private isConnected: boolean = false;
 
   constructor() {
-    const redisOptions: Redis.RedisOptions = {
-      retryStrategy: (times) => {
+    const redisOptions: RedisOptions = {
+      retryStrategy: (times: number) => {
         const delay = Math.min(times * 50, 2000);
         return delay;
       },
@@ -190,6 +190,41 @@ class RedisService {
   // Get underlying client for advanced operations
   getClient(): Redis {
     return this.client;
+  }
+
+  // Set operations for notifications
+  async sadd(key: string, ...members: string[]): Promise<number> {
+    return await this.client.sadd(key, ...members);
+  }
+
+  async srem(key: string, ...members: string[]): Promise<number> {
+    return await this.client.srem(key, ...members);
+  }
+
+  async smembers(key: string): Promise<string[]> {
+    return await this.client.smembers(key);
+  }
+
+  // Hash operations for stats
+  async hincrby(key: string, field: string, increment: number): Promise<number> {
+    return await this.client.hincrby(key, field, increment);
+  }
+
+  async hgetall(key: string): Promise<Record<string, string>> {
+    return await this.client.hgetall(key);
+  }
+
+  // List operations for queue
+  async llen(key: string): Promise<number> {
+    return await this.client.llen(key);
+  }
+
+  async ltrim(key: string, start: number, stop: number): Promise<void> {
+    await this.client.ltrim(key, start, stop);
+  }
+
+  async rpush(key: string, ...values: string[]): Promise<number> {
+    return await this.client.rpush(key, ...values);
   }
 
   // Graceful shutdown

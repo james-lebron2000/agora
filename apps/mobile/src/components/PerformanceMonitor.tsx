@@ -63,18 +63,13 @@ const MiniSparkline: React.FC<MiniChartProps> = ({
 
   const pathD = `M ${points.join(' L ')}`;
 
+  // For React Native, we need to use SVG from react-native-svg
+  // This is a simplified version - in a real implementation you'd use Path from react-native-svg
   return (
-    <View style={{ width, height }}>
-      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-        <path
-          d={pathD}
-          fill="none"
-          stroke={color}
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+    <View style={{ width, height, justifyContent: 'center', alignItems: 'center' }}>
+      <Text style={{ fontSize: responsiveFontSize(10), color: color, fontWeight: '600' }}>
+        {data.length > 0 ? `↗ ${data[data.length - 1].toFixed(0)}` : '...'}
+      </Text>
     </View>
   );
 };

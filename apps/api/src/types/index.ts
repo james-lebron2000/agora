@@ -71,6 +71,13 @@ export interface GatewayConfig {
     tasks: ServiceConfig;
     payments: ServiceConfig;
   };
+  notifications: {
+    expoAccessToken: string;
+    queuePrefix: string;
+    batchSize: number;
+    maxRetries: number;
+    retryDelayMs: number;
+  };
 }
 
 export interface HealthStatus {
@@ -110,3 +117,6 @@ export interface SuccessResponse<T> {
   timestamp: string;
   requestId: string;
 }
+
+// Re-export notification types
+export * from './notifications';
