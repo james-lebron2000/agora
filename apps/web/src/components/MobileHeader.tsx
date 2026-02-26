@@ -7,9 +7,10 @@ type Route = 'home' | 'analytics' | 'tokenomics' | 'echo' | 'ar' | 'bridge' | 'p
 interface MobileHeaderProps {
   currentRoute: Route
   onNavigate: (route: Route) => void
+  title?: string
 }
 
-export function MobileHeader({ currentRoute, onNavigate }: MobileHeaderProps) {
+export function MobileHeader({ currentRoute, onNavigate, title }: MobileHeaderProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
 
   const routeLabels: Record<Route, string> = {
@@ -61,9 +62,11 @@ export function MobileHeader({ currentRoute, onNavigate }: MobileHeaderProps) {
         </div>
 
         {/* Subtitle - Current Page */}
-        <div className="px-4 pb-2 -mt-1">
-          <p className="text-xs text-agora-500 text-center">{routeLabels[currentRoute]}</p>
-        </div>
+        {title && (
+          <div className="px-4 pb-2 -mt-1">
+            <p className="text-xs text-agora-500 text-center">{title}</p>
+          </div>
+        )}
       </header>
 
       {/* Mobile Navigation Drawer */}
