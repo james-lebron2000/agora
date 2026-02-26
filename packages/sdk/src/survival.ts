@@ -22,8 +22,170 @@ import {
   SUPPORTED_TOKENS
 } from './bridge.js';
 
-// Agent health status
+// ============================================================================
+// ERROR HANDLING
+// ============================================================================
+
+/**
+ * Survival error codes for categorizing failures
+ */
+export type SurvivalErrorCode =
+  | 'INVALID_PARAMS'
+  | 'AGENT_NOT_FOUND'
+  | 'HEALTH_CHECK_FAILED'
+  | 'ECONOMICS_CHECK_FAILED'
+  | 'HEARTBEAT_FAILED'
+  | 'INSUFFICIENT_BALANCE'
+  | 'NETWORK_ERROR'
+  | 'STATE_TRANSITION_ERROR'
+  | 'ACTION_EXECUTION_FAILED'
+  | 'PREDICTION_FAILED'
+  | 'UNKNOWN_ERROR';
+
+/**
+ * Custom Survival Error class with error codes and retry capability
+ */
+export class SurvivalError extends Error {
+  public code: SurvivalErrorCode;
+  public agentId?: string;
+  public retryable: boolean;
+  public timestamp: number;
+  public cause?: Error;
+
+  constructor(
+    message: string,
+    code: SurvivalErrorCode = 'UNKNOWN_ERROR',
+    options?: { agentId?: string; retryable?: boolean; cause?: Error }
+  ) {
+    super(message);
+    this.name = 'SurvivalError';
+    this.code = code;
+    this.agentId = options?.agentId;
+    this.retryable = options?.retryable ?? true;
+    this.timestamp = Date.now();
+    this.cause = options?.cause;
+  }
+
+  /**
+   * Check if error is retryable
+   */
+  isRetryable(): boolean {
+    return this.retryable && [
+      'NETWORK_ERROR',
+      'HEALTH_CHECK_FAILED',
+      'ECONOMICS_CHECK_FAILED',
+      'HEARTBEAT_FAILED',
+      'PREDICTION_FAILED'
+    ].includes(this.code);
+  }
+
+  /**
+   * Convert error to JSON representation
+   */
+  toJSON(): Record<string, unknown> {
+    return {
+      name: this.name,
+      message: this.message,
+      code: this.code,
+      agentId: this.agentId,
+      retryable: this.retryable,
+      timestamp: this.timestamp,
+      cause: this.cause?.message
+    };
+  }
+}
+
+/**
+ * Retry configuration for operations
+ */
+export interface RetryConfig {
+  maxRetries: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  backoffMultiplier: number;
+}
+
+/**
+ * Default retry configuration
+ */
+export const DEFAULT_RETRY_CONFIG: RetryConfig = {
+  maxRetries: 3,
+  baseDelayMs: 1000,
+  maxDelayMs: 30000,
+  backoffMultiplier: 2
+};
+
+/**
+ * Execute an async function with retry logic
+ * @param fn - Function to execute
+ * @param config - Retry configuration
+ * @param context - Error context for logging
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  config: Partial<RetryConfig> = {},
+  context?: { agentId?: string; operation: string }
+): Promise<T> {
+  const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...config };
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= retryConfig.maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      // Check if error is retryable
+      const survivalError = error instanceof SurvivalError ? error : null;
+      if (survivalError && !survivalError.isRetryable()) {
+        throw survivalError;
+      }
+
+      if (attempt < retryConfig.maxRetries) {
+        const delay = Math.min(
+          retryConfig.baseDelayMs * Math.pow(retryConfig.backoffMultiplier, attempt),
+          retryConfig.maxDelayMs
+        );
+        console.warn(`[Survival] Retry ${attempt + 1}/${retryConfig.maxRetries} for ${context?.operation}: ${lastError.message}. Waiting ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  throw new SurvivalError(
+    `Failed after ${retryConfig.maxRetries} retries: ${lastError?.message}`,
+    'UNKNOWN_ERROR',
+    { agentId: context?.agentId, retryable: false, cause: lastError }
+  );
+}
+
+// ============================================================================
+// TYPES AND INTERFACES
+// ============================================================================
+
+/** Agent health status enum */
 export type AgentHealthStatus = 'healthy' | 'degraded' | 'critical' | 'dead';
+
+/**
+ * Survival mode state machine states
+ */
+export type SurvivalModeState = 
+  | 'normal'
+  | 'caution'
+  | 'survival'
+  | 'recovery'
+  | 'shutdown';
+
+/**
+ * State transition reasons
+ */
+export interface StateTransition {
+  from: SurvivalModeState;
+  to: SurvivalModeState;
+  reason: string;
+  timestamp: number;
+  triggeredBy: 'health' | 'economics' | 'manual' | 'automated';
+}
 
 /**
  * Survival snapshot for quick state assessment
@@ -248,62 +410,6 @@ export const DEFAULT_SURVIVAL_CONFIG: SurvivalConfig = {
   preferredChain: 'base'
 };
 
-const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
-
-function normalizeAgentId(agentId: unknown): string {
-  if (typeof agentId !== 'string' || agentId.trim().length === 0) {
-    throw new Error('agentId must be a non-empty string');
-  }
-  return agentId.trim();
-}
-
-function normalizeAddress(address: unknown, fieldName: string = 'address'): Address {
-  if (typeof address !== 'string' || !ADDRESS_REGEX.test(address) || !isAddress(address, { strict: false })) {
-    throw new Error(`${fieldName} must be a valid EVM address`);
-  }
-  return address as Address;
-}
-
-function parseFiniteNumber(value: unknown, fieldName: string): number {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(parsed)) {
-    throw new Error(`${fieldName} must be a finite number`);
-  }
-  return parsed;
-}
-
-function parseNonNegative(value: unknown, fieldName: string): number {
-  const parsed = parseFiniteNumber(value, fieldName);
-  if (parsed < 0) {
-    throw new Error(`${fieldName} must be greater than or equal to 0`);
-  }
-  return parsed;
-}
-
-function parsePositiveInteger(value: unknown, fieldName: string): number {
-  const parsed = parseFiniteNumber(value, fieldName);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${fieldName} must be a positive integer`);
-  }
-  return parsed;
-}
-
-function parseRate(value: unknown, fieldName: string): number {
-  const parsed = parseFiniteNumber(value, fieldName);
-  if (parsed < 0 || parsed > 1) {
-    throw new Error(`${fieldName} must be between 0 and 1`);
-  }
-  return parsed;
-}
-
-function normalizeUsdString(value: unknown, fieldName: string): string {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`${fieldName} must be a non-empty numeric string`);
-  }
-  const parsed = parseNonNegative(value, fieldName);
-  return parsed.toString();
-}
-
 /**
  * Task acceptance decision result
  */
@@ -333,10 +439,398 @@ export interface SurvivalAction {
   recommendedChain?: string;
 }
 
+// ============================================================================
+// INPUT VALIDATION UTILITIES
+// ============================================================================
+
+const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+
+/**
+ * Validates and normalizes agent ID
+ * @param agentId - Agent ID to validate
+ * @returns Normalized agent ID
+ * @throws SurvivalError if invalid
+ */
+function normalizeAgentId(agentId: unknown): string {
+  if (typeof agentId !== 'string' || agentId.trim().length === 0) {
+    throw new SurvivalError(
+      'agentId must be a non-empty string',
+      'INVALID_PARAMS',
+      { retryable: false }
+    );
+  }
+  return agentId.trim();
+}
+
+/**
+ * Validates and normalizes EVM address
+ * @param address - Address to validate
+ * @param fieldName - Field name for error messages
+ * @returns Normalized address
+ * @throws SurvivalError if invalid
+ */
+function normalizeAddress(address: unknown, fieldName: string = 'address'): Address {
+  if (typeof address !== 'string' || !ADDRESS_REGEX.test(address) || !isAddress(address, { strict: false })) {
+    throw new SurvivalError(
+      `${fieldName} must be a valid EVM address`,
+      'INVALID_PARAMS',
+      { retryable: false }
+    );
+  }
+  return address as Address;
+}
+
+/**
+ * Parses and validates a finite number
+ * @param value - Value to parse
+ * @param fieldName - Field name for error messages
+ * @returns Parsed number
+ * @throws SurvivalError if not finite
+ */
+function parseFiniteNumber(value: unknown, fieldName: string): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new SurvivalError(
+      `${fieldName} must be a finite number`,
+      'INVALID_PARAMS',
+      { retryable: false }
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Parses and validates a non-negative number
+ * @param value - Value to parse
+ * @param fieldName - Field name for error messages
+ * @returns Parsed non-negative number
+ * @throws SurvivalError if negative
+ */
+function parseNonNegative(value: unknown, fieldName: string): number {
+  const parsed = parseFiniteNumber(value, fieldName);
+  if (parsed < 0) {
+    throw new SurvivalError(
+      `${fieldName} must be greater than or equal to 0`,
+      'INVALID_PARAMS',
+      { retryable: false }
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Parses and validates a positive integer
+ * @param value - Value to parse
+ * @param fieldName - Field name for error messages
+ * @returns Parsed positive integer
+ * @throws SurvivalError if not positive integer
+ */
+function parsePositiveInteger(value: unknown, fieldName: string): number {
+  const parsed = parseFiniteNumber(value, fieldName);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new SurvivalError(
+      `${fieldName} must be a positive integer`,
+      'INVALID_PARAMS',
+      { retryable: false }
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Parses and validates a rate between 0 and 1
+ * @param value - Value to parse
+ * @param fieldName - Field name for error messages
+ * @returns Parsed rate
+ * @throws SurvivalError if out of range
+ */
+function parseRate(value: unknown, fieldName: string): number {
+  const parsed = parseFiniteNumber(value, fieldName);
+  if (parsed < 0 || parsed > 1) {
+    throw new SurvivalError(
+      `${fieldName} must be between 0 and 1`,
+      'INVALID_PARAMS',
+      { retryable: false }
+    );
+  }
+  return parsed;
+}
+
+/**
+ * Validates and normalizes USD amount string
+ * @param value - Value to validate
+ * @param fieldName - Field name for error messages
+ * @returns Normalized USD string
+ * @throws SurvivalError if invalid
+ */
+function normalizeUsdString(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new SurvivalError(
+      `${fieldName} must be a non-empty numeric string`,
+      'INVALID_PARAMS',
+      { retryable: false }
+    );
+  }
+  const parsed = parseNonNegative(value, fieldName);
+  return parsed.toString();
+}
+
+/**
+ * Validates survival snapshot structure
+ * @param snapshot - Snapshot to validate
+ * @throws SurvivalError if invalid
+ */
+function validateSurvivalSnapshot(snapshot: unknown): asserts snapshot is SurvivalSnapshot {
+  if (!snapshot || typeof snapshot !== 'object') {
+    throw new SurvivalError('snapshot must be an object', 'INVALID_PARAMS', { retryable: false });
+  }
+  
+  const s = snapshot as Record<string, unknown>;
+  
+  if (!s.health || typeof s.health !== 'object') {
+    throw new SurvivalError('snapshot.health is required', 'INVALID_PARAMS', { retryable: false });
+  }
+  
+  if (!s.economics || typeof s.economics !== 'object') {
+    throw new SurvivalError('snapshot.economics is required', 'INVALID_PARAMS', { retryable: false });
+  }
+  
+  const health = s.health as Record<string, unknown>;
+  const economics = s.economics as Record<string, unknown>;
+  
+  if (typeof health.status !== 'string') {
+    throw new SurvivalError('snapshot.health.status must be a string', 'INVALID_PARAMS', { retryable: false });
+  }
+  
+  if (typeof economics.balance !== 'string') {
+    throw new SurvivalError('snapshot.economics.balance must be a string', 'INVALID_PARAMS', { retryable: false });
+  }
+  
+  if (typeof economics.runwayDays !== 'number' || !Number.isFinite(economics.runwayDays)) {
+    throw new SurvivalError('snapshot.economics.runwayDays must be a valid number', 'INVALID_PARAMS', { retryable: false });
+  }
+}
+
+/**
+ * Validates partial health updates
+ * @param updates - Updates to validate
+ * @throws SurvivalError if invalid
+ */
+function validateHealthUpdates(updates: unknown): asserts updates is Partial<AgentHealth> {
+  if (!updates || typeof updates !== 'object') {
+    throw new SurvivalError('updates must be an object', 'INVALID_PARAMS', { retryable: false });
+  }
+  
+  const u = updates as Record<string, unknown>;
+  
+  if (u.successRate !== undefined) {
+    parseRate(u.successRate, 'successRate');
+  }
+  if (u.consecutiveFailures !== undefined) {
+    parseNonNegative(u.consecutiveFailures, 'consecutiveFailures');
+  }
+  if (u.totalTasksCompleted !== undefined) {
+    parseNonNegative(u.totalTasksCompleted, 'totalTasksCompleted');
+  }
+  if (u.totalTasksFailed !== undefined) {
+    parseNonNegative(u.totalTasksFailed, 'totalTasksFailed');
+  }
+  if (u.averageResponseTime !== undefined) {
+    parseNonNegative(u.averageResponseTime, 'averageResponseTime');
+  }
+}
+
+// ============================================================================
+// STATE MACHINE
+// ============================================================================
+
+/**
+ * Survival mode state machine
+ * Manages transitions between survival states
+ */
+class SurvivalStateMachine {
+  private currentState: SurvivalModeState = 'normal';
+  private transitionHistory: StateTransition[] = [];
+  private maxHistorySize = 100;
+
+  /**
+   * Get current state
+   */
+  getState(): SurvivalModeState {
+    return this.currentState;
+  }
+
+  /**
+   * Check if transition is valid
+   */
+  private isValidTransition(from: SurvivalModeState, to: SurvivalModeState): boolean {
+    const validTransitions: Record<SurvivalModeState, SurvivalModeState[]> = {
+      normal: ['caution', 'survival', 'shutdown'],
+      caution: ['normal', 'survival', 'recovery', 'shutdown'],
+      survival: ['recovery', 'shutdown', 'caution'],
+      recovery: ['normal', 'caution', 'survival'],
+      shutdown: [] // Terminal state
+    };
+    
+    return validTransitions[from]?.includes(to) ?? false;
+  }
+
+  /**
+   * Transition to new state
+   * @param to - Target state
+   * @param reason - Reason for transition
+   * @param triggeredBy - What triggered the transition
+   * @returns The transition record
+   * @throws SurvivalError if transition is invalid
+   */
+  transition(
+    to: SurvivalModeState,
+    reason: string,
+    triggeredBy: 'health' | 'economics' | 'manual' | 'automated'
+  ): StateTransition {
+    const from = this.currentState;
+    
+    if (from === to) {
+      return {
+        from,
+        to,
+        reason,
+        timestamp: Date.now(),
+        triggeredBy
+      };
+    }
+    
+    if (!this.isValidTransition(from, to)) {
+      throw new SurvivalError(
+        `Invalid state transition from ${from} to ${to}`,
+        'STATE_TRANSITION_ERROR',
+        { retryable: false }
+      );
+    }
+    
+    const transition: StateTransition = {
+      from,
+      to,
+      reason,
+      timestamp: Date.now(),
+      triggeredBy
+    };
+    
+    this.currentState = to;
+    this.transitionHistory.push(transition);
+    
+    // Trim history if needed
+    if (this.transitionHistory.length > this.maxHistorySize) {
+      this.transitionHistory = this.transitionHistory.slice(-this.maxHistorySize);
+    }
+    
+    console.log(`[Survival] State transition: ${from} -> ${to} (${triggeredBy}): ${reason}`);
+    
+    return transition;
+  }
+
+  /**
+   * Get transition history
+   */
+  getHistory(limit: number = 50): StateTransition[] {
+    return this.transitionHistory.slice(-limit);
+  }
+
+  /**
+   * Determine target state based on health and economics
+   */
+  determineTargetState(
+    health: AgentHealth,
+    economics: AgentEconomics,
+    minBalance: string
+  ): SurvivalModeState {
+    const balance = parseFloat(economics.currentBalance);
+    const minBal = parseFloat(minBalance);
+    
+    // Shutdown conditions
+    if (health.status === 'dead' || balance <= 0) {
+      return 'shutdown';
+    }
+    
+    // Survival mode conditions
+    if (health.status === 'critical' || balance < minBal || economics.daysOfRunway < 3) {
+      return 'survival';
+    }
+    
+    // Caution mode conditions
+    if (health.status === 'degraded' || balance < minBal * 2 || economics.daysOfRunway < 7) {
+      return 'caution';
+    }
+    
+    // Recovery if improving from survival
+    if (this.currentState === 'survival' && balance >= minBal * 1.5 && economics.daysOfRunway >= 5) {
+      return 'recovery';
+    }
+    
+    // Normal operation
+    return 'normal';
+  }
+}
+
+// ============================================================================
+// SURVIVAL EVENTS
+// ============================================================================
+
+/**
+ * Survival event types
+ */
+export type SurvivalEventType =
+  | 'health:critical'
+  | 'economic:warning'
+  | 'action:recommended'
+  | 'survival:mode-enter'
+  | 'survival:mode-exit'
+  | 'state:transition'
+  | 'heartbeat:sent'
+  | 'heartbeat:failed';
+
+/**
+ * Event callback type
+ */
+export type SurvivalEventCallback = (data: {
+  type: SurvivalEventType;
+  agentId: string;
+  timestamp: number;
+  details?: Record<string, unknown>;
+}) => void;
+
+// ============================================================================
+// IN-MEMORY STORAGE
+// ============================================================================
+
+/** In-memory heartbeat storage */
+const heartbeatStore: Map<string, HeartbeatRecord[]> = new Map();
+
+/** In-memory health storage */
+const healthStore: Map<string, AgentHealth> = new Map();
+
+/** In-memory economics storage */
+const economicsStore: Map<string, AgentEconomics> = new Map();
+
+/** In-memory survival history storage */
+const survivalHistoryStore: Map<string, SurvivalHistoryEntry[]> = new Map();
+
+/** In-memory automated actions storage */
+const automatedActionsStore: Map<string, AutomatedSurvivalAction[]> = new Map();
+
+// ============================================================================
+// FORMATTING UTILITIES
+// ============================================================================
+
 /**
  * Format survival report as readable string
+ * @param snapshot - Survival snapshot to format
+ * @returns Formatted report string
+ * @throws SurvivalError if snapshot is invalid
  */
 export function formatSurvivalReport(snapshot: SurvivalSnapshot): string {
+  validateSurvivalSnapshot(snapshot);
+  
   const { health, economics, timestamp } = snapshot;
   const date = new Date(timestamp).toLocaleString();
 
@@ -360,6 +854,12 @@ export function formatSurvivalReport(snapshot: SurvivalSnapshot): string {
 
 /**
  * Determine if agent should accept a task based on survival state
+ * @param snapshot - Current survival snapshot
+ * @param budget - Task budget in USD
+ * @param estimatedCost - Estimated task cost in USD
+ * @param minProfitMargin - Minimum required profit margin (0-1)
+ * @returns Task decision result
+ * @throws SurvivalError if parameters are invalid
  */
 export function shouldAcceptTask(
   snapshot: SurvivalSnapshot,
@@ -367,9 +867,17 @@ export function shouldAcceptTask(
   estimatedCost: string,
   minProfitMargin: number = 0.1
 ): TaskDecision {
-  if (!snapshot || !snapshot.health || !snapshot.economics) {
-    throw new Error('snapshot is required');
+  // Validate inputs
+  validateSurvivalSnapshot(snapshot);
+  
+  if (typeof budget !== 'string' || budget.trim().length === 0) {
+    throw new SurvivalError('budget must be a non-empty string', 'INVALID_PARAMS', { retryable: false });
   }
+  
+  if (typeof estimatedCost !== 'string' || estimatedCost.trim().length === 0) {
+    throw new SurvivalError('estimatedCost must be a non-empty string', 'INVALID_PARAMS', { retryable: false });
+  }
+  
   const margin = parseRate(minProfitMargin, 'minProfitMargin');
   const balance = parseFloat(snapshot.economics.balance);
   const taskBudget = parseFloat(budget);
@@ -377,7 +885,11 @@ export function shouldAcceptTask(
   const minBalance = parseFloat(DEFAULT_SURVIVAL_CONFIG.minSurvivalBalance);
 
   if (![balance, taskBudget, cost, minBalance].every((value) => Number.isFinite(value))) {
-    throw new Error('snapshot, budget, and estimatedCost must contain valid numeric values');
+    throw new SurvivalError(
+      'snapshot, budget, and estimatedCost must contain valid numeric values',
+      'INVALID_PARAMS',
+      { retryable: false }
+    );
   }
 
   // Check survival mode
@@ -429,25 +941,61 @@ export function shouldAcceptTask(
   };
 }
 
-function normalizeSurvivalConfig(config: SurvivalConfig): SurvivalConfig {
-  const minSurvivalBalance = normalizeUsdString(config.minSurvivalBalance, 'minSurvivalBalance');
-  const dailyBurnRate = normalizeUsdString(config.dailyBurnRate, 'dailyBurnRate');
-  const autoBridgeThreshold = normalizeUsdString(config.autoBridgeThreshold, 'autoBridgeThreshold');
-  const healthCheckInterval = parsePositiveInteger(config.healthCheckInterval, 'healthCheckInterval');
-  const heartbeatInterval = parsePositiveInteger(config.heartbeatInterval, 'heartbeatInterval');
-  const healthySuccessRate = parseRate(config.healthySuccessRate, 'healthySuccessRate');
-  const criticalSuccessRate = parseRate(config.criticalSuccessRate, 'criticalSuccessRate');
-  const maxResponseTime = parsePositiveInteger(config.maxResponseTime, 'maxResponseTime');
-  const alertThreshold = parseNonNegative(config.alertThreshold, 'alertThreshold');
-  const preferredChain = config.preferredChain;
-  const autoBridgeTargetToken = config.autoBridgeTargetToken;
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+/**
+ * Normalizes and validates survival configuration
+ * @param config - Configuration to normalize
+ * @returns Normalized configuration
+ * @throws SurvivalError if configuration is invalid
+ */
+function normalizeSurvivalConfig(config: Partial<SurvivalConfig>): SurvivalConfig {
+  if (!config || typeof config !== 'object') {
+    throw new SurvivalError('config must be an object', 'INVALID_PARAMS', { retryable: false });
+  }
+
+  const minSurvivalBalance = normalizeUsdString(config.minSurvivalBalance ?? DEFAULT_SURVIVAL_CONFIG.minSurvivalBalance, 'minSurvivalBalance');
+  const dailyBurnRate = normalizeUsdString(config.dailyBurnRate ?? DEFAULT_SURVIVAL_CONFIG.dailyBurnRate, 'dailyBurnRate');
+  const autoBridgeThreshold = normalizeUsdString(config.autoBridgeThreshold ?? DEFAULT_SURVIVAL_CONFIG.autoBridgeThreshold, 'autoBridgeThreshold');
+  const healthCheckInterval = parsePositiveInteger(config.healthCheckInterval ?? DEFAULT_SURVIVAL_CONFIG.healthCheckInterval, 'healthCheckInterval');
+  const heartbeatInterval = parsePositiveInteger(config.heartbeatInterval ?? DEFAULT_SURVIVAL_CONFIG.heartbeatInterval, 'heartbeatInterval');
+  const healthySuccessRate = parseRate(config.healthySuccessRate ?? DEFAULT_SURVIVAL_CONFIG.healthySuccessRate, 'healthySuccessRate');
+  const criticalSuccessRate = parseRate(config.criticalSuccessRate ?? DEFAULT_SURVIVAL_CONFIG.criticalSuccessRate, 'criticalSuccessRate');
+  const maxResponseTime = parsePositiveInteger(config.maxResponseTime ?? DEFAULT_SURVIVAL_CONFIG.maxResponseTime, 'maxResponseTime');
+  const alertThreshold = parseNonNegative(config.alertThreshold ?? DEFAULT_SURVIVAL_CONFIG.alertThreshold, 'alertThreshold');
+  
+  // Validate chain
+  const preferredChain = config.preferredChain ?? DEFAULT_SURVIVAL_CONFIG.preferredChain;
+  const validChains = ['ethereum', 'base', 'optimism', 'arbitrum', 'polygon', 'avalanche', 'bsc'];
+  if (!validChains.includes(preferredChain)) {
+    throw new SurvivalError(
+      `preferredChain must be one of: ${validChains.join(', ')}`,
+      'INVALID_PARAMS',
+      { retryable: false }
+    );
+  }
+  
+  // Validate token
+  const autoBridgeTargetToken = config.autoBridgeTargetToken ?? DEFAULT_SURVIVAL_CONFIG.autoBridgeTargetToken;
+  if (!SUPPORTED_TOKENS.includes(autoBridgeTargetToken as SupportedToken)) {
+    throw new SurvivalError(
+      `autoBridgeTargetToken must be one of: ${SUPPORTED_TOKENS.join(', ')}`,
+      'INVALID_PARAMS',
+      { retryable: false }
+    );
+  }
 
   if (criticalSuccessRate > healthySuccessRate) {
-    throw new Error('criticalSuccessRate must be less than or equal to healthySuccessRate');
+    throw new SurvivalError(
+      'criticalSuccessRate must be less than or equal to healthySuccessRate',
+      'INVALID_PARAMS',
+      { retryable: false }
+    );
   }
 
   return {
-    ...config,
     minSurvivalBalance,
     dailyBurnRate,
     autoBridgeThreshold,
@@ -457,39 +1005,15 @@ function normalizeSurvivalConfig(config: SurvivalConfig): SurvivalConfig {
     criticalSuccessRate,
     maxResponseTime,
     alertThreshold,
-    preferredChain,
-    autoBridgeTargetToken,
+    enableAutomation: config.enableAutomation ?? DEFAULT_SURVIVAL_CONFIG.enableAutomation,
+    autoBridgeTargetToken: autoBridgeTargetToken as SupportedToken,
+    preferredChain: preferredChain as SupportedChain
   };
 }
 
-/**
- * Survival event types
- */
-export type SurvivalEventType =
-  | 'health:critical'
-  | 'economic:warning'
-  | 'action:recommended'
-  | 'survival:mode-enter'
-  | 'survival:mode-exit';
-
-/**
- * Event callback type
- */
-export type SurvivalEventCallback = (data: {
-  type: SurvivalEventType;
-  agentId: string;
-  timestamp: number;
-  details?: Record<string, unknown>;
-}) => void;
-
-/**
- * In-memory storage (production should use persistent storage)
- */
-const heartbeatStore: Map<string, HeartbeatRecord[]> = new Map();
-const healthStore: Map<string, AgentHealth> = new Map();
-const economicsStore: Map<string, AgentEconomics> = new Map();
-const survivalHistoryStore: Map<string, SurvivalHistoryEntry[]> = new Map();
-const automatedActionsStore: Map<string, AutomatedSurvivalAction[]> = new Map();
+// ============================================================================
+// SURVIVAL MANAGER
+// ============================================================================
 
 /**
  * Echo Survival Manager
@@ -509,20 +1033,19 @@ export class EchoSurvivalManager {
     address: Address,
     config: Partial<SurvivalConfig> = {}
   ) {
-    const normalizedAgentId = normalizeAgentId(agentId);
-    this.agentId = normalizedAgentId;
-    this.address = normalizeAddress(address);
-    this.config = normalizeSurvivalConfig({ ...DEFAULT_SURVIVAL_CONFIG, ...config });
+    this.agentId = agentId;
+    this.address = address;
+    this.config = { ...DEFAULT_SURVIVAL_CONFIG, ...config };
 
     // Initialize stores
-    if (!heartbeatStore.has(normalizedAgentId)) {
-      heartbeatStore.set(normalizedAgentId, []);
+    if (!heartbeatStore.has(agentId)) {
+      heartbeatStore.set(agentId, []);
     }
-    if (!healthStore.has(normalizedAgentId)) {
-      healthStore.set(normalizedAgentId, this.createInitialHealth());
+    if (!healthStore.has(agentId)) {
+      healthStore.set(agentId, this.createInitialHealth());
     }
-    if (!economicsStore.has(normalizedAgentId)) {
-      economicsStore.set(normalizedAgentId, this.createInitialEconomics());
+    if (!economicsStore.has(agentId)) {
+      economicsStore.set(agentId, this.createInitialEconomics());
     }
   }
 
@@ -730,10 +1253,9 @@ export class EchoSurvivalManager {
    * Check agent health status
    */
   checkHealth(agentId: string): AgentHealth {
-    const normalizedAgentId = normalizeAgentId(agentId);
-    const health = healthStore.get(normalizedAgentId);
+    const health = healthStore.get(agentId);
     if (!health) {
-      throw new Error(`Agent ${normalizedAgentId} not found`);
+      throw new Error(`Agent ${agentId} not found`);
     }
     return { ...health };
   }
@@ -751,7 +1273,7 @@ export class EchoSurvivalManager {
     
     // Only fetch live balance if explicitly requested (avoids network calls in tests)
     if (fetchBalance) {
-      const targetAddress = address ? normalizeAddress(address) : this.address;
+      const targetAddress = address || this.address;
       const balances = await getAllBalances(targetAddress);
       currentBalance = balances.reduce((sum, b) => {
         return sum + parseFloat(b.usdcBalance);
@@ -956,22 +1478,6 @@ export class EchoSurvivalManager {
     if (!current) {
       throw new Error(`Agent ${this.agentId} not found`);
     }
-
-    if (updates.successRate !== undefined) {
-      updates.successRate = parseRate(updates.successRate, 'successRate');
-    }
-    if (updates.consecutiveFailures !== undefined) {
-      updates.consecutiveFailures = parseNonNegative(updates.consecutiveFailures, 'consecutiveFailures');
-    }
-    if (updates.totalTasksCompleted !== undefined) {
-      updates.totalTasksCompleted = parseNonNegative(updates.totalTasksCompleted, 'totalTasksCompleted');
-    }
-    if (updates.totalTasksFailed !== undefined) {
-      updates.totalTasksFailed = parseNonNegative(updates.totalTasksFailed, 'totalTasksFailed');
-    }
-    if (updates.averageResponseTime !== undefined) {
-      updates.averageResponseTime = parseNonNegative(updates.averageResponseTime, 'averageResponseTime');
-    }
     
     const updated: AgentHealth = {
       ...current,
@@ -998,7 +1504,6 @@ export class EchoSurvivalManager {
    * Record task completion
    */
   recordTaskCompleted(responseTimeMs: number): void {
-    const normalizedResponseTime = parseNonNegative(responseTimeMs, 'responseTimeMs');
     const health = healthStore.get(this.agentId);
     if (!health) return;
     
@@ -1008,7 +1513,7 @@ export class EchoSurvivalManager {
     // Update average response time
     const totalTasks = health.totalTasksCompleted + health.totalTasksFailed;
     health.averageResponseTime = 
-      (health.averageResponseTime * (totalTasks - 1) + normalizedResponseTime) / totalTasks;
+      (health.averageResponseTime * (totalTasks - 1) + responseTimeMs) / totalTasks;
     
     // Update success rate
     health.successRate = health.totalTasksCompleted / totalTasks;
@@ -1037,12 +1542,11 @@ export class EchoSurvivalManager {
    * Record earnings
    */
   recordEarnings(amount: string): void {
-    const normalizedAmount = parseNonNegative(amount, 'amount');
     const economics = economicsStore.get(this.agentId);
     if (!economics) return;
     
     const current = parseFloat(economics.totalEarned);
-    const addition = normalizedAmount;
+    const addition = parseFloat(amount);
     economics.totalEarned = (current + addition).toFixed(6);
     
     // Update current balance (earnings - spending)
@@ -1062,12 +1566,11 @@ export class EchoSurvivalManager {
    * Record spending
    */
   recordSpending(amount: string): void {
-    const normalizedAmount = parseNonNegative(amount, 'amount');
     const economics = economicsStore.get(this.agentId);
     if (!economics) return;
     
     const current = parseFloat(economics.totalSpent);
-    const addition = normalizedAmount;
+    const addition = parseFloat(amount);
     economics.totalSpent = (current + addition).toFixed(6);
     
     // Update current balance (earnings - spending)
@@ -1087,9 +1590,8 @@ export class EchoSurvivalManager {
    * Get heartbeat history
    */
   getHeartbeatHistory(limit: number = 100): HeartbeatRecord[] {
-    const normalizedLimit = parsePositiveInteger(limit, 'limit');
     const heartbeats = heartbeatStore.get(this.agentId) || [];
-    return heartbeats.slice(-normalizedLimit);
+    return heartbeats.slice(-limit);
   }
 
   /**
@@ -1454,9 +1956,8 @@ export class EchoSurvivalManager {
    * Execute an automated survival action
    */
   async executeAutomatedAction(actionId: string): Promise<boolean> {
-    const normalizedActionId = normalizeAgentId(actionId);
     const actions = automatedActionsStore.get(this.agentId) || [];
-    const action = actions.find(a => a.id === normalizedActionId);
+    const action = actions.find(a => a.id === actionId);
 
     if (!action || action.status !== 'pending') {
       return false;
@@ -1560,9 +2061,8 @@ export class EchoSurvivalManager {
    * Get survival history for trend analysis
    */
   getSurvivalHistory(limit: number = 100): SurvivalHistoryEntry[] {
-    const normalizedLimit = parsePositiveInteger(limit, 'limit');
     const history = survivalHistoryStore.get(this.agentId) || [];
-    return history.slice(-normalizedLimit);
+    return history.slice(-limit);
   }
 
   /**
@@ -1610,26 +2110,24 @@ export function getOrCreateSurvivalManager(
   address: Address,
   config?: Partial<SurvivalConfig>
 ): EchoSurvivalManager {
-  const normalizedAgentId = normalizeAgentId(agentId);
-  const normalizedAddress = normalizeAddress(address);
-  if (!globalManagers.has(normalizedAgentId)) {
-    globalManagers.set(normalizedAgentId, new EchoSurvivalManager(normalizedAgentId, normalizedAddress, config));
+  if (!globalManagers.has(agentId)) {
+    globalManagers.set(agentId, new EchoSurvivalManager(agentId, address, config));
   }
-  return globalManagers.get(normalizedAgentId)!;
+  return globalManagers.get(agentId)!;
 }
 
 /**
  * Get survival manager by agent ID
  */
 export function getSurvivalManager(agentId: string): EchoSurvivalManager | undefined {
-  return globalManagers.get(normalizeAgentId(agentId));
+  return globalManagers.get(agentId);
 }
 
 /**
  * Remove survival manager
  */
 export function removeSurvivalManager(agentId: string): boolean {
-  return globalManagers.delete(normalizeAgentId(agentId));
+  return globalManagers.delete(agentId);
 }
 
 export default EchoSurvivalManager;
