@@ -26,4 +26,20 @@ export { ApiCache, getGlobalCache, setGlobalCache, cachedFetch, withCache, } fro
 export { ProfileManager, createProfileManager, calculateLevel, xpForNextLevel, levelProgress, getTierColor, getDefaultAchievements, 
 // Frontend optimizations
 ProfileCache, getProfileCache, batchGetProfiles, checkProfileCompleteness, saveProfileToLocalStorage, loadProfileFromLocalStorage, clearProfileFromLocalStorage, createOptimisticProfileUpdate, uploadAvatar, } from './profile.js';
+// Agent Profile React Hooks (v1.0) - frontend integration
+export { 
+// Hooks
+useProfile, useMyProfile, useUpdateProfile, useProfileStats, useAchievements, useReputationHistory, useSearchProfiles, useLeaderboard, useProfileCompleteness, useUploadAvatar, useLevelProgress, useBatchProfiles, useProfileCache, 
+// Initialization
+initializeProfileManager, setGlobalAuthToken, getGlobalAuthToken, getGlobalManager, } from './profile-hooks.js';
+// Reputation Oracle module (v1.0)
+export { ReputationOracle, getOrCreateReputationOracle, getReputationOracle, resetReputationOracle, createEmptyReputation, addSignal, addTaskRating, addEndorsement, addDispute, updatePaymentReliability, calculateReputation, calculateReputationBreakdown, recalculateReputation, calculateDecay, calculateSignalValue, calculatePaymentReliability, calculateEndorsementValue, getReputationTier, getReputationTierColor, formatReputation, generateReputationReport, DEFAULT_REPUTATION_CONFIG, } from './reputation.js';
+// End-to-End Encryption (E2EE) module (v1.0)
+export { E2EESessionManager, getOrCreateE2EEManager, getE2EEManager, resetE2EEManager, createEncryptedEnvelope, decryptEnvelope, DEFAULT_E2EE_CONFIG, } from './e2ee.js';
+// Analytics module (v1.0) - Comprehensive analytics infrastructure
+export { AnalyticsManager, EventTracker, MetricsCollector, getOrCreateAnalyticsManager, getAnalyticsManager, removeAnalyticsManager, createPerformanceMonitor as createAnalyticsPerformanceMonitor, } from './analytics.js';
+// Analytics Charts module (v1.0) - Chart data visualization helpers
+export { toLineChartData, toBarChartData, toPieChartData, toAreaChartData, calculateWoW, calculateMoM, calculateYoY, formatPercentageChange, toKpiCardData, toSparklineData, toHeatmapData, metricsToTimeSeries, groupTimeSeriesByLabel, normalizeTimeSeries, mergeTimeSeries, calculateMovingAverage, DEFAULT_COLOR_PALETTE, } from './analytics-charts.js';
+// Portfolio module (v1.0) - Agent storefront and portfolio management
+export { calculateAgentScore, formatPriceRange, getStarRating, formatETA, } from './portfolio.js';
 //# sourceMappingURL=index.js.map

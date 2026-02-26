@@ -1,3 +1,12 @@
+/**
+ * Agora Agent Core Module
+ *
+ * Provides the main AgoraAgent class for creating and managing AI agents
+ * that can communicate via the Agora protocol. Includes message handling,
+ * intent validation, and escrow event processing.
+ *
+ * @module agent
+ */
 import { EnvelopeSigner } from './envelope.js';
 import { MessageBuilder, } from './messages.js';
 import { RelayClient } from './relay.js';

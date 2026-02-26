@@ -74,6 +74,8 @@ export interface Achievement {
     unlocked: boolean;
     /** Unlock timestamp */
     unlockedAt?: number;
+    /** Completion timestamp (alias for unlockedAt) */
+    completedAt?: number;
     /** Progress (0-100) */
     progress: number;
     /** Required criteria */
